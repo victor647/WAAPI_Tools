@@ -2,7 +2,7 @@
 
 ## 底层 WAAPI 调用摘要
 
-本文件是对 `libraries/wwise/WAAPI.py` 实现细节的速记，便于排查“实际调了哪条 waapi”。
+本文件是对 `libraries/waapi_client.py` 中 `WAAPIClient` 实现细节的速记，便于排查“实际调了哪条 waapi”。
 
 | 区域 | 典型 `client.call` |
 |------|---------------------|

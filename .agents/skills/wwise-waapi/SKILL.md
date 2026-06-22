@@ -1,35 +1,37 @@
 ---
 name: wwise-waapi
-description: Maps Wwise authoring tasks to libraries.wwise.WAAPI functions (WebSocket waapi to Wwise). Includes MCP tool naming and NL→tool chains. Use when editing WAAPI_Tools, automating Wwise via Python or MCP, or when the user asks for children, parents, queries, SoundBank, Switch, import, RTPC, transport, or UI commands against the Wwise project.
+description: Use for WAAPI_Tools tasks that automate Wwise via Python or MCP, especially object queries, children/parents, SoundBank, Switch, import, RTPC, transport, UI commands, undo groups, or GUID-to-Wwise operations.
 ---
 
 # Wwise WAAPI（本工程）
 
 ## 架构
 
-- 所有与 Wwise 的交互最终应通过 `libraries/wwise/WAAPI.py` 中的函数完成；`libraries/wwise` 下各 `*_utils.py` 是对这些封装的再组合。
-- 导入：`from libraries.wwise import WAAPI`（或按需 `from libraries.wwise.WAAPI import ...`）。
-- 连接：`WAAPI.get_client()` 使用 `ws://127.0.0.1:8080/waapi`；结束时可 `WAAPI.close_client()`。
-- 对象模型：多数 API 使用 `WwiseObject`（见 `libraries/wwise/wwise_object.py`）；类型枚举为 `WwiseObjectType`。
+- 底层 WAAPI 客户端：`libraries/waapi_client.py` 中的 `WAAPIClient`，入参出参为 dict 或原生值。
+- Wwise 对象门面：`libraries/utils/wwise/waapi_utils.py`，负责 `WwiseObject` / `WwiseObjectType` 与 `WAAPIClient` 所需 dict / type string 的转换。
+- 业务工具：`libraries/utils/wwise/*_utils.py` 基于 `waapi_utils` 组合更高层操作。
+- 对象模型：`libraries/wwise_object.py` 中的 `WwiseObject` 和 `WwiseObjectType`。
+- 连接：`WAAPIClient().connect()` 使用 `ws://127.0.0.1:8080/waapi`；结束时可 `WAAPIClient().disconnect()` 或通过 `waapi_utils.close_client()` 关闭。
+- 编辑业务代码时优先使用 `from libraries.utils.wwise import waapi_utils`。只有 MCP GUID/dict 薄封装或底层客户端改动才直接使用 `WAAPIClient`。
 
 ## MCP 与自然语言任务
 
-- **工具名**：在 Cursor 里调用的 MCP 工具名，与 `waapi_mcp/waapi_full_tools.py`、`waapi_mcp/utils_mcp_tools.py` 中带 `@mcp.tool()` 的**函数名一致**（薄封装无 `waapi_` 前缀，utils 侧多为 `wwise_*`）。
+- **工具名**：在 Codex 里调用的 MCP 工具名，与 `waapi_mcp/waapi_mcp_tools.py`、`waapi_mcp/utils_mcp_tools.py` 中带 `@mcp.tool()` 的**函数名一致**。
 - **典型链**：先**查询** → 在助手侧根据返回 JSON 里的 `type`、`name`、`path` **筛选** → 再**写入**（`set_object_property` 等）。批量修改建议用 `begin_undo_group` / `end_undo_group` 包一层，失败时可 `undo`。
 - **名称 + 类型**：若用户同时给出精确名与类型，优先 `find_object_by_name_and_type`；若只给类型或只给名称片段，用 `find_all_objects_by_type` 或 `find_all_objects_by_name`，再在结果上筛选。
-- **`find_all_objects_by_name(obj_name, exact_match)`**（对应 `WAAPI.find_all_objects_by_name`）：工程版本大于 2020 时走 WAQL `search`；`exact_match=False` 时返回搜索命中的一批对象，**未必**已按「前缀」过滤，常需在客户端保留 `type === 某值` 且 `name` 以某前缀开头等条件。
+- **`find_all_objects_by_name(obj_name, exact_match)`**（对应 `waapi_utils.find_all_objects_by_name` / `WAAPIClient.find_all_objects_by_name`）：工程版本大于 2020 时走 WAQL `search`；`exact_match=False` 时返回搜索命中的一批对象，**未必**已按「前缀」过滤，常需在客户端保留 `type == 某值` 且 `name` 以某前缀开头等条件。
 - **示例**（用户话：「所有以 Weapon 开头的 ActorMixer 音量设为 -3」）：调用 `find_all_objects_by_name`，参数如 `obj_name="Weapon"`、`exact_match=false` → 在结果中只保留 `type` 为 `ActorMixer` 且 `name` 以 `Weapon` 开头 → 对每个对象的 `id` 调用 `set_object_property`，`property_name` 为 `Volume`，`value` 为 `-3`。
-- **优先 utils**：若 `libraries/wwise` 里已有对应业务封装，优先使用 MCP 中的 `wwise_*` 工具；没有时再组合上述 WAAPI 薄封装。
+- **优先 utils**：若 `libraries/utils/wwise` 里已有对应业务封装，优先使用 MCP 中的高层工具；没有时再组合底层 WAAPI 薄封装。
 
 ## 意图 → 函数速查
 
-按用户需求选择 **WAAPI** 中的函数（下列为模块内全部公开函数）。
+按用户需求优先选择 `waapi_utils` 或已有 MCP tool 中的函数。
 
 ### 连接
 
 | 函数 | 用途 |
 |------|------|
-| `get_client()` | 获取/懒建 `WaapiClient` |
+| `WAAPIClient().connect()` | 获取/懒建 `WaapiClient` |
 | `close_client()` | 断开并清理客户端 |
 
 ### 查询（Query）
@@ -43,7 +45,7 @@ description: Maps Wwise authoring tasks to libraries.wwise.WAAPI functions (WebS
 | `paste_object_property(source_obj, target_objects, property_name)` | 从源对象复制某属性到多个目标 |
 | `get_selected_objects()` | 当前在 Wwise 中选中的对象 |
 | `get_object_from_path(path)` | 按路径解析对象（与 `find_object_by_path` 类似场景，注意返回值形态） |
-| `get_references_to_object(obj)` | 引用该对象的所有对象 |
+| `get_object_references(obj)` | 引用该对象的所有对象 |
 | `get_parent_object(obj)` | 直接父级 |
 | `get_ancestor_objects(obj)` | 自底向上祖先链 |
 | `get_child_objects(obj, include_descendants=False)` | **直属子级**；`include_descendants=True` 时取全部后代（分页拉取） |
@@ -132,7 +134,7 @@ description: Maps Wwise authoring tasks to libraries.wwise.WAAPI functions (WebS
 
 - **子级**：直属子对象用 `get_child_objects(obj, include_descendants=False)`；整棵子树用 `include_descendants=True`。
 - **按类型过滤后代**：`get_descendants_of_type(obj, child_type)`。
-- **优先复用 utils**：若 `libraries/wwise` 已有封装，先读现有工具函数再决定是否直接调 `WAAPI`。
+- **优先复用 utils**：若 `libraries/utils/wwise` 已有封装，先读现有工具函数再决定是否直接调 `WAAPIClient`。
 - **版本差异**：工程版本 &gt; 2020 时多处使用 WAQL；旧版使用 `from`/`transform`。新增逻辑需与 `project_utils.get_project_version()` 分支一致。
 
 更多细节与边缘行为见 [reference.md](reference.md)。
