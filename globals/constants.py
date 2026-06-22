@@ -1,0 +1,4 @@
+# 软件版本
+SOFTWARE_VERSION = "V3.1 2026/04/10"
+# 帮助文档
+DOCUMENTATION_URL = ""

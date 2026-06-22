@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "waapi-tools-mcp"
+version = "0.1.0"
+description = "MCP server exposing WAAPI_Tools libraries.wwise.WAAPI over stdio for Wwise automation."
+readme = "README_MCP.md"
+requires-python = ">=3.10"
+dependencies = [
+    "waapi-client>=0.8",
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+waapi-mcp = "waapi_mcp.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["waapi_mcp*", "libraries*"]

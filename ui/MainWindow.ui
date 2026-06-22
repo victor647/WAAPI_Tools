@@ -1,0 +1,1223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1160</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>1160</width>
+    <height>600</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>WAAPI工具集</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout_3">
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout_5">
+      <item>
+       <widget class="QGroupBox" name="grpTableAction">
+        <property name="minimumSize">
+         <size>
+          <width>100</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="title">
+         <string>状态与操作</string>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout_2">
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_3">
+           <item>
+            <widget class="QLabel" name="lblWwiseConnection">
+             <property name="text">
+              <string>未连接到Wwise</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnGetSelectedObjects">
+             <property name="text">
+              <string>获取Wwise选中对象</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnClearTable">
+             <property name="text">
+              <string>清空表格</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_6">
+           <item>
+            <widget class="QCheckBox" name="cbxTableSelectAll">
+             <property name="text">
+              <string>全选</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblTableDisplayMode">
+             <property name="text">
+              <string>表格视图</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="cbbTableDisplayMode">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>100</width>
+               <height>0</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnBatchRename">
+             <property name="text">
+              <string>批量重命名</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnMultiEditor">
+             <property name="text">
+              <string>多项编辑器</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="grpTableView">
+        <property name="title">
+         <string>表格对象</string>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout">
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_4">
+           <item>
+            <widget class="QCheckBox" name="cbxRecursiveFind">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>递归查找</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="cbxKeepSelf">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>140</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>保留原始层级</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnFindParent">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>78</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>查找上级</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnFindChildren">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>78</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>查找下级</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnObjectHistoryBack">
+             <property name="maximumSize">
+              <size>
+               <width>48</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>后退</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnObjectHistoryForward">
+             <property name="maximumSize">
+              <size>
+               <width>48</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>前进</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_2">
+           <item>
+            <widget class="QComboBox" name="cbbFilterType">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>120</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <item>
+              <property name="text">
+               <string>全部类型</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Action</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>ActorMixer</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>AudioFileSource</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>AuxBus</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>BlendContainer</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Bus</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Event</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Folder</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>GameParameter</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>MusicPlaylistContainer</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>MusicSegment</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>MusicSwitchContainer</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>MusicTrack</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>RandomSequenceContainer</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Sound</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>SoundBank</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>State</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Switch</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>SwitchContainer</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>WorkUnit</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="ledFilterKeyword">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>150</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="inputMask">
+              <string/>
+             </property>
+             <property name="text">
+              <string extracomment="筛选文本"/>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="cbxCaseSensitive">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>区分大小写</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="cbxOnlyIncludedEnabled">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>仅显示启用对象</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QTableView" name="tblWwiseObjects"/>
+    </item>
+    <item>
+     <widget class="QTextEdit" name="txeOutputLogs">
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>120</height>
+       </size>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1160</width>
+     <height>33</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="mnuAudioSource">
+    <property name="title">
+     <string>源文件</string>
+    </property>
+    <addaction name="actApplyEditsToOriginal"/>
+    <addaction name="actResetSourceEdits"/>
+    <addaction name="actTrimAudioSilence"/>
+    <addaction name="separator"/>
+    <addaction name="actAutoImport"/>
+    <addaction name="actRenameOriginalToWwise"/>
+    <addaction name="actTidyOriginalFolders"/>
+    <addaction name="actDeleteUnusedAKDFiles"/>
+   </widget>
+   <widget class="QMenu" name="mnuContainer">
+    <property name="title">
+     <string>Container</string>
+    </property>
+    <widget class="QMenu" name="mnuSwitchContainer">
+     <property name="title">
+      <string>Switch</string>
+     </property>
+     <widget class="QMenu" name="mnuSplitByNetRole">
+      <property name="title">
+       <string>按照角色拆分</string>
+      </property>
+      <addaction name="actSplitTo1P3P"/>
+      <addaction name="actSplitTo1P2P3P"/>
+      <addaction name="actSplitTo1P2P"/>
+     </widget>
+     <addaction name="actAssignSwitchMappings"/>
+     <addaction name="actRemoveSwitchMappings"/>
+     <addaction name="actReplaceParent"/>
+     <addaction name="separator"/>
+     <addaction name="actAssignToGenericPath"/>
+     <addaction name="mnuSplitByNetRole"/>
+    </widget>
+    <widget class="QMenu" name="menuRandom">
+     <property name="title">
+      <string>Random</string>
+     </property>
+     <addaction name="actRenameRandomChildren"/>
+     <addaction name="actGroupAsRandom"/>
+    </widget>
+    <action name=""/>
+    <addaction name="actBreakContainer"/>
+    <addaction name="mnuSwitchContainer"/>
+    <addaction name="menuRandom"/>
+   </widget>
+   <widget class="QMenu" name="mnuSoundBank">
+    <property name="title">
+     <string>SoundBank</string>
+    </property>
+    <widget class="QMenu" name="mnuSetInclusionTo">
+     <property name="title">
+      <string>调整包含内容</string>
+     </property>
+     <addaction name="actIncludeMediaOnly"/>
+     <addaction name="actIncludeEventsAndStructures"/>
+     <addaction name="actIncludeAll"/>
+    </widget>
+    <addaction name="actCreateSoundBank"/>
+    <addaction name="actAddToSelectedBank"/>
+    <addaction name="actBankAssignmentMatrix"/>
+    <addaction name="separator"/>
+    <addaction name="mnuSetInclusionTo"/>
+    <addaction name="actClearInclusions"/>
+    <addaction name="separator"/>
+    <addaction name="actCalculateBankSize"/>
+    <addaction name="actGenerateEventBankMap"/>
+   </widget>
+   <widget class="QMenu" name="mnuCommon">
+    <property name="title">
+     <string>通用</string>
+    </property>
+    <widget class="QMenu" name="mnuSetNameCase">
+     <property name="title">
+      <string>改变命名规则</string>
+     </property>
+     <addaction name="actChangeToTitleCase"/>
+     <addaction name="actChangeToLowerCase"/>
+     <addaction name="actChangeToUpperCase"/>
+    </widget>
+    <widget class="QMenu" name="mnuCreateParent">
+     <property name="title">
+      <string>创建父级</string>
+     </property>
+     <addaction name="actCreateActorMixer"/>
+     <addaction name="actCreateBlendContainer"/>
+     <addaction name="actCreateRandomSequenceContainer"/>
+     <addaction name="actCreateSwitchContainer"/>
+     <addaction name="actCreateVirtualFolder"/>
+     <addaction name="actCreateWorkUnit"/>
+    </widget>
+    <widget class="QMenu" name="mnuOptimizeName">
+     <property name="font">
+      <font>
+       <stylestrategy>PreferDefault</stylestrategy>
+      </font>
+     </property>
+     <property name="title">
+      <string>重命名</string>
+     </property>
+     <addaction name="actRenameToShort"/>
+     <addaction name="actRenameToFull"/>
+     <addaction name="separator"/>
+     <addaction name="actRemovePrefix"/>
+     <addaction name="actRemoveSuffix"/>
+     <addaction name="separator"/>
+     <addaction name="actUseAcronym"/>
+    </widget>
+    <addaction name="mnuOptimizeName"/>
+    <addaction name="mnuSetNameCase"/>
+    <addaction name="actUpdateNoteAndColor"/>
+    <addaction name="separator"/>
+    <addaction name="mnuCreateParent"/>
+    <addaction name="actSplitUnderScore"/>
+    <addaction name="separator"/>
+    <addaction name="actMoveToSelection"/>
+    <addaction name="actCopyFromSelection"/>
+    <addaction name="separator"/>
+    <addaction name="actReplaceByTemplate"/>
+    <addaction name="actRenameByDataTable"/>
+   </widget>
+   <widget class="QMenu" name="mnuEvent">
+    <property name="title">
+     <string>Event</string>
+    </property>
+    <widget class="QMenu" name="mnuFilterByEventReference">
+     <property name="title">
+      <string>根据Event引用筛选</string>
+     </property>
+     <addaction name="actHasEventReference"/>
+     <addaction name="actHasNoEventReference"/>
+    </widget>
+    <addaction name="actCreatePlayEvent"/>
+    <addaction name="actRenameEventByTarget"/>
+    <addaction name="separator"/>
+    <addaction name="mnuFilterByEventReference"/>
+    <addaction name="actExportAllEvents"/>
+   </widget>
+   <widget class="QMenu" name="mnuFile">
+    <property name="title">
+     <string>文件</string>
+    </property>
+    <addaction name="actReconnectWwise"/>
+    <addaction name="separator"/>
+    <addaction name="actExportObjectList"/>
+    <addaction name="actImportObjectList"/>
+    <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="mnuEdit">
+    <property name="title">
+     <string>编辑</string>
+    </property>
+    <addaction name="actUndo"/>
+    <addaction name="actRedo"/>
+    <addaction name="separator"/>
+    <addaction name="actDeleteObjects"/>
+   </widget>
+   <widget class="QMenu" name="mnuOther">
+    <property name="title">
+     <string>其他</string>
+    </property>
+    <addaction name="actHelpDoc"/>
+    <addaction name="separator"/>
+    <addaction name="actProjectValidation"/>
+    <addaction name="actUnityAssetManager"/>
+    <addaction name="separator"/>
+    <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="mnuGameSync">
+    <property name="title">
+     <string>Game Sync</string>
+    </property>
+    <addaction name="actCopyRtpcFromSelection"/>
+   </widget>
+   <widget class="QMenu" name="mnuMixing">
+    <property name="title">
+     <string>混音</string>
+    </property>
+    <widget class="QMenu" name="mnuRenderEffect">
+     <property name="title">
+      <string>效果器预渲染</string>
+     </property>
+     <addaction name="actEnableEffectRender"/>
+     <addaction name="actDisableEffectRender"/>
+    </widget>
+    <widget class="QMenu" name="mnuBypassEffect">
+     <property name="title">
+      <string>效果器旁通</string>
+     </property>
+     <addaction name="actEnableEffectBypass"/>
+     <addaction name="actDisableEffectBypass"/>
+    </widget>
+    <addaction name="actDownMixFader"/>
+    <addaction name="actVolumeToGain"/>
+    <addaction name="separator"/>
+    <addaction name="mnuRenderEffect"/>
+    <addaction name="mnuBypassEffect"/>
+   </widget>
+   <widget class="QMenu" name="mnuLocalization">
+    <property name="title">
+     <string>本地化</string>
+    </property>
+    <widget class="QMenu" name="mnuFillSilence">
+     <property name="title">
+      <string>用静音填补空缺</string>
+     </property>
+     <addaction name="actFillSilenceForRefLanguage"/>
+     <addaction name="actFillSilenceForAllLanguages"/>
+    </widget>
+    <addaction name="actLocalizeLanguages"/>
+    <addaction name="mnuFillSilence"/>
+    <addaction name="separator"/>
+    <addaction name="actFilterByLanguage"/>
+   </widget>
+   <widget class="QMenu" name="mnuImport">
+    <property name="title">
+     <string>导入</string>
+    </property>
+    <widget class="QMenu" name="mnuImportFmod">
+     <property name="title">
+      <string>FMOD工程</string>
+     </property>
+     <addaction name="actImportFmodEvent"/>
+     <addaction name="actImportFmodPreset"/>
+    </widget>
+    <addaction name="actImportWwiseWorkUnit"/>
+    <addaction name="mnuImportFmod"/>
+    <addaction name="actImportScreenshot"/>
+   </widget>
+   <addaction name="mnuFile"/>
+   <addaction name="mnuEdit"/>
+   <addaction name="mnuCommon"/>
+   <addaction name="mnuAudioSource"/>
+   <addaction name="mnuLocalization"/>
+   <addaction name="mnuMixing"/>
+   <addaction name="mnuContainer"/>
+   <addaction name="mnuEvent"/>
+   <addaction name="mnuSoundBank"/>
+   <addaction name="mnuGameSync"/>
+   <addaction name="mnuImport"/>
+   <addaction name="mnuOther"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionEnable">
+   <property name="text">
+    <string>Enable</string>
+   </property>
+  </action>
+  <action name="actionDisable">
+   <property name="text">
+    <string>Disable</string>
+   </property>
+  </action>
+  <action name="actionEnable_2">
+   <property name="text">
+    <string>Enable</string>
+   </property>
+  </action>
+  <action name="actionDisable_2">
+   <property name="text">
+    <string>Disable</string>
+   </property>
+  </action>
+  <action name="actApplyEditsToOriginal">
+   <property name="text">
+    <string>保存剪辑</string>
+   </property>
+  </action>
+  <action name="actResetSourceEdits">
+   <property name="text">
+    <string>重置剪辑</string>
+   </property>
+  </action>
+  <action name="actAssignSwitchMappings">
+   <property name="text">
+    <string>自动分配</string>
+   </property>
+  </action>
+  <action name="actionEnable_3">
+   <property name="text">
+    <string>Enable</string>
+   </property>
+  </action>
+  <action name="actionDisable_3">
+   <property name="text">
+    <string>Disable</string>
+   </property>
+  </action>
+  <action name="actDeleteObjects">
+   <property name="text">
+    <string>删除</string>
+   </property>
+  </action>
+  <action name="actCalculateBankSize">
+   <property name="text">
+    <string>计算媒体资源大小</string>
+   </property>
+  </action>
+  <action name="actCreateSoundBank">
+   <property name="text">
+    <string>创建SoundBank</string>
+   </property>
+  </action>
+  <action name="actionPlay">
+   <property name="text">
+    <string>Play</string>
+   </property>
+  </action>
+  <action name="actionStop">
+   <property name="text">
+    <string>Stop</string>
+   </property>
+  </action>
+  <action name="actionPause">
+   <property name="text">
+    <string>Pause</string>
+   </property>
+  </action>
+  <action name="actionBreak">
+   <property name="text">
+    <string>Break</string>
+   </property>
+  </action>
+  <action name="actChangeToTitleCase">
+   <property name="text">
+    <string>首字母大写</string>
+   </property>
+  </action>
+  <action name="actChangeToLowerCase">
+   <property name="text">
+    <string>全小写</string>
+   </property>
+  </action>
+  <action name="actChangeToUpperCase">
+   <property name="text">
+    <string>全大写</string>
+   </property>
+  </action>
+  <action name="actMultiEditor">
+   <property name="text">
+    <string>Multi Editor</string>
+   </property>
+  </action>
+  <action name="actBatchRenamer">
+   <property name="text">
+    <string>Batch Rename</string>
+   </property>
+  </action>
+  <action name="actMoveToSelection">
+   <property name="text">
+    <string>移动到选中对象</string>
+   </property>
+  </action>
+  <action name="actUndo">
+   <property name="text">
+    <string>撤销</string>
+   </property>
+  </action>
+  <action name="actRedo">
+   <property name="text">
+    <string>重做</string>
+   </property>
+  </action>
+  <action name="actCreatePlayEvent">
+   <property name="text">
+    <string>创建播放事件</string>
+   </property>
+  </action>
+  <action name="actReplaceSourceFiles">
+   <property name="text">
+    <string>Replace Source Files</string>
+   </property>
+  </action>
+  <action name="actRemoveSwitchMappings">
+   <property name="text">
+    <string>清空分配</string>
+   </property>
+  </action>
+  <action name="actBankAssignmentMatrix">
+   <property name="text">
+    <string>自动映射分配工具</string>
+   </property>
+  </action>
+  <action name="actAddToSelectedBank">
+   <property name="text">
+    <string>添加Media到选中的Bank</string>
+   </property>
+  </action>
+  <action name="actRenameOriginalToWwise">
+   <property name="text">
+    <string>统一Sound和样本命名</string>
+   </property>
+  </action>
+  <action name="actDeleteUnusedAKDFiles">
+   <property name="text">
+    <string>删除多余AKD文件</string>
+   </property>
+  </action>
+  <action name="actClearInclusions">
+   <property name="text">
+    <string>清除包含内容</string>
+   </property>
+  </action>
+  <action name="actBreakContainer">
+   <property name="text">
+    <string>拆除结构</string>
+   </property>
+  </action>
+  <action name="actAddToSameNameBank">
+   <property name="text">
+    <string>Add to Same Name Bank</string>
+   </property>
+  </action>
+  <action name="actSetInclusionToMediaOnly">
+   <property name="text">
+    <string>Set Inclusion to Media Only</string>
+   </property>
+  </action>
+  <action name="actIncludeMediaOnly">
+   <property name="text">
+    <string>仅媒体</string>
+   </property>
+  </action>
+  <action name="actIncludeEventsAndStructures">
+   <property name="text">
+    <string>事件与结构</string>
+   </property>
+  </action>
+  <action name="actIncludeAll">
+   <property name="text">
+    <string>全部</string>
+   </property>
+  </action>
+  <action name="actDownMixFader">
+   <property name="text">
+    <string>向下传递参数</string>
+   </property>
+  </action>
+  <action name="actImportCriterias">
+   <property name="text">
+    <string>导入筛选条件</string>
+   </property>
+  </action>
+  <action name="actExportCriterias">
+   <property name="text">
+    <string>导出筛选条件</string>
+   </property>
+  </action>
+  <action name="actCopyFromSelection">
+   <property name="text">
+    <string>从选中对象复制</string>
+   </property>
+  </action>
+  <action name="actWwiseSilenceAdd">
+   <property name="text">
+    <string>添加Wwise Silence</string>
+   </property>
+  </action>
+  <action name="actWwiseSilenceRemove">
+   <property name="text">
+    <string>删除Wwise Silence</string>
+   </property>
+  </action>
+  <action name="actReplaceEventNames">
+   <property name="text">
+    <string>Replace Event Names</string>
+   </property>
+  </action>
+  <action name="actReplaceByTemplate">
+   <property name="text">
+    <string>模板批量替换</string>
+   </property>
+  </action>
+  <action name="actTrimAudioSilence">
+   <property name="text">
+    <string>裁剪头尾静音</string>
+   </property>
+  </action>
+  <action name="actLocalizeLanguages">
+   <property name="text">
+    <string>导入本地化语言</string>
+   </property>
+  </action>
+  <action name="actReplaceParent">
+   <property name="text">
+    <string>替换上层分配</string>
+   </property>
+  </action>
+  <action name="actUnityAssetManager">
+   <property name="text">
+    <string>管理UnityAsset文件</string>
+   </property>
+  </action>
+  <action name="actCreateSwitchContainer">
+   <property name="text">
+    <string>Switch Container</string>
+   </property>
+  </action>
+  <action name="actCreateVirtualFolder">
+   <property name="text">
+    <string>Virtual Folder</string>
+   </property>
+  </action>
+  <action name="actCreateActorMixer">
+   <property name="text">
+    <string>Actor Mixer</string>
+   </property>
+  </action>
+  <action name="actCreateWorkUnit">
+   <property name="text">
+    <string>Work Unit</string>
+   </property>
+  </action>
+  <action name="actCreateBlendContainer">
+   <property name="text">
+    <string>Blend Container</string>
+   </property>
+  </action>
+  <action name="actCreateRandomSequenceContainer">
+   <property name="text">
+    <string>Random/Sequence Container</string>
+   </property>
+  </action>
+  <action name="actAssignToGenericPath">
+   <property name="text">
+    <string>设为通用路径</string>
+   </property>
+  </action>
+  <action name="actCopyRtpcFromSelection">
+   <property name="text">
+    <string>从选中对象复制RTPC</string>
+   </property>
+  </action>
+  <action name="actTidyOriginalFolders">
+   <property name="text">
+    <string>自动归类子文件夹</string>
+   </property>
+  </action>
+  <action name="actCheckGlobalProject">
+   <property name="text">
+    <string>全局检查</string>
+   </property>
+  </action>
+  <action name="actCheckSelectObject">
+   <property name="text">
+    <string>检查选中对象</string>
+   </property>
+  </action>
+  <action name="actProjectValidation">
+   <property name="text">
+    <string>工程检查</string>
+   </property>
+  </action>
+  <action name="actFixTrimRange">
+   <property name="text">
+    <string>修复超出范围裁剪</string>
+   </property>
+  </action>
+  <action name="actImportObjectList">
+   <property name="text">
+    <string>导入对象列表</string>
+   </property>
+  </action>
+  <action name="actExportObjectList">
+   <property name="text">
+    <string>导出对象列表</string>
+   </property>
+  </action>
+  <action name="actImportFMODEvent">
+   <property name="text">
+    <string>Event</string>
+   </property>
+  </action>
+  <action name="actImportFMODPreset">
+   <property name="text">
+    <string>Preset</string>
+   </property>
+  </action>
+  <action name="actUpdateNoteAndColor">
+   <property name="text">
+    <string>更新备注与颜色</string>
+   </property>
+  </action>
+  <action name="actRenameEventByTarget">
+   <property name="text">
+    <string>根据播放对象重命名</string>
+   </property>
+  </action>
+  <action name="actUseFullName">
+   <property name="text">
+    <string>改为完整命名</string>
+   </property>
+  </action>
+  <action name="actSplitUnderScore">
+   <property name="text">
+    <string>拆分命名到子文件夹</string>
+   </property>
+  </action>
+  <action name="actRenameByDataTable">
+   <property name="text">
+    <string>读表批量重命名</string>
+   </property>
+  </action>
+  <action name="actSplitTo1P3P">
+   <property name="text">
+    <string>1P/3P</string>
+   </property>
+  </action>
+  <action name="actSplitTo1P2P3P">
+   <property name="text">
+    <string>1P/2P/3P</string>
+   </property>
+  </action>
+  <action name="actGenerateEventBankMap">
+   <property name="text">
+    <string>生成事件对应表</string>
+   </property>
+  </action>
+  <action name="actCreateSilenceForOtherLanguages">
+   <property name="text">
+    <string>静音填补其他语言</string>
+   </property>
+  </action>
+  <action name="actFillSilenceForRefLanguage">
+   <property name="text">
+    <string>参考语言</string>
+   </property>
+  </action>
+  <action name="actFillSilenceForAllLanguages">
+   <property name="text">
+    <string>全部其他语言</string>
+   </property>
+  </action>
+  <action name="actRenameToShort">
+   <property name="text">
+    <string>简短信息</string>
+   </property>
+  </action>
+  <action name="actRemoveSuffix">
+   <property name="text">
+    <string>去除末尾</string>
+   </property>
+  </action>
+  <action name="actRemovePrefix">
+   <property name="text">
+    <string>去除开头</string>
+   </property>
+  </action>
+  <action name="actUseAcronym">
+   <property name="text">
+    <string>使用类型缩写</string>
+   </property>
+  </action>
+  <action name="actRenameRandomChildren">
+   <property name="text">
+    <string>重命名子对象</string>
+   </property>
+  </action>
+  <action name="actGroupAsRandom">
+   <property name="text">
+    <string>自动创建容器</string>
+   </property>
+  </action>
+  <action name="actRenameToFull">
+   <property name="text">
+    <string>完整路径</string>
+   </property>
+  </action>
+  <action name="actExportAllEvents">
+   <property name="text">
+    <string>导出全部事件播放列表</string>
+   </property>
+  </action>
+  <action name="actFilterByLanguage">
+   <property name="text">
+    <string>按当前语言筛选</string>
+   </property>
+  </action>
+  <action name="actHasEventReference">
+   <property name="text">
+    <string>被引用</string>
+   </property>
+  </action>
+  <action name="actHasNoEventReference">
+   <property name="text">
+    <string>不被引用</string>
+   </property>
+  </action>
+  <action name="actSplitTo1P2P">
+   <property name="text">
+    <string>1P/2P</string>
+   </property>
+  </action>
+  <action name="actExportObjectContents">
+   <property name="text">
+    <string>导出对象内容</string>
+   </property>
+  </action>
+  <action name="actImportWorkUnit">
+   <property name="text">
+    <string>从其他Wwise工程导入</string>
+   </property>
+  </action>
+  <action name="actEnableEffectRender">
+   <property name="text">
+    <string>开启预渲染</string>
+   </property>
+  </action>
+  <action name="actDisableEffectRender">
+   <property name="text">
+    <string>关闭预渲染</string>
+   </property>
+  </action>
+  <action name="actDisableEffectBypass">
+   <property name="text">
+    <string>关闭旁通</string>
+   </property>
+  </action>
+  <action name="actEnableEffectBypass">
+   <property name="text">
+    <string>开启旁通</string>
+   </property>
+  </action>
+  <action name="actVolumeToGain">
+   <property name="text">
+    <string>音量调整改为增益</string>
+   </property>
+  </action>
+  <action name="actAutoImport">
+   <property name="text">
+    <string>根据路径自动导入</string>
+   </property>
+  </action>
+  <action name="actHelpDoc">
+   <property name="text">
+    <string>帮助文档</string>
+   </property>
+  </action>
+  <action name="actImportScreenshot">
+   <property name="text">
+    <string>Wwise工程截图</string>
+   </property>
+  </action>
+  <action name="actImportWwiseWorkUnit">
+   <property name="text">
+    <string>其他Wwise工程</string>
+   </property>
+  </action>
+  <action name="actImportFmodEvent">
+   <property name="text">
+    <string>Event</string>
+   </property>
+  </action>
+  <action name="actImportFmodPreset">
+   <property name="text">
+    <string>Preset</string>
+   </property>
+  </action>
+  <action name="actReconnectWwise">
+   <property name="text">
+    <string>Wwise重连</string>
+   </property>
+  </action>
+  <action name="actOpenInMultiEditor">
+   <property name="text">
+    <string>在MultiEditor中编辑</string>
+   </property>
+  </action>
+  <action name="actBatchRename">
+   <property name="text">
+    <string>在BatchRename中打开</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+ <slots>
+  <slot>create_bank_per_object()</slot>
+  <slot>calculate_bank_size()</slot>
+  <slot>connect_to_wwise()</slot>
+  <slot>apply_source_edits()</slot>
+  <slot>assign_switch_container()</slot>
+  <slot>filter_selection()</slot>
+  <slot>select_descendants_by_type()</slot>
+  <slot>apply_naming_convention()</slot>
+  <slot>get_selected_objects(string)</slot>
+  <slot>clear_object_list()</slot>
+  <slot>open_in_multi_editor()</slot>
+  <slot>delete_all_objects()</slot>
+  <slot>reset_source_editor()</slot>
+  <slot>enable_inclusion()</slot>
+  <slot>disable_inclusion()</slot>
+ </slots>
+</ui>
