@@ -12,7 +12,9 @@ class TemplateReplacer(QDialog, Ui_TemplateReplacer):
     def __init__(self, main_window):
         super().__init__()
         self.setupUi(self)
-        self.cbxObjectType.addItems(['AudioSource', WwiseObjectType.Event, WwiseObjectType.SoundBank])
+        self.cbxObjectType.clear()
+        for member in (WwiseObjectType.AudioSource, WwiseObjectType.Event, WwiseObjectType.SoundBank):
+            self.cbxObjectType.addItem(member.name, member)
         self.setup_triggers()
         self.__mainWindow = main_window
 
@@ -23,7 +25,7 @@ class TemplateReplacer(QDialog, Ui_TemplateReplacer):
     def start_replacing(self):
         self.__oldName = self.iptFindName.text()
         self.__newName = self.iptReplaceName.text()
-        replace_type = self.cbxObjectType.currentText()
+        replace_type = self.cbxObjectType.currentData()
         waapi_utils.begin_undo_group(f'{replace_type}模板批量替换')
         if hasattr(self.__mainWindow, "get_visible_objects"):
             target_objects = self.__mainWindow.get_visible_objects()

@@ -1,7 +1,9 @@
+from PySide6.QtCore import Qt
 from libraries.utils.log_utils import Logger
 from ui.RenameByTable_ui import Ui_RenameByTable
 from PySide6.QtWidgets import QDialog, QTableWidgetItem
-from PySide6.QtGui import QColor
+from libraries.table_view.table_cell_data import CellSeverity
+from libraries.table_view.table_severity_delegate import SeverityTableDelegate
 from libraries.multi_thread import batch_processor
 from libraries.utils.wwise import waapi_utils
 from libraries.wwise_object import WwiseObjectType
@@ -15,6 +17,7 @@ class TableRenamer(QDialog, Ui_RenameByTable):
         super().__init__()
         self.setupUi(self)
         self.setup_triggers()
+        self.tblConfigItems.setItemDelegate(SeverityTableDelegate(self.tblConfigItems))
         self.__csvData = []
         self.__objects = []
         self.__renamedCount = 0
@@ -66,17 +69,16 @@ class TableRenamer(QDialog, Ui_RenameByTable):
         if old_obj:
             if new_obj:
                 status_item = QTableWidgetItem('新旧都存在')
-                status_item.setForeground(QColor(200, 100, 0))
+                status_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Warning)
             else:
                 status_item = QTableWidgetItem('仅存在旧的')
-                status_item.setForeground(QColor(0, 0, 200))
+                status_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Success)
         else:
             if new_obj:
                 status_item = QTableWidgetItem('仅存在新的')
-                status_item.setForeground(QColor(0, 200, 0))
             else:
                 status_item = QTableWidgetItem('都不存在')
-                status_item.setForeground(QColor(200, 0, 0))
+                status_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Danger)
         self.tblConfigItems.setItem(current_row, 2, status_item)
         self.__objects.append([old_obj, new_obj, old_name, new_name])
 

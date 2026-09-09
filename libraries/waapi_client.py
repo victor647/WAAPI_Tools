@@ -799,6 +799,31 @@ class WAAPIClient(metaclass=Singleton):
             Logger().error(str(e))
             return False
 
+    # 把指定对象转码出 wem（ak.wwise.core.audio.convert，需 Wwise 2024 及以上版本）；
+    # 返回 {"errors": [...]}，成功时 errors 为空列表
+    def convert_audio_objects(self, objects: list, platforms: list, languages: list) -> dict:
+        if not self.client or not objects or not platforms or not languages:
+            return {}
+        try:
+            convert_args = {
+                'objects': objects,
+                'platforms': platforms,
+                'languages': languages,
+            }
+            result = self.client.call('ak.wwise.core.audio.convert', convert_args)
+            return result or {}
+        except Exception as e:
+            try:
+                current_version = project_utils.get_project_version()
+            except Exception:
+                current_version = 0
+            if current_version < 2024:
+                version_text = current_version if current_version > 0 else '未知'
+                Logger().error(f'ak.wwise.core.audio.convert 需要 Wwise 2024 及以上版本，当前版本 {version_text} 不支持该接口')
+            else:
+                Logger().error(str(e))
+            return {}
+
     # 从Sound层级获取包含的AudioSource
     def get_default_audio_source(self, sound: dict) -> dict:
         if not self.client or not sound:

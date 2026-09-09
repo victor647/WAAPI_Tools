@@ -10,7 +10,7 @@ class DesignInfo(object):
         self.wwise_object = wwise_object
         self.volume: int = 0
         self.output_bus: WwiseObject = None
-        self.attenuation: WwiseObject = None
+        self.attenuation: WwiseObject = WwiseObject()
         self.conversion_setting: WwiseObject = None
         self.playback_limit: int = 0
         self.get_data()
@@ -37,5 +37,5 @@ class DesignInfo(object):
                 self.conversion_setting = WwiseObject(setting)
         if "MaxSoundPerInstance" in names:
             limit = waapi_utils.get_object_property(self.wwise_object, "MaxSoundPerInstance")
-            if limit:
+            if isinstance(limit, (int, float)) and limit:
                 self.playback_limit = limit

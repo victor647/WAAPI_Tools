@@ -165,6 +165,10 @@ def import_audio_file(wave_path: str, sound: WwiseObject, language='SFX') -> Wwi
     return _dict_to_wobj(WAAPIClient().import_audio_file(wave_path, sound.wwise_dict, language=language))
 
 
+def convert_audio_objects(objects: list, platforms: list, languages: list) -> dict:
+    return WAAPIClient().convert_audio_objects([obj.id for obj in objects], platforms, languages)
+
+
 def add_silence(obj: WwiseObject, length: int, language='SFX') -> bool:
     return WAAPIClient().add_silence(obj.wwise_dict, length, language=language)
 

@@ -1,10 +1,12 @@
 import re
 import os
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QTableWidgetItem, QCheckBox, QGroupBox
-from PySide6.QtGui import QColor
 
 from data import project_conventions
+from libraries.table_view.table_cell_data import CellSeverity
+from libraries.table_view.table_severity_delegate import SeverityTableDelegate
 from libraries.utils import audio_utils
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, audio_source_utils, soundbank_utils, localization_utils, event_utils, \
@@ -21,6 +23,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         super().__init__()
         self.setupUi(self)
         self.setup_triggers()
+        self.tblValidationResults.setItemDelegate(SeverityTableDelegate(self.tblValidationResults))
         self.__currentTitle = ''
         self.__mainWindow = main_window
         self.__builtInRTPCs = []
@@ -95,7 +98,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         index = item.row()
         problem_item = self.tblValidationResults.item(index, 1)
         # 已经修复的跳过
-        if problem_item.foreground() != QColor(200, 0, 0):
+        if problem_item.data(Qt.ItemDataRole.BackgroundRole) != CellSeverity.Danger:
             return
         problem_type = problem_item.text()
         fixed = False
@@ -153,7 +156,10 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             fixed = False
         elif problem_type == self.cbxSoundNotStreamed.text():
             fixed = waapi_utils.set_object_property(obj, 'IsStreamingEnabled', True)
-        problem_item.setForeground(QColor(0, 200, 0) if fixed else QColor(200, 200, 0))
+        problem_item.setData(
+            Qt.ItemDataRole.BackgroundRole,
+            CellSeverity.Success if fixed else CellSeverity.Warning,
+        )
         return fixed
 
     # 检查整个Wwise工程
@@ -251,7 +257,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         row_count = self.tblValidationResults.rowCount()
         self.tblValidationResults.insertRow(row_count)
         rule_item = QTableWidgetItem(rule)
-        rule_item.setForeground(QColor(200, 0, 0))
+        rule_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Danger)
         self.tblValidationResults.setItem(row_count, 0, QTableWidgetItem(category))
         self.tblValidationResults.setItem(row_count, 1, rule_item)
         self.tblValidationResults.setItem(row_count, 2, QTableWidgetItem(obj.type.name))

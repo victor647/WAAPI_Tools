@@ -1,6 +1,7 @@
 import os
 from libraries.utils import io_utils
-from libraries.utils.wwise import common_utils, audio_source_utils, event_utils, waapi_utils
+from libraries.utils.log_utils import Logger
+from libraries.utils.wwise import common_utils, audio_source_utils, event_utils, localization_utils, project_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 
@@ -31,66 +32,176 @@ def create_sound_bank_by_name(bank_name: str) -> WwiseObject:
     new_bank = waapi_utils.create_child_object(bank_name, WwiseObjectType.SoundBank, parent)
     return new_bank
 
-# 计算多个Bank合计大小
+# 计算多个Bank合计大小（MB；非 Bank 对象会被忽略）
 def get_total_bank_size(banks: list) -> tuple:
-    wav_size = memory_wem_size = stream_wem_size = 0
-    used_files = []
-    for bank in banks:
-        if bank.type == WwiseObjectType.SoundBank:
-            wav_size, memory_wem_size, stream_wem_size, used_files = get_bank_size(bank, wav_size, memory_wem_size, stream_wem_size, used_files)
-    wav_size = round(wav_size / 1024, 2)
-    memory_wem_size = round(memory_wem_size / 1024, 2)
-    stream_wem_size = round(stream_wem_size / 1024, 2)
-    return wav_size, memory_wem_size, stream_wem_size, used_files
+    return get_total_media_size([bank for bank in banks if bank.type == WwiseObjectType.SoundBank])
 
-# 传统方式获取Bank大小
+
+# 跨多个对象增量统计媒体大小的容器：GUI 用 batch processor 逐个对象 accumulate，
+# 全部累加完成后调用 finish 汇总（含对缺失 wem 的一次生成尝试）
+class MediaSizeStatistics:
+    def __init__(self):
+        self.total_wav_size = 0.0
+        self.total_memory_wem_size = 0.0
+        self.total_stream_wem_size = 0.0
+        self.used_files: list = []
+        self.seen_sources: set = set()
+        self.seen_walked: set = set()
+        self.seen_wems: set = set()
+        self.sources_to_convert: list = []
+        self.result = None
+
+    # 累加单个对象子树；多个对象共用一个实例时自动跨对象去重
+    def accumulate(self, obj) -> None:
+        self.total_wav_size, self.total_memory_wem_size, self.total_stream_wem_size, self.used_files = (
+            _accumulate_media_size(obj, self.total_wav_size, self.total_memory_wem_size, self.total_stream_wem_size,
+                                   self.used_files, self.seen_sources, self.seen_walked, self.sources_to_convert, self.seen_wems))
+
+    # 汇总为 MB 并返回 (原始wav, 内存wem, 流式wem, 用到的源文件列表)；重复调用只计算一次
+    def finish(self) -> tuple:
+        if self.result is None:
+            if self.sources_to_convert:
+                self.total_memory_wem_size, self.total_stream_wem_size = _convert_missing_wem_sources(
+                    self.sources_to_convert, self.total_memory_wem_size, self.total_stream_wem_size, self.seen_wems)
+            self.result = (round(self.total_wav_size / 1024, 2), round(self.total_memory_wem_size / 1024, 2),
+                           round(self.total_stream_wem_size / 1024, 2), self.used_files)
+        return self.result
+
+
+# 统计任意对象列表的音频媒体资源总大小（MB）：SoundBank 按 media 包含展开，
+# Event 按播放目标展开，其余对象递归其子对象中的 AudioFileSource；wav 与 wem 均按文件路径去重
+def get_total_media_size(objects: list) -> tuple:
+    statistics = MediaSizeStatistics()
+    for obj in objects:
+        statistics.accumulate(obj)
+    return statistics.finish()
+
+
+# 传统方式获取Bank大小（KB 累加，供工程检查等按单个 Bank 调用）
 def get_bank_size(bank: WwiseObject, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float, used_files: list) -> tuple:
-    for inclusion in waapi_utils.get_bank_inclusions(bank):
-        if 'media' in inclusion['filter']:
-            inclusion_obj = waapi_utils.get_full_info_from_obj_id(inclusion['object'])
-            # Bank包含Events中的内容
-            if 'Events' in inclusion_obj.path:
-                total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
-                    get_event_media_size(inclusion_obj, total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files))
-            # Bank包含ActorMixerHierarchy中的内容
-            else:
-                total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
-                    get_object_media_size(inclusion_obj, total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files))
-    return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+    if bank.type != WwiseObjectType.SoundBank:
+        return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+    return _accumulate_media_size(bank, total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files, set(), set(), None, set())
 
-# 获取Events中的对象包含的所有音频文件的大小
-def get_event_media_size(obj: WwiseObject, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float, used_files: list) -> tuple:
-    events = waapi_utils.get_descendants_of_type(obj, WwiseObjectType.Event)
-    if len(events) > 0:
-        for event in events:
-            targets = event_utils.get_event_targets(event)
-            for target in targets:
-                total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
-                    get_object_media_size(target, total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files))
-    return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
 
-# 获取ActorMixerHierarchy中的对象包含的所有音频文件的大小
-def get_object_media_size(obj: WwiseObject, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float, used_files: list) -> tuple:
-    audio_sources = waapi_utils.get_descendants_of_type(obj, WwiseObjectType.AudioSource)
-    if len(audio_sources) > 0:
-        for audio_source in audio_sources:
-            wav_path = audio_source_utils.get_source_file_path(audio_source)
-            if not os.path.exists(wav_path) or wav_path in used_files:
-                continue
+# 递归累加对象子树内的媒体资源：SoundBank 按 media 包含展开、Event 按播放目标展开、
+# AudioFileSource 统计源文件大小，其余类型逐级下钻子对象
+def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float,
+                           used_files: list, seen_sources: set, seen_walked: set,
+                           sources_to_convert: list = None, seen_wems: set = None) -> tuple:
+    if not obj or not obj.id:
+        return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+    if seen_wems is None:
+        seen_wems = set()
+    if obj.type == WwiseObjectType.AudioSource:
+        if obj.id in seen_sources:
+            return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+        seen_sources.add(obj.id)
+        wav_path = audio_source_utils.get_source_file_path(obj)
+        # 部分层级（如 Music Track 下的源）读不到 sound: 前缀属性时退回原始属性
+        if not wav_path:
+            wav_path = waapi_utils.get_object_property(obj, 'originalWavFilePath')
+        if not os.path.exists(wav_path):
+            # 原始文件缺失时整条源跳过（无法确定其 wem 的归属）
+            return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+        # 同一 wav 被多个源引用时，原始大小只累加一次
+        if wav_path not in used_files:
             used_files.append(wav_path)
             wav_size = os.path.getsize(wav_path) / 1024
             total_wav_size += wav_size
-            print(f'{wav_path} has size of {wav_size}KB')
-            wem_path = waapi_utils.get_object_property(audio_source, 'convertedWemFilePath')
-            if os.path.exists(wem_path):
-                wem_size = os.path.getsize(wem_path) / 1024
-                is_streaming = waapi_utils.get_object_property(waapi_utils.get_parent_object(audio_source), 'IsStreamingEnabled')
-                if is_streaming:
-                    total_stream_wem_size += wem_size
-                else:
-                    total_memory_wem_size += wem_size
-                print(f'{wem_path} has size of {wem_size}KB')
+            Logger().debug(f'{wav_path} has size of {wav_size}KB')
+        wem_path = waapi_utils.get_object_property(obj, 'convertedWemFilePath')
+        if wem_path and os.path.exists(wem_path):
+            # 同一 wem 被多个源引用时，压缩大小只累加一次
+            if wem_path in seen_wems:
+                return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+            seen_wems.add(wem_path)
+            wem_size = os.path.getsize(wem_path) / 1024
+            is_streaming = waapi_utils.get_object_property(waapi_utils.get_parent_object(obj), 'IsStreamingEnabled')
+            if is_streaming:
+                total_stream_wem_size += wem_size
+            else:
+                total_memory_wem_size += wem_size
+            Logger().debug(f'{wem_path} has size of {wem_size}KB')
+        elif sources_to_convert is not None:
+            # 尚未转码的源先记录下来，遍历结束后统一调用 convert 尝试生成一次 wem
+            sources_to_convert.append(obj)
+        return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+    if obj.id in seen_walked:
+        return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+    seen_walked.add(obj.id)
+    if obj.type == WwiseObjectType.SoundBank:
+        for inclusion in waapi_utils.get_bank_inclusions(obj):
+            if 'media' not in inclusion['filter']:
+                continue
+            inclusion_obj = waapi_utils.get_full_info_from_obj_id(inclusion['object'])
+            total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
+                _accumulate_media_size(inclusion_obj, total_wav_size, total_memory_wem_size, total_stream_wem_size,
+                                       used_files, seen_sources, seen_walked, sources_to_convert, seen_wems))
+        return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+    if obj.type == WwiseObjectType.Event:
+        for target in event_utils.get_event_targets(obj):
+            total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
+                _accumulate_media_size(target, total_wav_size, total_memory_wem_size, total_stream_wem_size,
+                                       used_files, seen_sources, seen_walked, sources_to_convert, seen_wems))
+        return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+    for child in waapi_utils.get_child_objects(obj):
+        total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
+            _accumulate_media_size(child, total_wav_size, total_memory_wem_size, total_stream_wem_size,
+                                   used_files, seen_sources, seen_walked, sources_to_convert, seen_wems))
     return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+
+
+# 获取当前平台名称，作为与 convertedWemFilePath 一致的转码上下文
+def _get_current_platform_name() -> str:
+    platform_id = waapi_utils.get_project_info('currentPlatformId')
+    platform = waapi_utils.get_full_info_from_obj_id(platform_id) if platform_id else None
+    if platform:
+        return platform.name
+    # 取不到当前平台时退回工程的第一个平台
+    for item in waapi_utils.get_project_info('platforms'):
+        name = item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
+        if name:
+            return name
+    return None
+
+
+# 用 ak.wwise.core.audio.convert 为未转码的源生成一次 wem 后补充压缩大小（该接口需 Wwise 2024 及以上版本）
+def _convert_missing_wem_sources(sources: list, total_memory_wem_size: float, total_stream_wem_size: float, seen_wems: set) -> tuple:
+    if project_utils.get_project_version() < 2024:
+        Logger().warning(f'当前 Wwise 版本不支持WAAPI转码（需 2024 及以上），跳过 {len(sources)} 个未转码源的 wem 生成')
+        return total_memory_wem_size, total_stream_wem_size
+    platform_name = _get_current_platform_name()
+    if not platform_name:
+        Logger().warning('无法确定当前平台，跳过未转码源的 wem 生成')
+        return total_memory_wem_size, total_stream_wem_size
+    # 按源所属语言分组转码，保证每个源只按自己的语言生成
+    language_sources_map = {}
+    for source in sources:
+        language_sources_map.setdefault(localization_utils.get_sound_language(source), []).append(source)
+    languages = sorted(language_sources_map)
+    Logger().info(f'检测到 {len(sources)} 个源缺少 wem，尝试用 ak.wwise.core.audio.convert 生成一次（平台: {platform_name}，语言: {", ".join(languages)}）')
+    for language in languages:
+        result = waapi_utils.convert_audio_objects(language_sources_map[language], [platform_name], [language])
+        for error in (result or {}).get('errors') or []:
+            Logger().error(str(error))
+    # 生成成功后重新读取每个源的 wem 路径并累加压缩大小
+    for source in sources:
+        wem_path = waapi_utils.get_object_property(source, 'convertedWemFilePath')
+        if not wem_path or not os.path.exists(wem_path):
+            continue
+        if wem_path in seen_wems:
+            continue
+        seen_wems.add(wem_path)
+        wem_size = os.path.getsize(wem_path) / 1024
+        is_streaming = waapi_utils.get_object_property(waapi_utils.get_parent_object(source), 'IsStreamingEnabled')
+        if is_streaming:
+            total_stream_wem_size += wem_size
+        else:
+            total_memory_wem_size += wem_size
+        Logger().debug(f'{wem_path} has size of {wem_size}KB')
+    return total_memory_wem_size, total_stream_wem_size
+
 
 # 把一批对象添加到的bank中，使用统一的inclusion
 def add_objects_to_bank(bank: WwiseObject, objects: list, inclusion_type: list) -> bool:

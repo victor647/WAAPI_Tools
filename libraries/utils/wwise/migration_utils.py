@@ -200,6 +200,3 @@ def import_fmod_presets():
                     waapi_utils.set_object_property(rtpc, 'BindToBuiltInParam', 1)
                 print(f'RTPC created: {preset_name} ({min_value}-{max_value})')
 
-# 从工程截图导入
-def import_from_screenshot():
-    pass

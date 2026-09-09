@@ -97,7 +97,8 @@ def get_event_targets(event: WwiseObject) -> list:
             print(f"Event [{event.name}] has an action with missing target!")
             continue
         target = waapi_utils.get_full_info_from_obj_id(target['id'])
-        targets.append(target)
+        if target and target.is_valid:
+            targets.append(target)
     return targets
 
 # 改变Action的目标对象

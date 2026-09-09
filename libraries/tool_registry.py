@@ -17,6 +17,9 @@ from libraries.wwise_object import WwiseObject, WwiseObjectType
 AUDIO_SOURCE_LIST_LIMIT = 300
 SIZE_STAT_OBJECT_LIMIT = 100
 INFO_OBJECT_LIMIT = 50
+CHILD_LIST_LIMIT = 500
+REF_LIST_LIMIT = 500
+DESCENDANT_LIST_LIMIT = 1000
 
 
 @dataclass(frozen=True)
@@ -192,6 +195,103 @@ def _handler_calculate_audio_source_size(args: dict) -> dict:
     }
 
 
+def _handler_get_children(args: dict) -> dict:
+    # 列出对象子级/后代（含 id/name/type/path），用于“层级里有什么”类查询
+    ids = _require_object_ids(args)
+    recursive = bool(args.get("recursive", True))
+    items = []
+    errors = []
+    for object_id in ids:
+        try:
+            obj = WwiseObject.from_id(object_id)
+            children = waapi_utils.get_child_objects(obj, include_descendants=recursive)
+            for child in children:
+                if len(items) >= CHILD_LIST_LIMIT:
+                    break
+                items.append({
+                    "parent": obj.name,
+                    "id": child.id,
+                    "name": child.name,
+                    "type": child.type.value,
+                    "path": child.path,
+                })
+        except Exception as e:
+            errors.append(f"{object_id}: {e}")
+    return {"items": items, "recursive": recursive, "errors": errors}
+
+
+def _handler_list_descendants(args: dict) -> dict:
+    # 一次性递归取全部后代（用于“在表格对象下查找/统计”类任务），可指定类型过滤
+    ids = _require_object_ids(args)
+    type_filter = (args.get("type_filter") or "").strip()
+    items = []
+    errors = []
+    for object_id in ids:
+        try:
+            obj = WwiseObject.from_id(object_id)
+            children = waapi_utils.get_child_objects(obj, include_descendants=True)
+            for child in children:
+                if type_filter and child.type.value != type_filter:
+                    continue
+                if len(items) >= DESCENDANT_LIST_LIMIT:
+                    break
+                items.append({
+                    "root": obj.name,
+                    "id": child.id,
+                    "name": child.name,
+                    "type": child.type.value,
+                    "path": child.path,
+                })
+        except Exception as e:
+            errors.append(f"{object_id}: {e}")
+    return {"items": items, "truncated": len(items) >= DESCENDANT_LIST_LIMIT, "errors": errors}
+
+
+def _handler_get_references(args: dict) -> dict:
+    # 查询“引用该对象”的对象；Wwise 中 Event 通过 EventAction(Action) 引用目标
+    ids = _require_object_ids(args)
+    objects = []
+    errors = []
+    for object_id in ids:
+        try:
+            obj = WwiseObject.from_id(object_id)
+            references = []
+            for ref in waapi_utils.get_object_references(obj):
+                if len(references) >= REF_LIST_LIMIT:
+                    break
+                references.append({
+                    "id": ref.id,
+                    "name": ref.name,
+                    "type": ref.type.value,
+                    "path": ref.path,
+                })
+            objects.append({"object": obj.name, "references": references})
+        except Exception as e:
+            errors.append(f"{object_id}: {e}")
+    return {"objects": objects, "errors": errors}
+
+
+def _handler_check_event_references(args: dict) -> dict:
+    # 按工程口径判断“是否被 Event 引用”：引用中含 EventAction(Action) 即视为被 Event 引用
+    ids = _require_object_ids(args)
+    objects = []
+    errors = []
+    for object_id in ids:
+        try:
+            obj = WwiseObject.from_id(object_id)
+            objects.append({
+                "object": obj.name,
+                "referenced_by_event": event_utils.has_event_reference(obj),
+            })
+        except Exception as e:
+            errors.append(f"{object_id}: {e}")
+    return {
+        "objects": objects,
+        "referenced_by_event_count": sum(1 for item in objects if item["referenced_by_event"]),
+        "errors": errors,
+    }
+
+
 register_tool(
     "get_objects_info",
     "读取表格中对象的详细信息（备注、启用状态等），一次最多 50 个对象",
@@ -212,3 +312,56 @@ register_tool(
     _object_ids_parameters("要统计音频资源大小的对象 id"),
     _handler_calculate_audio_source_size,
 )
+
+register_tool(
+    "get_children",
+    "列出对象的子级或全部后代（返回 id/name/type/path）。recursive=True（默认）一次性取全部后代；recursive=False 只取直接子级。需要全量递归查找时优先用 list_descendants",
+    {
+        "type": "object",
+        "properties": {
+            "object_ids": {
+                "type": "array",
+                "items": {"type": "string", "description": "Wwise 对象 GUID"},
+                "description": "要展开层级的对象 id",
+            },
+            "recursive": {"type": "boolean", "default": True, "description": "True 取全部后代，False 只取直接子级"},
+        },
+        "required": ["object_ids"],
+    },
+    _handler_get_children,
+)
+
+register_tool(
+    "list_descendants",
+    "一次性递归列出对象下的全部后代（含孙级…），可选 type_filter 按类型过滤（如 Sound/Event/AudioFileSource）。用于「在对象下查找/统计所有 X」类任务，不要再逐层 get_children",
+    {
+        "type": "object",
+        "properties": {
+            "object_ids": {
+                "type": "array",
+                "items": {"type": "string", "description": "Wwise 对象 GUID"},
+                "description": "要展开的根对象 id",
+            },
+            "type_filter": {"type": "string", "description": "可选：只返回该类型的后代，留空返回全部"},
+        },
+        "required": ["object_ids"],
+    },
+    _handler_list_descendants,
+)
+
+register_tool(
+    "get_references",
+    "查询「引用该对象」的所有对象（含类型）。用户问「被谁引用 / 谁在用 / 被 Event、SoundBank 引用吗」时用；注意 Wwise 中 Event 是通过 EventAction(Action) 引用目标的",
+    _object_ids_parameters("要查询引用的对象 id"),
+    _handler_get_references,
+)
+
+register_tool(
+    "check_event_references",
+    "按工程口径统计对象是否被 Event 引用（引用列表含 EventAction/Action 即算），返回每个对象结果与合计数量",
+    _object_ids_parameters("要检查的对象 id"),
+    _handler_check_event_references,
+)
+
+# MCP legacy 工具迁移目录：注册后 AI 助手与 MCP 共用同一份工具定义
+from libraries import wwise_tool_catalog as _wwise_tool_catalog  # noqa: E402, F401

@@ -167,7 +167,7 @@ class WwiseTableRowData(TableRowData):
     # 读取衰减
     def read_attenuation(self):
         setting = self.design_info.attenuation
-        if setting.is_valid:
+        if setting and setting.is_valid:
             self[ATTENUATION_COL] = setting.name
         else:
             self[ATTENUATION_COL] = "无"
@@ -183,7 +183,7 @@ class WwiseTableRowData(TableRowData):
     # 读取最大发声数
     def read_playback_limit(self):
         limit = self.design_info.playback_limit
-        if limit == 0:
+        if not limit:
             self[PLAYBACK_LIMIT_COL] = "不限"
         else:
             self[PLAYBACK_LIMIT_COL] = limit
@@ -201,8 +201,13 @@ class WwiseTableRowData(TableRowData):
         elif target_count > 1:
             self[TARGET_TYPE_COL] = self[TARGET_PATH_COL] = f"共{target_count}个对象"
         else:
-            self[TARGET_TYPE_COL] = targets[0].type.name
-            self.set_path_cell(TARGET_PATH_COL, targets[0].path)
+            target = targets[0]
+            if target and target.is_valid:
+                self[TARGET_TYPE_COL] = target.type.name
+                self.set_path_cell(TARGET_PATH_COL, target.path)
+            else:
+                self[TARGET_TYPE_COL] = "对象已失效"
+                self.set_cell_severity(TARGET_TYPE_COL, CellSeverity.Warning)
 
     # 读取事件源文件路径
     def read_wwise_original_path(self):

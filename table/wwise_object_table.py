@@ -159,7 +159,10 @@ class WwiseObjectTable(TableFacade):
         )
 
     def read_common_data(self, row_data: WwiseTableRowData):
-        row_data.read_common_data(self._inclusion_cache, read_optional=not self.light_mode)
+        try:
+            row_data.read_common_data(self._inclusion_cache, read_optional=not self.light_mode)
+        except Exception as e:
+            Logger().error(f"读取行基础数据失败：{row_data.name} ({e})")
 
     def filter_by_type(self, obj_type: WwiseObjectType | None) -> int:
         if not self.table_view:
@@ -196,10 +199,13 @@ class WwiseObjectTable(TableFacade):
     def read_data_by_display_mode(self, row_data: WwiseTableRowData):
         if self.light_mode:
             return
-        if self.display_mode == WwiseTableDisplayMode.Design:
-            row_data.read_design_info()
-        elif self.display_mode == WwiseTableDisplayMode.Integration:
-            row_data.read_integration_info()
+        try:
+            if self.display_mode == WwiseTableDisplayMode.Design:
+                row_data.read_design_info()
+            elif self.display_mode == WwiseTableDisplayMode.Integration:
+                row_data.read_integration_info()
+        except Exception as e:
+            Logger().error(f"读取 {row_data.type} [{row_data.name}] 附加属性失败：{e}")
 
     # endregion ReadData
 

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -63,6 +65,10 @@ _FALLBACK_TEMPLATE = (
 
 class AiToolError(ValueError):
     pass
+
+
+class AIAgentStopped(RuntimeError):
+    """agent loop 被用户中止（不是代理错误）。"""
 
 
 @dataclass
@@ -476,7 +482,16 @@ def build_tool_schemas() -> list[dict]:
             _object_ids_schema("要在 Wwise 中选中的对象 id"),
         ),
     ])
-    return schemas
+    # 注册表已是唯一权威；本地遗留工具仅保留注册表未收录的名字，避免同名重复下发
+    seen: set[str] = set()
+    unique_schemas = []
+    for schema in schemas:
+        name = schema["function"]["name"]
+        if name in seen:
+            continue
+        seen.add(name)
+        unique_schemas.append(schema)
+    return unique_schemas
 
 
 def load_prompt_template() -> str:
@@ -514,6 +529,12 @@ def build_system_prompt(objects: list[WwiseObject], max_context_objects: int = 3
 def clean_display_content(content: str) -> str:
     # 去掉模型内部推理块，只保留面向用户的最终回答
     return _THINK_BLOCK_RE.sub("", content or "").strip()
+
+
+def _extract_think(content: str) -> str:
+    # 提取模型思考块（部分模型写在 <think>…</think> 里），用于日志展示
+    match = re.search(r"<think>(.*?)</think>", content or "", re.DOTALL)
+    return match.group(1).strip() if match else ""
 
 
 def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> str:
@@ -557,6 +578,7 @@ def run_assistant(
     objects: list[WwiseObject],
     *,
     on_log: Callable[[str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> AIAssistantResult:
     """与模型对话直到得到最终回复；期间自动执行模型请求的工具调用。"""
     proxy_url = user_config.get_ai_proxy_url()
@@ -577,20 +599,50 @@ def run_assistant(
         if on_log:
             on_log(text)
 
+    def raise_if_stopped():
+        if should_stop and should_stop():
+            raise AIAgentStopped("已按用户要求中止 AI 处理")
+
+    def chat_interruptible():
+        # HTTP 请求在守护线程中执行，主循环可随时因中止请求退出，不等待网络超时
+        holder: dict = {}
+        stop_poll = 0.1
+
+        def request():
+            try:
+                holder["data"] = ai_utils.chat_completion(
+                    proxy_url,
+                    messages,
+                    tools=schemas,
+                    model=model,
+                    api_key=api_key,
+                )
+            except Exception as e:
+                holder["error"] = e
+
+        thread = threading.Thread(target=request, daemon=True)
+        thread.start()
+        while thread.is_alive():
+            raise_if_stopped()
+            time.sleep(stop_poll)
+        if "error" in holder:
+            raise holder["error"]
+        return holder.get("data")
+
     log(f"已加载 AI 提示词模板：{PROMPT_FILE_NAME}（{len(system_prompt)} 字符）")
     log(f"已发送请求到 AI 代理 {proxy_url}，表格对象 {len(objects)} 个")
     for turn in range(1, max_turns + 1):
-        data = ai_utils.chat_completion(
-            proxy_url,
-            messages,
-            tools=schemas,
-            model=model,
-            api_key=api_key,
-        )
+        raise_if_stopped()
+        data = chat_interruptible()
         try:
             message = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as e:
             raise ai_utils.AIChatError(f"AI 代理响应缺少 choices/message 字段：{str(data)[:300]}") from e
+
+        assistant_content = message.get("content") or ""
+        think_text = _extract_think(assistant_content)
+        if think_text:
+            log(f"AI 思考（第 {turn} 轮）：{think_text}")
 
         tool_calls = message.get("tool_calls")
         if tool_calls:
@@ -598,7 +650,7 @@ def run_assistant(
             result.tool_call_count += len(tool_calls)
             assistant_message = {
                 "role": "assistant",
-                "content": message.get("content") or "",
+                "content": assistant_content,
                 "tool_calls": tool_calls,
             }
             messages.append(assistant_message)
@@ -609,16 +661,26 @@ def run_assistant(
                 tool_result = _execute_tool_call(name, arguments, result.executed_tools)
                 if _is_mutating_tool(name):
                     result.mutated = True
-                log(f"第 {turn} 轮调用工具 {name}")
+                log(f"第 {turn} 轮调用工具 {name}（返回：{' '.join(tool_result.split())[:120]}）")
                 call_id = call.get("id") or f"tool_call_{turn}_{index}"
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
                     "content": tool_result,
                 })
+            # agent loop：提示模型根据结果继续推进，直到目标完成
+            messages.append({
+                "role": "user",
+                "content": (
+                    "请根据上面各工具的结果继续推进这个目标：如果还有需要查询/处理的步骤就继续调用工具，"
+                    "一次可以并行请求多个工具；只有确认所有步骤都已完成、结论已核对后，才给出面向用户的中文最终总结。"
+                ),
+            })
+            log(f"第 {turn} 轮工具执行完成，继续推进…")
             continue
 
-        result.content = (message.get("content") or "").strip()
+        raise_if_stopped()
+        result.content = assistant_content.strip()
         result.turn_count = turn
         log(f"对话完成（共 {result.turn_count} 轮）")
         return result

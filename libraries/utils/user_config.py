@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
         # 工具执行前是否自动展开可见对象的子级来筛选目标类型
         "auto_fetch_children": True,
     },
+    "window_settings": {},
     "version_control": {
         "mode": "p4",
     },
@@ -36,6 +37,15 @@ DEFAULT_CONFIG = {
         "max_context_objects": 300,
         # 单次对话允许的最大往返轮数（防止模型陷入工具循环）
         "max_turns": 20,
+    },
+    "advanced_filter": {
+        # 高级筛选窗口各选项的持久化状态
+        "case_sensitive": False,
+        "only_included": False,
+        # Event 引用筛选：all / with_ref / without_ref
+        "event_filter": "all",
+        # 语言筛选：all / active
+        "language_filter": "all",
     },
 }
 
@@ -115,6 +125,22 @@ def get_tool_auto_fetch_children() -> bool:
 def set_tool_auto_fetch_children(enabled: bool) -> None:
     config = load_config()
     config.setdefault("tools", {})["auto_fetch_children"] = bool(enabled)
+    _write_config(config)
+
+
+# 读取某个窗口的持久化设置（不存在时返回空字典）
+def get_window_settings(window_key: str) -> dict:
+    return dict(load_config().get("window_settings", {}).get(window_key, {}))
+
+
+# 保存某个窗口的持久化设置（window_settings.<window_key>）
+def set_window_settings(window_key: str, values: dict) -> None:
+    config = load_config()
+    config.setdefault("window_settings", {})[window_key] = dict(values)
+    _write_config(config)
+
+
+def _write_config(config: dict) -> None:
     try:
         with open(get_config_path(), "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
@@ -180,3 +206,25 @@ def get_ai_max_context_objects() -> int:
 
 def get_ai_max_turns() -> int:
     return load_config()["ai"].get("max_turns", DEFAULT_CONFIG["ai"]["max_turns"])
+
+
+def get_advanced_filter_settings() -> dict:
+    defaults = DEFAULT_CONFIG["advanced_filter"]
+    stored = load_config().get("advanced_filter")
+    if not isinstance(stored, dict):
+        stored = {}
+    return {key: stored.get(key, defaults[key]) for key in defaults}
+
+
+# 把高级筛选窗口的选项写回 user_config.json（下次打开窗口时沿用）
+def save_advanced_filter_settings(settings: dict) -> None:
+    config = load_config()
+    section = config.setdefault("advanced_filter", {})
+    allowed = set(DEFAULT_CONFIG["advanced_filter"])
+    section.update({key: value for key, value in settings.items() if key in allowed})
+    path = get_config_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        Logger().error(f"写入高级筛选配置失败：{path} ({e})")

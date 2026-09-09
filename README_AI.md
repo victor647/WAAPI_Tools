@@ -48,16 +48,19 @@
 - `libraries/tool_registry.py`：中立注册表（不得 import fastmcp / PySide6 / Qt /
   `waapi_mcp`），每项包含 `name / description / parameters(JSON schema) / handler /
   mutating`，handler 返回 JSON 兼容值。
+- `libraries/wwise_tool_catalog.py`：MCP legacy 工具迁移后的中立实现（98 个，自动生成），
+  随 `tool_registry` 一并注册；删除工具/改参数直接在注册表与其 schema 上维护。
 - AI 助手：`build_tool_schemas()` 先取注册表工具，再拼本地过渡工具；执行时优先走
-  `tool_registry.execute_tool()`，结构化结果统一转文本回传模型。
+  `tool_registry.execute_tool()`，结构化结果统一转文本回传模型。因此 **MCP 能用的工具
+  AI 助手全部能用**（注册表 104 个 + 少量 AI 专用批量封装）。
 - MCP：`waapi_mcp/registry_mcp_tools.py` 按注册表批量生成 `@mcp.tool`（同源同名），
   在 `waapi_mcp/server.py` 中随服务启动注册。
 - 手动工具（GUI 菜单/表格操作）：仍直接调用 `*_utils`，注册表 handler 内部复用的就是
   同一批封装，无需改动。
 
-过渡期说明：AI 助手当前已把 `get_objects_info` / `get_audio_sources` /
-`calculate_audio_source_size` 迁入注册表；其余 14 个工具仍是 `libraries/ai_assistant.py`
-里的本地定义，后续按同样方式逐个迁移（迁移后 MCP 侧同步获得）。
+过渡期说明：旧的两份手写 `waapi_mcp/utils_mcp_tools.py` / `waapi_mcp_tools.py` 已删除并
+迁入注册表；AI 侧仅剩少量注册表未覆盖的批量封装（如 `rename_case`、`delete_objects`）保留在
+`libraries/ai_assistant.py` 本地，不参与 MCP。
 
 下表面向开发者，列明每个工具最终复用了哪个 `waapi_utils` / `common_utils` /
 `event_utils` 函数：
@@ -67,6 +70,10 @@
 | 查一下这些对象的备注 / 是否启用 | `get_objects_info` | `WwiseObject.from_id` → `waapi_utils.get_full_info_from_obj_id`；`common_utils.get_object_notes`；`common_utils.is_object_included` |
 | 查看对象下有哪些音频源 / 源文件路径 | `get_audio_sources` | `waapi_utils.get_descendants_of_type(..., AudioSource)`（Event 用 `event_utils.get_event_targets` 展开）+ `audio_source_utils.get_source_file_path` |
 | 统计这些对象的音频资源总大小 | `calculate_audio_source_size` | `waapi_utils.get_descendants_of_type(..., AudioSource)`（Event 展开播放目标）+ `audio_source_utils.get_source_file_path` + `os.path.getsize`（按路径去重） |
+| 列出对象下有哪些子级 / 后代 | `get_children` | `waapi_utils.get_child_objects(..., include_descendants)` |
+| 一次性递归查找对象下全部后代（可按类型过滤） | `list_descendants` | `waapi_utils.get_child_objects(..., include_descendants=True)` + 本地按 type 过滤 |
+| 查询哪些对象引用它 / 被谁使用 | `get_references` | `waapi_utils.get_object_references` |
+| 统计其中有多少被 Event 引用 | `check_event_references` | `event_utils.has_event_reference`（引用含 EventAction 即算） |
 | 全部改成小写 / 大写 / 首字母大写 | `rename_case` | `common_utils.rename_to_lower_case` / `rename_to_upper_case` / `rename_to_title_case`（内部走 `waapi_utils.rename_object`） |
 | 前缀换成缩写 / 按工程缩写重命名 | `rename_with_acronym` | `common_utils.rename_with_acronym` |
 | 把这个改名为 xxx | `rename_object` | `waapi_utils.rename_object` |

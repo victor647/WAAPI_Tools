@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ProjectSettings</class>
+ <widget class="QDialog" name="ProjectSettingsWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>820</width>
+    <height>640</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>设置</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="tabNaming">
+      <attribute name="title">
+       <string>命名与颜色规范</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabNamingLayout">
+       <item>
+        <widget class="QLabel" name="lblCategoryHeader">
+         <property name="text">
+          <string>分类命名与颜色（分类名 → 缩写 / Wwise 颜色值）</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="MapEdit" name="categoryMap">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>200</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblContainerHeader">
+         <property name="text">
+          <string>容器类型后缀（容器类型 → 名称后缀）</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="MapEdit" name="containerSuffix">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>150</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="cbxFullNameInSound">
+         <property name="text">
+          <string>Sound 节点使用完整名称</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="cbxPlayPrefixInEvent">
+         <property name="text">
+          <string>Event 以 Play_ 开头</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabHabits">
+      <attribute name="title">
+       <string>工程习惯</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabHabitsLayout">
+       <item>
+        <layout class="QHBoxLayout" name="suffixRow">
+         <item>
+          <widget class="QLabel" name="lblSuffixLabel">
+           <property name="text">
+            <string>1P/2P/3P 后缀</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="suffixSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QLabel" name="lblRole1P">
+           <property name="text">
+            <string>1P</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="iptNetRole1P"/>
+         </item>
+         <item>
+          <widget class="QLabel" name="lblRole2P">
+           <property name="text">
+            <string>2P</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="iptNetRole2P"/>
+         </item>
+         <item>
+          <widget class="QLabel" name="lblRole3P">
+           <property name="text">
+            <string>3P</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="iptNetRole3P"/>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblGroupHeader">
+         <property name="text">
+          <string>NetRole SwitchGroup 名称</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="iptNetRoleGroup"/>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblValuesHeader">
+         <property name="text">
+          <string>1P/2P/3P 对应的 Switch 值</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="MapEdit" name="netRoleValues">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>150</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblLanguagesHeader">
+         <property name="text">
+          <string>已接入语言（每行一个）</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="pteLanguages">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>120</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabTools">
+      <attribute name="title">
+       <string>工具行为</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabToolsLayout">
+       <item>
+        <widget class="QCheckBox" name="cbxAutoFetchChildren">
+         <property name="text">
+          <string>工具执行前自动获取子对象</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="toolsSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttonRow">
+     <item>
+      <spacer name="buttonSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnSave">
+       <property name="text">
+        <string>保存</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnCancel">
+       <property name="text">
+        <string>取消</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MapEdit</class>
+   <extends>QWidget</extends>
+   <header>libraries.widgets.map_edit_widget</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

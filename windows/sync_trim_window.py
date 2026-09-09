@@ -17,9 +17,9 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
         self.setupUi(self)
         self.__sources = list(sources)
         self.setup_triggers()
-        self.tblTrimInfo.setColumnCount(9)
+        self.tblTrimInfo.setColumnCount(8)
         self.tblTrimInfo.setHorizontalHeaderLabels(
-            ['名称', '源文件路径', '路径', 'TrimBegin', 'TrimEnd', 'FadeIn', 'FadeOut', 'LoopBegin', 'LoopEnd']
+            ['源文件路径', 'AudioSource路径', 'TrimBegin', 'TrimEnd', 'FadeIn', 'FadeOut', 'LoopBegin', 'LoopEnd']
         )
         self.lblHint.setText(f'AudioSource 裁剪信息（共 {len(self.__sources)} 个）')
         self.refresh_sources()
@@ -33,8 +33,7 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
     def refresh_sources(self):
         self.tblTrimInfo.setRowCount(len(self.__sources))
         for index, source in enumerate(self.__sources):
-            self.tblTrimInfo.setItem(index, 0, QTableWidgetItem(source.name))
-            self.tblTrimInfo.setItem(index, 2, QTableWidgetItem(WwiseTableRowData.get_path_compact_text(source.path)))
+            self.tblTrimInfo.setItem(index, 1, QTableWidgetItem(WwiseTableRowData.get_path_compact_text(source.path)))
         batch_processor.create_async(
             self.__sources,
             lambda index, source: self.fill_source_info(index, source),
@@ -45,11 +44,11 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
     # 异步读取单个对象的源文件路径与裁剪信息
     def fill_source_info(self, index: int, source: WwiseObject):
         relative_path = waapi_utils.get_object_property(source, 'originalRelativeFilePath') or ''
-        self.tblTrimInfo.setItem(index, 1, QTableWidgetItem(relative_path))
+        self.tblTrimInfo.setItem(index, 0, QTableWidgetItem(relative_path))
         info = audio_source_utils.get_source_edit_info(source)
         if info is None:
             return
-        for column, value in enumerate(info, start=3):
+        for column, value in enumerate(info, start=2):
             self.tblTrimInfo.setItem(index, column, QTableWidgetItem(self._format_trim_value(value)))
 
     # 0 或 -0.001 等价的数值视为“无”

@@ -16,6 +16,10 @@ class ExportObjectListWindow(QDialog, Ui_ExportObjectList):
             self.layCheckboxes.addWidget(checkbox)
             self._checkboxes.append(checkbox)
         self.layCheckboxes.addStretch()
+        self.setup_triggers()
+
+    # 绑定按钮信号槽
+    def setup_triggers(self):
         self.btnSelectAll.clicked.connect(self.select_all)
         self.btnSelectNone.clicked.connect(self.select_none)
         self.btnExport.clicked.connect(self.accept)

@@ -39,6 +39,13 @@
 - When adding Wwise object operations, use project-provided constants, `WwiseObjectType`, generated IDs, and existing config helpers instead of duplicating string lookup logic.
 - Preserve existing Wwise version checks through `libraries/utils/wwise/project_utils.py` when behavior differs across Wwise versions.
 
+## UI 窗口开发
+
+- 新增或修改 `windows/*_window.py` 时，界面布局必须先写在 `ui/<Name>.ui` 里，再用 pyuic 生成 `ui/<Name>_ui.py`（`pyside6-uic ui/<Name>.ui -o ui/<Name>_ui.py`），窗口类继承 `Ui_*` 并调用 `setupUi`；不要在窗口逻辑代码中手工添加控件/布局/菜单。调整已有窗口的布局同样只改 `.ui` 并重新生成，不要直接在逻辑代码里改 UI。
+- 所有按钮 / action / 控件的信号绑定统一放在 `setup_triggers` 方法中（由 `__init__` 调用），不要在 `__init__` 或其它方法里散落绑定代码。
+- 详细流程与约定见 `.agents/rules/ui-window-workflow.md`。
+- `.ui` 控件 objectName 使用类型缩写前缀（`act`/`btn`/`cbb`/`cbx`/`lbl`/`rdo`/`ipt`/`pte`/`txe`/`spb`/`tbl`/`grp`/`mnu` 等，完整表见 workflow 文件），如 `btnSave`、`cbxTurboMode`。
+
 ## Logging
 
 - Use `Logger()` from `libraries.utils.log_utils`.
@@ -53,4 +60,5 @@
 
 - Durable repository instructions belong in this `AGENTS.md`; Codex reads it automatically at the start of each run or new session.
 - Reusable task workflows belong under `.agents/skills/<skill-name>/SKILL.md`; Codex can invoke them explicitly or when the task matches the skill description.
+- Additional repository rules live under `.agents/rules/*.md`（如 UI 窗口开发流程）；Codex 应在涉及相关代码时遵循其中约定。
 - Do not use `.codex/rules/*.mdc` for coding style. Codex `rules/` files are command approval policy files, not Cursor-style code instruction files.

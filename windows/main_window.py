@@ -1,13 +1,15 @@
 from collections.abc import Callable
+import threading
 
 import clipboard
 import webbrowser
 
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtGui import QAction, QTextCursor
+from PySide6.QtGui import QTextCursor
 
 import globals.global_variables as gv
 from data import project_conventions
+from data.action_help import ACTION_HELP
 from globals.version import get_software_version
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_item_model import INCLUSION_COL
@@ -18,15 +20,16 @@ from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_object_table_gui import WwiseTableImpl
 from table.wwise_table_headers import CHECK_BOX_COL, COMMON_HEADERS, ENABLE_COL, TABLE_DISPLAY_MODE_LABELS, PATH_COL
 from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSilenceTrimWindow
+from windows.advanced_filter_window import AdvancedFilterWindow as AdvancedFilterWindow
 from windows.sync_trim_window import SyncTrimWindow as SyncTrimWindow
 from windows.table_rename_window import TableRenamer as TableRenamer
 from windows.template_replace_window import TemplateReplacer as TemplateReplacer
 from windows.bank_assignment_window import BankAssignmentMatrix as BankAssignmentMatrix
 from windows.project_validation_window import ProjectValidation as ProjectValidation
-from windows.unity_asset_manager_window import UnityAssetManager as UnityAssetManager
 from windows.work_unit_import_window import WorkUnitImporter as WorkUnitImporter
+from windows.project_settings_window import ProjectSettingsWindow as ProjectSettingsWindow
 from waapi import CannotConnectToWaapiException
-from PySide6.QtWidgets import QDialog, QMainWindow, QStyle, QTableWidgetItem, QToolButton
+from PySide6.QtWidgets import QDialog, QMainWindow, QMenu, QTableWidgetItem
 from ui.MainWindow_ui import Ui_MainWindow
 from windows.export_object_list_window import ExportObjectListWindow as ExportObjectListWindow
 from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_utils, soundbank_utils, \
@@ -56,6 +59,7 @@ class AiChatWorker(QThread):
     log_signal = Signal(str)
     finished_signal = Signal(str)
     failed_signal = Signal(str)
+    stopped_signal = Signal(str)
     # 参数一：仍有效的对象列表；参数二：发送时可见对象的原始 id 列表
     objects_refreshed_signal = Signal(list, list)
 
@@ -63,16 +67,28 @@ class AiChatWorker(QThread):
         super().__init__(parent)
         self._prompt = prompt
         self._objects = objects
+        self._stop_event = threading.Event()
+
+    def stop_requested(self):
+        # 请求中止：agent loop 会在每轮/每次网络请求等待期间响应
+        self._stop_event.set()
 
     def run(self):
         try:
-            from libraries.ai_assistant import run_assistant
+            from libraries.ai_assistant import AIAgentStopped, run_assistant
 
-            result = run_assistant(self._prompt, self._objects, on_log=self.log_signal.emit)
+            result = run_assistant(
+                self._prompt,
+                self._objects,
+                on_log=self.log_signal.emit,
+                should_stop=self._stop_event.is_set,
+            )
             if result.mutated:
                 refreshed = self._resolve_objects_after_ai()
                 self.objects_refreshed_signal.emit(refreshed, [obj.id for obj in self._objects])
             self.finished_signal.emit(result.content)
+        except AIAgentStopped:
+            self.stopped_signal.emit("已按用户要求中止 AI 处理")
         except Exception as e:
             self.failed_signal.emit(str(e))
 
@@ -111,20 +127,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._object_history: list[tuple] = []
         self._history_index: int = -1
         self._restoring_history: bool = False
+        self.__eventFilterBase = None
+        self.__languageFilterBase = None
         self._full_mode_origin: list[WwiseObject] | None = None
         self._full_mode_entry_ids: tuple | None = None
         self._ai_worker = None
         self._ai_model_worker = None
-        self._setup_filter_help_button()
+        # 恢复上次保存的高级筛选复选框设置，使视图筛选在启动后立即生效
+        advanced_settings = user_config.get_advanced_filter_settings()
+        self.cbxCaseSensitive.setChecked(advanced_settings["case_sensitive"])
+        self.cbxOnlyIncludedEnabled.setChecked(advanced_settings["only_included"])
         self.setup_triggers()
+        self._setup_action_help()
         self._setup_ai_assistant()
         self.check_wwise_connection()
         self._update_history_buttons()
 
+    # 给菜单项写入使用说明：悬停显示气泡（tooltip），同时状态栏显示（statusTip）
+    def _setup_action_help(self):
+        for menu in self.menubar.findChildren(QMenu):
+            menu.setToolTipsVisible(True)
+        for menu in self.menubar.findChildren(QMenu):
+            for action in menu.actions():
+                if action.isSeparator():
+                    continue
+                text = ACTION_HELP.get(action.objectName())
+                if not text:
+                    continue
+                action.setToolTip(text)
+                action.setStatusTip(" ".join(text.split()))
+
     # 绑定底部 AI 助手输入栏的信号槽
     def _setup_ai_assistant(self):
-        self.btnAiSend.clicked.connect(self._on_ai_send)
-        self.ledAiPrompt.returnPressed.connect(self._on_ai_send)
         # 状态圆点：初始为未确认（红），模型列表拉取成功后转绿
         self._set_ai_proxy_dot(False)
         self.cbbAiModel.clear()
@@ -138,6 +172,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         )
         self._ai_model_worker.models_loaded.connect(self._on_ai_models_loaded)
         self._ai_model_worker.start()
+
+    # 把下拉框中当前模型写回 user_config.json（下次启动沿用）
+    def _persist_ai_model(self):
+        model = self.cbbAiModel.currentText().strip()
+        if model and model != user_config.get_ai_model():
+            user_config.save_ai_model(model)
 
     # AI 助手 label 右侧的连接状态圆点：绿=代理可达，红=未连接/拉取失败
     def _set_ai_proxy_dot(self, connected: bool):
@@ -176,10 +216,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 发送/处理期间禁用发送按钮，避免重复触发
     def _set_ai_busy(self, busy: bool):
         self.btnAiSend.setEnabled(not busy)
+        self.btnAiStop.setEnabled(busy)
         self.ledAiPrompt.setPlaceholderText(
             "AI 正在处理中，请稍候…" if busy
             else "输入指令让 AI 处理表格中的对象，例如：把列表里所有 Sound 改为全小写命名（Enter 发送）"
         )
+
+    # 点击「停止」：请求后台 agent loop 尽快中止
+    def _on_ai_stop(self):
+        if not self._ai_worker or not self._ai_worker.isRunning():
+            return
+        Logger().info("正在中止 AI 处理…")
+        self._ai_worker.stop_requested()
 
     # 读取输入并启动后台 AI 对话线程
     def _on_ai_send(self):
@@ -197,7 +245,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not model:
             Logger().warning("请先选择或输入 AI 模型（输入框左侧的下拉框）")
             return
-        user_config.save_ai_model(model)
+        self._persist_ai_model()
         Logger().query(f"AI 指令：{prompt}（共 {len(objects)} 个对象）")
         self.ledAiPrompt.clear()
         self._set_ai_busy(True)
@@ -206,6 +254,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         worker.objects_refreshed_signal.connect(self._on_ai_objects_refreshed)
         worker.finished_signal.connect(self._on_ai_finished)
         worker.failed_signal.connect(self._on_ai_failed)
+        worker.stopped_signal.connect(self._on_ai_stopped)
         self._ai_worker = worker
         worker.start()
 
@@ -224,6 +273,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._set_ai_busy(False)
         self._set_ai_proxy_dot(False)
         Logger().error(f"AI 处理失败：{error}")
+
+    def _on_ai_stopped(self, text: str):
+        self._set_ai_busy(False)
+        Logger().warning(text)
 
     # AI 修改过对象后重建 gv.active_objects 并刷新表格
     def _on_ai_objects_refreshed(self, refreshed_objects: list, processed_ids: list[str]):
@@ -270,14 +323,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.table.light_mode = self.cbxTurboMode.isChecked()
         self.cbxTurboMode.toggled.connect(self._on_turbo_mode_toggled)
 
-    # 「设置」菜单：工具执行前自动获取子对象
-    def _setup_settings_menu(self):
-        settings_menu = self.menuBar().addMenu("设置")
-        self.actAutoFetchChildren = QAction("工具执行前自动获取子对象", self)
-        self.actAutoFetchChildren.setCheckable(True)
-        self.actAutoFetchChildren.setChecked(user_config.get_tool_auto_fetch_children())
-        self.actAutoFetchChildren.toggled.connect(user_config.set_tool_auto_fetch_children)
-        settings_menu.addAction(self.actAutoFetchChildren)
+    # 打开工程规范设置窗口
+    def open_project_settings_window(self):
+        settings_window = ProjectSettingsWindow()
+        settings_window.exec()
 
     # 急速模式勾选切换：勾选时快速查找完整列表；取消勾选进入完整模式，对当前可见对象读取全部属性
     def _on_turbo_mode_toggled(self, checked: bool):
@@ -303,21 +352,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _object_id_sequence(objs: list) -> tuple:
         return tuple(obj.id for obj in objs)
 
-    def _setup_filter_help_button(self):
-        self.btnFilterHelp = QToolButton(self.grpTableView)
-        self.btnFilterHelp.setObjectName("btnFilterHelp")
-        self.btnFilterHelp.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxQuestion))
-        self.btnFilterHelp.setAutoRaise(True)
-        self.btnFilterHelp.setToolTip(
-            "筛选会匹配名称与路径。\n"
-            "多个条件用 ; 分隔，所有包含条件都必须命中。\n"
-            "Boss        包含 Boss\n"
-            "-Temp       排除包含 Temp 的对象\n"
-            "=ShotGun    全字匹配名称或路径节点\n"
-            "-=Debug     排除全字匹配 Debug 的对象"
-        )
-        self.horizontalLayout_2.insertWidget(2, self.btnFilterHelp)
-
     # 切换表格显示模式并重新应用筛选
     def on_table_display_mode_changed(self, index: int):
         if index < 0:
@@ -331,11 +365,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
         self.apply_table_filter(record_history=True)
 
-    # 关键字变化时即时筛选（不每次写入历史，避免输入过程中堆叠快照）
-    def _on_filter_keyword_changed(self, _text: str):
+    # 点击「筛选」按钮后应用关键字筛选并记入历史
+    def apply_keyword_filter(self):
         if self._restoring_history:
             return
-        self.apply_table_filter(record_history=False)
+        self.apply_table_filter(record_history=True)
 
     # 区分大小写变更时重新筛选并记入历史
     def _on_case_sensitive_changed(self, _checked: bool):
@@ -359,13 +393,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._setup_table_display_mode_combo()
         self._setup_type_filter_combo()
         self._setup_turbo_mode_checkbox()
-        self._setup_settings_menu()
         # 日志绑定
         Logger().set_log_window_stream(self.add_log)
         Logger().set_status_bar_stream(lambda text: self.statusbar.showMessage(text))
         # 所有按键
         self.actReconnectWwise.triggered.connect(self.check_wwise_connection)
         self.btnGetSelectedObjects.clicked.connect(self.get_selected_objects)
+        self.btnSelectInWwise.clicked.connect(self.select_table_objects_in_wwise)
         self.btnClearTable.clicked.connect(self.clear_object_list)
         self.cbxTableSelectAll.toggled.connect(self.select_all_rows)
         self.btnMultiEditor.clicked.connect(self.open_in_multi_editor)
@@ -373,15 +407,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnFindParent.clicked.connect(self.find_parent)
         self.btnFindChildren.clicked.connect(self.find_children)
         self.btnFindReferences.clicked.connect(self.find_references)
-        self.ledFilterKeyword.textChanged.connect(self._on_filter_keyword_changed)
         self.cbxCaseSensitive.toggled.connect(self._on_case_sensitive_changed)
         self.cbxOnlyIncludedEnabled.toggled.connect(self._on_only_included_toggled)
         self.cbbFilterType.currentIndexChanged.connect(self._on_filter_type_changed)
+        self.btnApplyFilter.clicked.connect(self.apply_keyword_filter)
+        self.btnAdvancedFilter.clicked.connect(self.open_advanced_filter_window)
         self.btnObjectHistoryBack.clicked.connect(self.object_history_back)
         self.btnObjectHistoryForward.clicked.connect(self.object_history_forward)
         # 文件菜单
         self.actImportObjectList.triggered.connect(self.import_object_list)
         self.actExportObjectList.triggered.connect(self.export_object_list)
+        self.actProjectSettings.triggered.connect(self.open_project_settings_window)
         # 编辑菜单
         self.actUndo.triggered.connect(waapi_utils.undo)
         self.actRedo.triggered.connect(waapi_utils.redo)
@@ -413,7 +449,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actRenameByDataTable.triggered.connect(self.open_table_rename_window)
         # 源文件菜单
         self.actTrimAudioSilence.triggered.connect(self.open_audio_silence_trimmer_window)
-        self.setup_sync_trim_action()
+        self.actSyncTrim.triggered.connect(self.open_sync_trim_window)
         self.setup_batch_processor(self.actApplyEditsToOriginal, lambda index, obj: audio_source_utils.apply_source_edits(obj))
         self.setup_batch_processor(self.actResetSourceEdits, lambda index, obj: audio_source_utils.reset_source_editor(obj))
         self.setup_batch_processor(self.actRenameOriginalToWwise, lambda index, obj: audio_source_utils.rename_original_to_wwise(obj))
@@ -447,41 +483,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_batch_processor(self.actCreatePlayEvent, lambda index, obj: event_utils.create_play_event(obj))
         self.setup_batch_processor(self.actRenameEventByTarget, lambda index, obj: event_utils.rename_event_by_target(obj))
         self.actExportAllEvents.triggered.connect(event_utils.export_all_events)
-        self.actHasEventReference.triggered.connect(lambda: self.filter_by_event_reference(True))
-        self.actHasNoEventReference.triggered.connect(lambda: self.filter_by_event_reference(False))
         # SoundBank菜单
         self.setup_batch_processor(self.actCreateSoundBank, lambda index, obj: soundbank_utils.create_bank_for_object(obj))
         self.setup_batch_processor(self.actClearInclusions, lambda index, obj: waapi_utils.clear_bank_inclusions(obj))
         self.setup_batch_processor(self.actIncludeMediaOnly, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['media']))
         self.setup_batch_processor(self.actIncludeEventsAndStructures, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['events', 'structures']))
         self.setup_batch_processor(self.actIncludeAll, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['events', 'structures', 'media']))
-        self.actCalculateBankSize.triggered.connect(self.calculate_bank_total_size)
         self.actAddToSelectedBank.triggered.connect(self.add_to_selected_bank)
 
         self.actBankAssignmentMatrix.triggered.connect(self.open_bank_assignment_matrix_window)
         self.actGenerateEventBankMap.triggered.connect(soundbank_utils.generate_event_bank_map)
+        # 统计菜单
+        self.actCalculateMediaSize.triggered.connect(self.calculate_media_size)
         # GameSync菜单
         self.actCopyRtpcFromSelection.triggered.connect(self.copy_rtpc_from_selection)
         # 导入菜单
         self.actImportWorkUnit.triggered.connect(self.import_from_work_unit)
         self.actImportFMODEvent.triggered.connect(migration_utils.import_fmod_events)
         self.actImportFMODPreset.triggered.connect(migration_utils.import_fmod_presets)
-        self.actImportScreenshot.triggered.connect(migration_utils.import_from_screenshot)
         # 其他菜单
         self.actHelpDoc.triggered.connect(lambda: webbrowser.open(DOCUMENTATION_URL))
         self.actProjectValidation.triggered.connect(self.open_project_validation_window)        
-        self.actUnityAssetManager.triggered.connect(self.open_unity_asset_manager_window)
 
         self.table.model.inclusion_updated.connect(self._on_wwise_inclusion_cell_changed)
-
-    # 在「源文件」菜单中加入同步裁剪入口（紧随裁剪头尾静音）
-    def setup_sync_trim_action(self):
-        self.actSyncTrim = QAction('同步裁剪', self)
-        self.actSyncTrim.triggered.connect(self.open_sync_trim_window)
-        menu_actions = self.mnuAudioSource.actions()
-        insert_index = menu_actions.index(self.actTrimAudioSilence) + 1
-        before_action = menu_actions[insert_index] if insert_index < len(menu_actions) else None
-        self.mnuAudioSource.insertAction(before_action, self.actSyncTrim)
+        # AI 助手输入栏
+        self.btnAiSend.clicked.connect(self._on_ai_send)
+        self.btnAiStop.clicked.connect(self._on_ai_stop)
+        self.ledAiPrompt.returnPressed.connect(self._on_ai_send)
+        # 用户选择/输入模型后立即持久化到 user_config.json，避免每次启动回到第一个
+        self.cbbAiModel.activated.connect(lambda _index: self._persist_ai_model())
+        line_edit = self.cbbAiModel.lineEdit()
+        if line_edit is not None:
+            line_edit.editingFinished.connect(self._persist_ai_model)
 
     # 连接批处理器到操作（processor 签名为 (index, obj)，与 batch_processor.create_async 一致）
     def setup_batch_processor(self, action, obj_func: Callable):
@@ -543,6 +576,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 获取Wwise中选中的对象
     def get_selected_objects(self):
+        self.__eventFilterBase = None
+        self.__languageFilterBase = None
         gv.active_objects = waapi_utils.get_selected_objects()
         self.reset_filter(False)
         self.table.refresh_table(True)
@@ -632,6 +667,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 将界面恢复到指定快照（活动对象 + 筛选 + 刷新表格）
     def _restore_object_list_snapshot(self, snap: tuple):
+        self.__eventFilterBase = None
+        self.__languageFilterBase = None
         objs, kw, ft, cs, oi = snap
         self._restoring_history = True
         try:
@@ -673,6 +710,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 清空操作对象列表
     def clear_object_list(self):
+        self.__eventFilterBase = None
+        self.__languageFilterBase = None
         gv.active_objects = []
         self.table.refresh_table(True)
 
@@ -798,6 +837,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 按工程当前参考语言筛选对象
     def filter_by_active_language(self):
+        if self.__languageFilterBase is None:
+            self.__languageFilterBase = list(self.get_visible_objects())
         active_language = localization_utils.get_current_language()
         gv.active_objects = [
             obj
@@ -806,15 +847,39 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         ]
         self.show_obj_list()
 
+    # 重置「语言」筛选：恢复为筛选前的列表
+    def reset_active_language_filter(self):
+        if self.__languageFilterBase is not None:
+            gv.active_objects = self.__languageFilterBase
+        else:
+            gv.active_objects = [row.wwise_object for row in self.table.data]
+        self.__languageFilterBase = None
+        self.show_obj_list()
+
     # 按是否被 Event 引用筛选对象
     def filter_by_event_reference(self, with_ref: bool):
+        if self.__eventFilterBase is None:
+            self.__eventFilterBase = list(self.get_visible_objects())
         gv.active_objects = [
             obj
-            for obj in self.get_visible_objects()
+            for obj in self.__eventFilterBase
             if (with_ref and event_utils.has_event_reference(obj))
             or (not with_ref and not event_utils.has_event_reference(obj))
         ]
         self.show_obj_list()
+
+    # 重置「Event 引用」筛选：恢复为当前表格中的全部行
+    def reset_event_reference_filter(self):
+        if self.__eventFilterBase is not None:
+            gv.active_objects = self.__eventFilterBase
+        else:
+            gv.active_objects = [row.wwise_object for row in self.table.data]
+        self.__eventFilterBase = None
+        self.show_obj_list()
+
+    # 打开高级筛选窗口
+    def open_advanced_filter_window(self):
+        AdvancedFilterWindow(self).exec()
 
     # 复制对象的路径
     def copy_object_path(self, item: QTableWidgetItem):
@@ -829,6 +894,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         obj = waapi_utils.find_object_by_path(item.text())
         if obj:
             waapi_utils.select_objects_in_wwise([obj])
+
+    # 在Wwise中同时选中表格里的所有对象
+    def select_table_objects_in_wwise(self):
+        objects = [row.wwise_object for row in self.table.data]
+        if not objects:
+            Logger().warning("表格为空，暂无可选中的对象")
+            return
+        if waapi_utils.select_objects_in_wwise(objects):
+            Logger().info(f"已在Wwise中选中表格内的 {len(objects)} 个对象")
 
     # 导出对象列表
     def export_object_list(self):
@@ -944,16 +1018,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         trim_window.show()
         trim_window.exec()
 
-    # 计算列表中Bank的总大小
-    def calculate_bank_total_size(self):
-        visible_objects = self.get_visible_objects()
-        wav_size, memory_wem_size, stream_wem_size, used_files = soundbank_utils.get_total_bank_size(
-            visible_objects
-        )
-        total_wem_size = memory_wem_size + stream_wem_size
-        text = (f'共统计{len(visible_objects)}个Bank\n共包含{len(used_files)}个音频文件\n原始wav大小: {wav_size}MB'
-                f'\n压缩后的wem: {total_wem_size}MB\n内存加载的wem: {memory_wem_size}MB\n流式加载的wem: {stream_wem_size}MB')
-        Logger().info(f'统计完毕，{text}')
+    # 计算表格可见对象的音频媒体资源总大小（任意对象类型：SoundBank 按包含展开，其余递归子对象中的 AudioFileSource）
+    def calculate_media_size(self):
+        objects = [row_data.wwise_object for row_data in self.table.active_data]
+        if not objects:
+            Logger().warning('表格中没有可统计的对象')
+            return
+        statistics = soundbank_utils.MediaSizeStatistics()
+
+        # 后台线程逐对象累加，避免对象过多时阻塞界面；最后一个对象处理完即汇总
+        def accumulate(index, obj):
+            statistics.accumulate(obj)
+            if index == len(objects) - 1:
+                statistics.finish()
+            return True
+
+        # 进度条走完后再回到主线程打印统计结果
+        def on_finished():
+            wav_size, memory_wem_size, stream_wem_size, used_files = statistics.finish()
+            total_wem_size = memory_wem_size + stream_wem_size
+            text = (f'共统计{len(objects)}个对象\n共包含{len(used_files)}个音频文件\n原始wav大小: {wav_size}MB'
+                    f'\n压缩后的wem: {total_wem_size}MB\n内存加载的wem: {memory_wem_size}MB\n流式加载的wem: {stream_wem_size}MB')
+            Logger().query(f'统计完毕，{text}')
+
+        batch_processor.create_async(objects, accumulate, '计算媒体资源大小', 'name', on_finished=on_finished)
 
     # 添加列表对象到选中的Bank中
     def add_to_selected_bank(self):
@@ -975,13 +1063,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return False
         game_sync_utils.copy_rtpc(selection[0], self.get_visible_objects())
 
-    # 打开Unity资产管理器窗口
-    @staticmethod
-    def open_unity_asset_manager_window():
-        asset_manager = UnityAssetManager()
-        asset_manager.show()
-        asset_manager.exec()
-
     # 打开工程检查窗口
     def open_project_validation_window(self):
         validate_window = ProjectValidation(self)
@@ -1002,6 +1083,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Logger().info("正在关闭应用程序...")
         # 等待 AI 对话线程结束（最多 3 秒）
         if self._ai_worker and self._ai_worker.isRunning():
+            self._ai_worker.stop_requested()
             self._ai_worker.wait(3000)
         if self._ai_model_worker and self._ai_model_worker.isRunning():
             self._ai_model_worker.wait(2000)

@@ -3,6 +3,7 @@ import re
 import json
 from typing import Any
 
+from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import project_utils
 
 conventions = {}
@@ -18,6 +19,37 @@ def _resolve_conventions_json_path(project_directory: str) -> str | None:
         if os.path.isfile(name):
             return name
     return None
+
+
+# 返回当前生效的工程规范文件路径（找不到时返回 None）
+def get_conventions_path() -> str | None:
+    try:
+        project_directory = project_utils.get_project_directory()
+    except Exception:
+        project_directory = ""
+    return _resolve_conventions_json_path(project_directory)
+
+
+# 保存工程规范到文件并刷新内存缓存
+def save_conventions(new_conventions: dict) -> bool:
+    global conventions
+    path = get_conventions_path() or "project_conventions.json"
+    if not os.path.isfile(path):
+        # 工程目录下没有配置文件时，在工程目录新建；取不到工程目录再退回当前目录
+        try:
+            project_directory = project_utils.get_project_directory()
+        except Exception:
+            project_directory = ""
+        if project_directory:
+            path = os.path.join(project_directory, "project_conventions.json")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(new_conventions, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        Logger().error(f"写入工程规范文件失败：{path} ({e})")
+        return False
+    conventions = new_conventions
+    return True
 
 
 # 初始化工程规范配置文件
