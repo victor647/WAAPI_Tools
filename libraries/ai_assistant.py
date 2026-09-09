@@ -629,62 +629,85 @@ def run_assistant(
             raise holder["error"]
         return holder.get("data")
 
+    # agent 任务级撤销组：只包住本次任务产生的写操作，异常/中止/超时也保证收尾
+    undo_label = f"AI 任务：{' '.join(prompt.split())[:40]}"
+    _undo_state = {"open": False}
+
+    def _ensure_undo_open():
+        if _undo_state["open"]:
+            return
+        if waapi_utils.begin_undo_group(undo_label):
+            _undo_state["open"] = True
+            log(f"已开启撤销组「{undo_label}」：本次任务的全部修改可一次性撤销")
+        else:
+            log("警告：未能开启撤销组，本次修改将无法一键撤销")
+
+    def _close_undo_group():
+        if _undo_state.pop("open", False):
+            waapi_utils.end_undo_group(undo_label)
+            log("已结束撤销组：可在 Wwise 用「撤销」一次性回退本次任务的全部修改")
+
     log(f"已加载 AI 提示词模板：{PROMPT_FILE_NAME}（{len(system_prompt)} 字符）")
     log(f"已发送请求到 AI 代理 {proxy_url}，表格对象 {len(objects)} 个")
-    for turn in range(1, max_turns + 1):
-        raise_if_stopped()
-        data = chat_interruptible()
-        try:
-            message = data["choices"][0]["message"]
-        except (KeyError, IndexError, TypeError) as e:
-            raise ai_utils.AIChatError(f"AI 代理响应缺少 choices/message 字段：{str(data)[:300]}") from e
+    try:
+        for turn in range(1, max_turns + 1):
+            raise_if_stopped()
+            data = chat_interruptible()
+            try:
+                message = data["choices"][0]["message"]
+            except (KeyError, IndexError, TypeError) as e:
+                raise ai_utils.AIChatError(f"AI 代理响应缺少 choices/message 字段：{str(data)[:300]}") from e
 
-        assistant_content = message.get("content") or ""
-        think_text = _extract_think(assistant_content)
-        if think_text:
-            log(f"AI 思考（第 {turn} 轮）：{think_text}")
+            assistant_content = message.get("content") or ""
+            think_text = _extract_think(assistant_content)
+            if think_text:
+                log(f"AI 思考（第 {turn} 轮）：{think_text}")
 
-        tool_calls = message.get("tool_calls")
-        if tool_calls:
-            result.turn_count = turn
-            result.tool_call_count += len(tool_calls)
-            assistant_message = {
-                "role": "assistant",
-                "content": assistant_content,
-                "tool_calls": tool_calls,
-            }
-            messages.append(assistant_message)
-            for index, call in enumerate(tool_calls):
-                function = call.get("function") or {}
-                name = function.get("name") or ""
-                arguments = function.get("arguments") or ""
-                tool_result = _execute_tool_call(name, arguments, result.executed_tools)
-                if _is_mutating_tool(name):
-                    result.mutated = True
-                log(f"第 {turn} 轮调用工具 {name}（返回：{' '.join(tool_result.split())[:120]}）")
-                call_id = call.get("id") or f"tool_call_{turn}_{index}"
+            tool_calls = message.get("tool_calls")
+            if tool_calls:
+                result.turn_count = turn
+                result.tool_call_count += len(tool_calls)
+                assistant_message = {
+                    "role": "assistant",
+                    "content": assistant_content,
+                    "tool_calls": tool_calls,
+                }
+                messages.append(assistant_message)
+                for index, call in enumerate(tool_calls):
+                    function = call.get("function") or {}
+                    name = function.get("name") or ""
+                    arguments = function.get("arguments") or ""
+                    if _is_mutating_tool(name):
+                        _ensure_undo_open()
+                    tool_result = _execute_tool_call(name, arguments, result.executed_tools)
+                    if _is_mutating_tool(name):
+                        result.mutated = True
+                    log(f"第 {turn} 轮调用工具 {name}（返回：{' '.join(tool_result.split())[:120]}）")
+                    call_id = call.get("id") or f"tool_call_{turn}_{index}"
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": tool_result,
+                    })
+                # agent loop：提示模型根据结果继续推进，直到目标完成
                 messages.append({
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": tool_result,
+                    "role": "user",
+                    "content": (
+                        "请根据上面各工具的结果继续推进这个目标：如果还有需要查询/处理的步骤就继续调用工具，"
+                        "一次可以并行请求多个工具；只有确认所有步骤都已完成、结论已核对后，才给出面向用户的中文最终总结。"
+                    ),
                 })
-            # agent loop：提示模型根据结果继续推进，直到目标完成
-            messages.append({
-                "role": "user",
-                "content": (
-                    "请根据上面各工具的结果继续推进这个目标：如果还有需要查询/处理的步骤就继续调用工具，"
-                    "一次可以并行请求多个工具；只有确认所有步骤都已完成、结论已核对后，才给出面向用户的中文最终总结。"
-                ),
-            })
-            log(f"第 {turn} 轮工具执行完成，继续推进…")
-            continue
+                log(f"第 {turn} 轮工具执行完成，继续推进…")
+                continue
 
-        raise_if_stopped()
-        result.content = assistant_content.strip()
-        result.turn_count = turn
-        log(f"对话完成（共 {result.turn_count} 轮）")
-        return result
+            raise_if_stopped()
+            result.content = assistant_content.strip()
+            result.turn_count = turn
+            log(f"对话完成（共 {result.turn_count} 轮）")
+            return result
 
+    finally:
+        _close_undo_group()
     result.content = f"达到最大对话轮数（{max_turns}）仍未得到最终回复，已停止；可在 user_config.json 的 ai.max_turns 中调大。"
     log(result.content)
     return result

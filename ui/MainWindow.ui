@@ -174,10 +174,10 @@
               </sizepolicy>
              </property>
              <property name="toolTip">
-              <string>急速模式：只读取基础信息与启用状态；取消勾选后对当前可见对象读取备注、引用计数等完整属性。</string>
+              <string>极速模式：只读取基础信息与启用状态；取消勾选后对当前可见对象读取备注、引用计数等完整属性。</string>
              </property>
              <property name="text">
-              <string>急速模式</string>
+              <string>极速模式</string>
              </property>
              <property name="checked">
               <bool>true</bool>

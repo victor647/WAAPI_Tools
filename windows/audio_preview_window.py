@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 
 import soundfile
 from PySide6.QtCore import QLoggingCategory, Qt, QUrl
@@ -12,13 +13,29 @@ from ui.AudioPreview_ui import Ui_AudioPreview
 os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.*=false")
 
 
+# 预览窗口模式
+class AudioPreviewMode(Enum):
+    Standard = "standard"
+    SilenceTrim = "silence_trim"
+
+
 # 音频预览窗口：显示波形，支持播放/暂停/停止与拖动进度
 class AudioPreviewWindow(QDialog, Ui_AudioPreview):
 
-    def __init__(self, file_path: str, parent: QWidget = None):
+    def __init__(
+        self,
+        file_path: str,
+        parent: QWidget = None,
+        mode: AudioPreviewMode = AudioPreviewMode.Standard,
+        head_silence_seconds: float = None,
+        tail_silence_seconds: float = None,
+    ):
         super().__init__(parent)
         self.setupUi(self)
         self.__file_path = file_path
+        self.__mode = mode
+        self.__head_silence_seconds = head_silence_seconds
+        self.__tail_silence_seconds = tail_silence_seconds
         self.__media_player = QMediaPlayer(self)
         self.__audio_output = QAudioOutput(self)
         self.__media_player.setAudioOutput(self.__audio_output)
@@ -58,10 +75,24 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         sound_file.close()
         self.waveform.set_audio(audio_data, sample_rate)
         self.waveform.set_duration(int(duration * 1000))
+        self.__apply_silence_regions(duration)
         elided_path = self.fontMetrics().elidedText(display_path, Qt.TextElideMode.ElideMiddle, 420)
         self.lblInfo.setText(f"{elided_path}    时长 {duration:.2f}s")
         self.lblInfo.setToolTip(display_path)
         self.__media_player.setSource(QUrl.fromLocalFile(self.__file_path))
+
+    # SilenceTrim 模式下把头部/尾部静音时长转成波形上的黄色区域
+    def __apply_silence_regions(self, duration: float):
+        if self.__mode != AudioPreviewMode.SilenceTrim:
+            return
+        duration_ms = int(duration * 1000)
+        regions = []
+        if self.__head_silence_seconds:
+            regions.append((0, int(min(duration, self.__head_silence_seconds) * 1000)))
+        if self.__tail_silence_seconds:
+            tail_start = int(max(0.0, duration - self.__tail_silence_seconds) * 1000)
+            regions.append((tail_start, duration_ms))
+        self.waveform.set_silence_regions(regions)
 
     # 播放/暂停切换
     def toggle_play_pause(self):

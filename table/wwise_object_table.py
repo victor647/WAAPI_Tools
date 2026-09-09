@@ -107,7 +107,7 @@ class WwiseObjectTable(TableFacade):
     def __init__(self, table_view: QTableView | None = None):
         super().__init__(table_view, item_model_class=WwiseObjectTableModel)
         self.display_mode: WwiseTableDisplayMode = WwiseTableDisplayMode.General
-        # 急速模式(True)只填充基础属性与启用状态，完整模式才逐个对象读取备注、引用计数等属性
+        # 极速模式(True)只填充基础属性与启用状态，完整模式才逐个对象读取备注、引用计数等属性
         self.light_mode: bool = False
         self.model.row_metadata_changed.connect(self._on_row_wwise_object_updated)
         self.wwise_transport_id: int = -1
@@ -134,6 +134,24 @@ class WwiseObjectTable(TableFacade):
         self.display_mode = WwiseTableDisplayMode(mode)
         self.refresh_table(False)
 
+    # 极速模式下隐藏本次不会读取的列（描述/引用计数以及设计、集成视图专属列），完整模式恢复显示
+    def apply_column_visibility(self):
+        if not self.table_view:
+            return
+        hidden_columns: set[int] = set()
+        if self.light_mode:
+            hidden_columns.update((DESCRIPTION_COL, REFERENCE_COUNT_COL))
+            if self.display_mode == WwiseTableDisplayMode.Design:
+                hidden_columns.update(range(VOLUME_COL, ORIGINAL_PATH_COL + 1))
+            elif self.display_mode == WwiseTableDisplayMode.Integration:
+                hidden_columns.update(range(ACTION_COL, SOUNDBANK_COL + 1))
+        for column in range(self.model.columnCount()):
+            self.table_view.setColumnHidden(column, column in hidden_columns)
+
+    def refresh_table(self, refresh_data: bool = True):
+        super().refresh_table(refresh_data)
+        self.apply_column_visibility()
+
     def get_common_headers(self):
         return COMMON_HEADERS.copy()
 
@@ -148,7 +166,9 @@ class WwiseObjectTable(TableFacade):
 
     # region ReadData
     def fill_table_data(self):
-        Logger().info("开始读取音频配置信息...")
+        # 极速模式只读取基础信息与启用状态，不读取音频属性，因此不输出读取日志
+        if not self.light_mode:
+            Logger().info("开始读取音频对象信息...")
         self._inclusion_cache = {}
         self._run_batch(
             gv.active_objects,

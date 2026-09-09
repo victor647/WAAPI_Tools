@@ -14,10 +14,10 @@ from globals.version import get_software_version
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_item_model import INCLUSION_COL
 from libraries.utils.log_utils import Logger
-from libraries.utils.vcs_utils import get_vcs_client
 from libraries.waapi_client import WAAPIClient
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_object_table_gui import WwiseTableImpl
+from table.wwise_object_table import WwiseTableDisplayMode
 from table.wwise_table_headers import CHECK_BOX_COL, COMMON_HEADERS, ENABLE_COL, TABLE_DISPLAY_MODE_LABELS, PATH_COL
 from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSilenceTrimWindow
 from windows.advanced_filter_window import AdvancedFilterWindow as AdvancedFilterWindow
@@ -318,7 +318,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.cbbFilterType.addItem(member.value)
         self.cbbFilterType.blockSignals(False)
 
-    # 绑定「急速模式」开关：默认勾选，只加载基础属性与启用状态
+    # 绑定「极速模式」开关：默认勾选，只加载基础属性与启用状态
     def _setup_turbo_mode_checkbox(self):
         self.table.light_mode = self.cbxTurboMode.isChecked()
         self.cbxTurboMode.toggled.connect(self._on_turbo_mode_toggled)
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         settings_window = ProjectSettingsWindow()
         settings_window.exec()
 
-    # 急速模式勾选切换：勾选时快速查找完整列表；取消勾选进入完整模式，对当前可见对象读取全部属性
+    # 极速模式勾选切换：勾选时快速查找完整列表；取消勾选进入完整模式，对当前可见对象读取全部属性
     def _on_turbo_mode_toggled(self, checked: bool):
         if self._restoring_history:
             return
@@ -356,6 +356,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def on_table_display_mode_changed(self, index: int):
         if index < 0:
             return
+        # 极速模式仅服务于通用视图：切到设计/集成视图时自动关闭极速模式
+        if index != WwiseTableDisplayMode.General.value and self.cbxTurboMode.isChecked():
+            self.cbxTurboMode.blockSignals(True)
+            self.cbxTurboMode.setChecked(False)
+            self.cbxTurboMode.blockSignals(False)
+            self.table.light_mode = False
         self.table.set_display_mode(index)
         self.apply_table_filter()
 
@@ -579,9 +585,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.__eventFilterBase = None
         self.__languageFilterBase = None
         gv.active_objects = waapi_utils.get_selected_objects()
+        # 获取新选中对象只负责载入并展示，不执行任何筛选
         self.reset_filter(False)
         self.table.refresh_table(True)
-        self.apply_table_filter()
         self._object_history_reset_with_current()
 
     # 由 Wwise 右键菜单（--from-wwise）启动时：读取 Wwise 当前选中的对象载入列表
@@ -717,6 +723,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 筛选表格内容
     def apply_table_filter(self, record_history: bool = False):
+        total_count = self.table.model.rowCount()
+        # 表格尚未载入数据（异步填充中）时无需筛选，避免误报 0/0
+        if total_count == 0:
+            return
         self.table.filter_results(self.ledFilterKeyword.text(), self.cbxCaseSensitive.isChecked())
         type_text = self.cbbFilterType.currentText()
         if not type_text or type_text == "全部类型":
@@ -724,6 +734,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             self.table.filter_by_type(WwiseObjectType(type_text))
         self.table.filter_inclusion_only(self.cbxOnlyIncludedEnabled.isChecked())
+        # 关键词/类型/启用等筛选全部执行完后，一次性输出筛选结果
+        shown_count = sum(
+            1
+            for row in range(total_count)
+            if not self.tblWwiseObjects.isRowHidden(row)
+        )
+        Logger().query(f"筛选完成，显示{shown_count}/{total_count}条")
         self.calculate_checked_rows()
         if record_history and not self._restoring_history:
             self._history_append_current_if_changed()
@@ -1095,13 +1112,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 关闭进度条窗口
         if gv.progress_bar:
             gv.progress_bar.close()
-        # 断开版本控制连接
-        try:
-            client = get_vcs_client()
-            if client.is_connected:
-                client.disconnect()
-        except Exception as e:
-            Logger().error(f"断开P4连接时出错: {e}")
         # 关闭WAAPI连接
         try:
             waapi_utils.close_client()

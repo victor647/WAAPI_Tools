@@ -9,7 +9,6 @@ from PySide6.QtCore import QModelIndex, Qt
 
 from libraries.utils import path_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.vcs_utils import get_vcs_client, get_vcs_path
 from libraries.utils.wwise import audio_source_utils, common_utils, transport_utils, waapi_utils
 from libraries.wwise_object import WwiseObjectType
 from table.wwise_object_table import WwiseObjectTable, WwiseTableDisplayMode
@@ -202,20 +201,6 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         text = item.data(Qt.ItemDataRole.UserRole)
         Logger().info(f"已复制到剪贴板：{text}")
         clipboard.copy(text)
-
-    @staticmethod
-    def query_last_submit_info(item: QModelIndex):
-        file_path = item.data(Qt.ItemDataRole.UserRole)
-        submit_info = get_vcs_client().query_last_submit_info(get_vcs_path(file_path))
-        if not submit_info:
-            Logger().warning(f"文件未找到提交记录：{file_path}")
-            return
-        Logger().query(f"------------最新版本控制提交记录：{file_path}------------")
-        Logger().query(f"操作: CL-{submit_info.changelist}, {submit_info.action} #{submit_info.revision}")
-        Logger().query(f"时间: {submit_info.datetime}")
-        Logger().query(f"用户: {submit_info.user}")
-        Logger().query(f"描述: {submit_info.description}")
-
 
 # 主窗口等历史入口
 WwiseTableImpl = WwiseTableImpl_GUI

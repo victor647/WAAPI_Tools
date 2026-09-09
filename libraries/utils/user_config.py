@@ -13,20 +13,6 @@ DEFAULT_CONFIG = {
         "auto_fetch_children": True,
     },
     "window_settings": {},
-    "version_control": {
-        "mode": "p4",
-    },
-    "p4": {
-        "server": "",
-        "charset": "utf8",
-        "changelist_description": "【WAAPI_Tools】自动创建的修改",
-    },
-    "svn": {
-        "executable": "svn",
-        "username": "",
-        "password": "",
-        "commit_message": "【WAAPI_Tools】自动创建的修改",
-    },
     "ai": {
         # AI 对话使用的 OpenAI 兼容代理地址（软件内 AI 助手功能）
         "proxy": "http://127.0.0.1:15721",
@@ -49,14 +35,12 @@ DEFAULT_CONFIG = {
     },
 }
 
-VCS_MODES = ("p4", "svn")
-
 _config_cache = None
 
 
 def _find_repo_root() -> str:
     # 开发环境从本文件向上找到包含 main.py 的仓库根目录。
-    # 不依赖 path_utils，避免 p4_utils -> user_config -> path_utils 循环导入。
+    # 不依赖 path_utils，避免配置模块与路径工具互相导入。
     current = os.path.dirname(os.path.abspath(__file__))
     while True:
         if os.path.isfile(os.path.join(current, "main.py")):
@@ -107,17 +91,6 @@ def load_config() -> dict:
     return _config_cache
 
 
-def get_version_control_mode() -> str:
-    # 当前启用的版本控制类型；仅接受 p4/svn，非法值回退默认 p4
-    default_mode = DEFAULT_CONFIG["version_control"]["mode"]
-    mode = load_config()["version_control"].get("mode", default_mode)
-    if mode not in VCS_MODES:
-        Logger().warning(
-            f"version_control.mode 仅支持 {'/'.join(VCS_MODES)}，当前值 '{mode}'，已回退为 '{default_mode}'.")
-        return default_mode
-    return mode
-
-
 def get_tool_auto_fetch_children() -> bool:
     return bool(load_config()["tools"].get("auto_fetch_children", True))
 
@@ -146,34 +119,6 @@ def _write_config(config: dict) -> None:
             json.dump(config, f, ensure_ascii=False, indent=2)
     except OSError as e:
         Logger().error(f"写入用户配置文件失败：{get_config_path()} ({e})")
-
-
-def get_p4_server() -> str:
-    return load_config()["p4"].get("server", DEFAULT_CONFIG["p4"]["server"])
-
-
-def get_p4_charset() -> str:
-    return load_config()["p4"].get("charset", DEFAULT_CONFIG["p4"]["charset"])
-
-
-def get_p4_changelist_description() -> str:
-    return load_config()["p4"].get("changelist_description", DEFAULT_CONFIG["p4"]["changelist_description"])
-
-
-def get_svn_executable() -> str:
-    return load_config()["svn"].get("executable", DEFAULT_CONFIG["svn"]["executable"])
-
-
-def get_svn_username() -> str:
-    return load_config()["svn"].get("username", DEFAULT_CONFIG["svn"]["username"])
-
-
-def get_svn_password() -> str:
-    return load_config()["svn"].get("password", DEFAULT_CONFIG["svn"]["password"])
-
-
-def get_svn_commit_message() -> str:
-    return load_config()["svn"].get("commit_message", DEFAULT_CONFIG["svn"]["commit_message"])
 
 
 def get_ai_proxy_url() -> str:

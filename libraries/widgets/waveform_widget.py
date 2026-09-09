@@ -19,6 +19,8 @@ class WaveformWidget(QWidget):
         self.__sample_rate = 0
         self.__duration_ms = 0
         self.__position_ms = 0
+        # 需要标黄的区域（毫秒区间列表）
+        self.__silence_regions_ms = []
         # 纵向缩放系数：1.0 表示满幅（1.0 振幅贴到上下边界）
         self.__zoom = 1.0
         # 拖动播放头时的回调（参数为毫秒）
@@ -43,6 +45,11 @@ class WaveformWidget(QWidget):
     # 更新播放头位置（毫秒）
     def set_position(self, position_ms: int):
         self.__position_ms = max(0, position_ms)
+        self.update()
+
+    # 设置要标黄的静音区域（毫秒区间列表）
+    def set_silence_regions(self, regions_ms: list):
+        self.__silence_regions_ms = [tuple(region) for region in regions_ms]
         self.update()
 
     # 纵向放大
@@ -163,6 +170,17 @@ class WaveformWidget(QWidget):
             top_y = int(center_y - float(np.max(segment)) * amp_scale)
             bottom_y = int(center_y - float(np.min(segment)) * amp_scale)
             painter.drawLine(PLOT_LEFT + column, top_y, PLOT_LEFT + column, bottom_y)
+
+        # 静音区域：半透明黄色标出
+        if self.__silence_regions_ms and self.__duration_ms > 0:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 193, 7, 90))
+            for start_ms, end_ms in self.__silence_regions_ms:
+                start_ms = max(0, min(int(start_ms), self.__duration_ms))
+                end_ms = max(start_ms, min(int(end_ms), self.__duration_ms))
+                x1 = PLOT_LEFT + int(start_ms / self.__duration_ms * plot_width)
+                x2 = PLOT_LEFT + int(end_ms / self.__duration_ms * plot_width)
+                painter.drawRect(x1, PLOT_TOP, x2 - x1, plot_height)
 
         # 红色播放头
         if self.__duration_ms > 0:

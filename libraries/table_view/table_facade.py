@@ -107,7 +107,8 @@ class TableFacade(object):
                 width = metrics.horizontalAdvance(text) + padding
                 if width > max_width:
                     max_width = width
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            # Interactive：保留按内容自动适配的初始宽度，同时允许用户手动拖拽调整列宽
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
             header.resizeSection(col, max_width)
 
     # 右键菜单
@@ -174,12 +175,13 @@ class TableFacade(object):
             return len(self.data)
 
         total_count = self.model.rowCount()
+        if total_count == 0:
+            return 0
         found_count = 0
         if not keyword:
             for row in range(self.model.rowCount()):
                 self.table_view.setRowHidden(row, False)
                 found_count += 1
-            Logger().query(f"清空筛选条件，显示全部{found_count}条")
             return found_count
 
         segments = [s.strip() for s in keyword.split(";")]
@@ -211,5 +213,4 @@ class TableFacade(object):
             if can_show:
                 found_count += 1
             self.table_view.setRowHidden(row, not can_show)
-        Logger().query(f"筛选完成，显示{found_count}/{total_count}条")
         return found_count

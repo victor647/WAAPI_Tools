@@ -6,17 +6,27 @@ from libraries.utils import audio_utils, user_config
 from libraries.utils.wwise import audio_source_utils, waapi_utils
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
+from libraries.utils.log_utils import Logger
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QDragEnterEvent
-from PySide6.QtWidgets import QDialog, QFileDialog, QMenu, QTableWidgetItem
+from PySide6.QtWidgets import QDialog, QFileDialog, QMenu, QPushButton, QTableWidgetItem
 
 import globals.global_variables as gv
 from libraries.wwise_object import WwiseObjectType
 from ui.AudioSilenceTrimmer_ui import Ui_AudioSilenceTrimmer
 from libraries.multi_thread import batch_processor
-from windows.audio_preview_window import AudioPreviewWindow
+from windows.audio_preview_window import AudioPreviewMode, AudioPreviewWindow
 
 Sound_Frame_Samples = 128
+
+# 表格列
+COL_CHECK = 0
+COL_PATH = 1
+COL_DURATION = 2
+COL_HEAD = 3
+COL_TAIL = 4
+COL_RATIO = 5
+COL_STATUS = 6
 
 
 # 裁剪音频文件尾巴的工具
@@ -25,11 +35,16 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
     def __init__(self, active_objects: list):
         super().__init__()
         self.setupUi(self)
+        self.tblFileList.setColumnCount(7)
+        self.tblFileList.setHorizontalHeaderLabels(
+            ['选中', '音频文件路径', '总时长', '头部静音时长', '尾部静音时长', '静音占比', '处理状态']
+        )
+        self.btnSelectAll = QPushButton('全选', self)
+        self.horizontalLayout.addWidget(self.btnSelectAll)
         self.setup_triggers()
         self.load_user_settings()
         self.sync_trim_options()
         self.__thresholdLinear = 0
-        self.__currentRow = 0
         self.__fadeInSeconds = 0
         self.__fadeOutSeconds = 0
         self.__trimHeadThresholdSeconds = 0
@@ -47,6 +62,7 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         self.btnImportFolder.clicked.connect(self.import_folder)
         self.btnAnalyzeAudio.clicked.connect(self.analyze_audio)
         self.btnStartTrimming.clicked.connect(self.start_trimming)
+        self.btnSelectAll.clicked.connect(self.toggle_select_all)
         self.cbxTrimHead.toggled.connect(self.sync_trim_options)
         self.cbxTrimTail.toggled.connect(self.sync_trim_options)
         self.tblFileList.viewport().installEventFilter(self)
@@ -66,9 +82,9 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         self.spbFadeOutDuration.setEnabled(trim_tail_checked)
         self.lblTrimTailThreshold.setEnabled(trim_tail_checked)
         self.spbTrimTailThreshold.setEnabled(trim_tail_checked)
-        self.tblFileList.setColumnHidden(2, not trim_head_checked)
-        self.tblFileList.setColumnHidden(3, not trim_tail_checked)
-        self.tblFileList.setColumnHidden(4, not trim_head_checked and not trim_tail_checked)
+        self.tblFileList.setColumnHidden(COL_HEAD, not trim_head_checked)
+        self.tblFileList.setColumnHidden(COL_TAIL, not trim_tail_checked)
+        self.tblFileList.setColumnHidden(COL_RATIO, not trim_head_checked and not trim_tail_checked)
 
     # 更新淡入淡出时间和静音阈值
     def update_settings(self):
@@ -168,7 +184,22 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
     # 打开选中行的音频预览窗口
     def preview_file(self, row: int):
         if 0 <= row < len(self.__filePaths):
-            AudioPreviewWindow(self.__filePaths[row], self).show()
+            head_text = self.tblFileList.item(row, COL_HEAD).text() if self.tblFileList.item(row, COL_HEAD) else '-'
+            tail_text = self.tblFileList.item(row, COL_TAIL).text() if self.tblFileList.item(row, COL_TAIL) else '-'
+
+            def to_seconds(text: str):
+                try:
+                    return float(text)
+                except ValueError:
+                    return None
+
+            AudioPreviewWindow(
+                self.__filePaths[row],
+                self,
+                mode=AudioPreviewMode.SilenceTrim,
+                head_silence_seconds=to_seconds(head_text),
+                tail_silence_seconds=to_seconds(tail_text),
+            ).show()
 
     # 导入音频文件
     def import_files(self):
@@ -206,25 +237,51 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         self.tblFileList.setRowCount(row + 1)
         self.__filePaths.append(file_path)
         display_path = audio_source_utils.to_originals_relative_path(file_path)
-        self.tblFileList.setItem(row, 0, QTableWidgetItem(display_path))
+        check_item = QTableWidgetItem()
+        check_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+        check_item.setCheckState(Qt.CheckState.Checked)
+        self.tblFileList.setItem(row, COL_CHECK, check_item)
+        self.tblFileList.setItem(row, COL_PATH, QTableWidgetItem(display_path))
 
-    # 分析音尾时长
+    # 返回所有勾选行的 (行号, 文件路径)
+    def get_selected_entries(self):
+        entries = []
+        for row in range(self.tblFileList.rowCount()):
+            check_item = self.tblFileList.item(row, COL_CHECK)
+            if row < len(self.__filePaths) and check_item is not None \
+                    and check_item.checkState() == Qt.CheckState.Checked:
+                entries.append((row, self.__filePaths[row]))
+        return entries
+
+    # 全选/取消全选：当前全部勾选则清空，否则全部勾选
+    def toggle_select_all(self):
+        entries = self.get_selected_entries()
+        select_all = len(entries) < self.tblFileList.rowCount()
+        for row in range(self.tblFileList.rowCount()):
+            check_item = self.tblFileList.item(row, COL_CHECK)
+            if check_item is not None:
+                check_item.setCheckState(Qt.CheckState.Checked if select_all else Qt.CheckState.Unchecked)
+
+    # 分析选中文件的静音时长
     def analyze_audio(self):
-        self.__currentRow = 0
         self.update_settings()
+        entries = self.get_selected_entries()
+        if not entries:
+            Logger().warning('没有勾选任何文件，请先勾选需要分析的文件')
+            return
         batch_processor.create_async(
-            self.__filePaths,
-            lambda index, path: self.analyze_file(path),
+            entries,
+            lambda index, entry: self.analyze_file(entry[0], entry[1]),
             '分析音频时长',
         )
 
     # 分析单个音频文件
-    def analyze_file(self, file_path):
+    def analyze_file(self, row: int, file_path: str):
         sound_file = soundfile.SoundFile(file_path)
         audio_data = sound_file.read()
         # 计算音频长度
         duration = round(sound_file.frames / sound_file.samplerate * 1.0, 3)
-        self.tblFileList.setItem(self.__currentRow, 1, QTableWidgetItem(str(duration)))
+        self.tblFileList.setItem(row, COL_DURATION, QTableWidgetItem(str(duration)))
         # 只分析勾选了裁剪的方向
         trim_head_checked = self.cbxTrimHead.isChecked()
         trim_tail_checked = self.cbxTrimTail.isChecked()
@@ -268,8 +325,8 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
             head_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Warning)
         if tail_trimmable:
             tail_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Warning)
-        self.tblFileList.setItem(self.__currentRow, 2, head_item)
-        self.tblFileList.setItem(self.__currentRow, 3, tail_item)
+        self.tblFileList.setItem(row, COL_HEAD, head_item)
+        self.tblFileList.setItem(row, COL_TAIL, tail_item)
         # 计算已分析静音占总时长的比例，限制最大为100%
         ratio_percent = None
         if silence_duration_head is not None or silence_duration_tail is not None:
@@ -292,28 +349,30 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
                 ratio_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Danger)
             elif ratio_percent > 20:
                 ratio_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Warning)
-        self.tblFileList.setItem(self.__currentRow, 4, ratio_item)
+        self.tblFileList.setItem(row, COL_RATIO, ratio_item)
         sound_file.close()
-        self.tblFileList.setItem(self.__currentRow, 5, status_item)
-        self.__currentRow += 1
+        self.tblFileList.setItem(row, COL_STATUS, status_item)
 
-    # 开始裁剪
+    # 开始裁剪选中的文件
     def start_trimming(self):
-        self.__currentRow = 0
         self.update_settings()
+        entries = self.get_selected_entries()
+        if not entries:
+            Logger().warning('没有勾选任何文件，请先勾选需要裁剪的文件')
+            return
         batch_processor.create_async(
-            self.__filePaths,
-            lambda index, path: self.trim_file(path),
+            entries,
+            lambda index, entry: self.trim_file(entry[0], entry[1]),
             '裁剪音频末尾',
         )
 
     # 裁剪单个音频文件回调
-    def trim_file(self, file_path):
-        if self.tblFileList.item(self.__currentRow, 5).text() == '完全静音':
+    def trim_file(self, row: int, file_path: str):
+        if self.tblFileList.item(row, COL_STATUS).text() == '完全静音':
             return
         # 未勾选方向的单元格为'-'，不参与裁剪
-        head_text = self.tblFileList.item(self.__currentRow, 2).text()
-        tail_text = self.tblFileList.item(self.__currentRow, 3).text()
+        head_text = self.tblFileList.item(row, COL_HEAD).text()
+        tail_text = self.tblFileList.item(row, COL_TAIL).text()
         silence_duration_head = float(head_text) if head_text != '-' else 0.0
         silence_duration_tail = float(tail_text) if tail_text != '-' else 0.0
         # 只有超过裁剪判定阈值（且长于保留的淡入淡出长度）才裁剪
@@ -328,17 +387,16 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         if trim_head:
             audio_data = audio_utils.trim(audio_data, (silence_duration_head - self.__fadeInSeconds) * sample_rate, 0)
             audio_utils.fade(audio_data, int(self.__fadeInSeconds * sample_rate), 1)
-            self.tblFileList.setItem(self.__currentRow, 2, QTableWidgetItem(str(self.__fadeInSeconds)))
+            self.tblFileList.setItem(row, COL_HEAD, QTableWidgetItem(str(self.__fadeInSeconds)))
         if trim_tail:
             audio_data = audio_utils.trim(audio_data, 0, (silence_duration_tail - self.__fadeOutSeconds) * sample_rate)
             audio_utils.fade(audio_data, int(self.__fadeOutSeconds * sample_rate), -1)
-            self.tblFileList.setItem(self.__currentRow, 3, QTableWidgetItem(str(self.__fadeOutSeconds)))
+            self.tblFileList.setItem(row, COL_TAIL, QTableWidgetItem(str(self.__fadeOutSeconds)))
         soundfile.write(file=write_path, data=audio_data, samplerate=sample_rate)
         # 更新列表显示
         status_item = QTableWidgetItem('已裁剪')
         status_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Success)
-        self.tblFileList.setItem(self.__currentRow, 5, status_item)
-        self.__currentRow += 1
+        self.tblFileList.setItem(row, COL_STATUS, status_item)
 
     def closeEvent(self, close_event):
         self.save_user_settings()

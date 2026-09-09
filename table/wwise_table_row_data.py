@@ -113,7 +113,7 @@ class WwiseTableRowData(TableRowData):
         p = self.path or ""
         return [str(n), str(p)]
 
-    # 读取所有显示模式共有的信息；read_optional=False 时为急速模式，
+    # 读取所有显示模式共有的信息；read_optional=False 时为极速模式，
     # 只填充基础属性与启用状态，避免逐个对象查询备注、引用计数等
     def read_common_data(self, inclusion_cache: dict[str, bool] | None = None, read_optional: bool = True):
         self[CHECK_BOX_COL] = True
