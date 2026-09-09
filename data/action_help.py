@@ -81,6 +81,7 @@ ACTION_HELP = {
     "actGenerateEventBankMap": "生成事件与 Bank 的对应关系表。",
     # 统计
     "actCalculateMediaSize": "统计可见对象的媒体资源大小：SoundBank 按包含展开，其余递归子对象中的 AudioFileSource，汇总 wav/内存 wem/流式 wem。",
+    "actPropertyQuery": "打开属性查询窗口：对表格当前可见对象批量读取指定属性（多个属性用分号分隔），结果以表格展示。",
     # GameSync
     "actCopyRtpcFromSelection": "把 Wwise 当前选中对象的 RTPC 复制（替换）到表格对象。",
     # 导入
@@ -88,6 +89,6 @@ ACTION_HELP = {
     "actImportFMODEvent": "从 FMOD 工程导入 Event。",
     "actImportFMODPreset": "从 FMOD 工程导入 Preset。",
     # 其他
-    "actHelpDoc": "打开帮助文档（链接在工程约定配置中维护）。",
+    "actHelpDoc": "打开帮助文档（链接在 user_config.json 的 Documentation 中维护）。",
     "actProjectValidation": "打开“工程检查”窗口，对工程/对象做批量校验。",
 }

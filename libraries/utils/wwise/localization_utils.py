@@ -6,6 +6,14 @@ from libraries.wwise_object import WwiseObject, WwiseObjectType
 def get_sound_language(source: WwiseObject):
     if source.type != WwiseObjectType.AudioSource and source.type != WwiseObjectType.Sound:
         return 'SFX'
+    # audioSource:language 属于 AudioFileSource；对 Sound 需取其首个音频源子对象查询
+    if source.type == WwiseObjectType.Sound:
+        for child in waapi_utils.get_child_objects(source):
+            if child.type == WwiseObjectType.AudioSource:
+                source = child
+                break
+        else:
+            return 'SFX'
     language = waapi_utils.get_object_property(source, 'audioSource:language')
     if language is None:
         return 'SFX'

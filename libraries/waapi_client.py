@@ -108,6 +108,25 @@ class WAAPIClient(metaclass=Singleton):
             Logger().error(str(e))
             return None
 
+    # 一次读取对象的多个属性；对象类型上不存在的属性不会出现在结果中
+    def get_object_properties(self, obj: dict, property_names: list) -> dict:
+        if not self.client or not obj or not property_names:
+            return {}
+        try:
+            get_args = {}
+            if project_utils.get_project_version() > 2020:
+                get_args['waql'] = f'from object \"{obj["id"]}\"'
+            else:
+                get_args['from'] = {'id': [obj["id"]]}
+            get_args['options'] = {'return': property_names}
+            result = self.client.call('ak.wwise.core.object.get', get_args)
+            if not result or not result.get('return'):
+                return {}
+            found = result['return'][0] or {}
+            return {name: found[name] for name in property_names if name in found}
+        except Exception as e:
+            Logger().error(str(e))
+            return {}
 
     # 当前对象类型上可用的属性与引用名称；object.get 的 return 只能使用此处列出的名称（见官方 ak.wwise.core.object.getPropertyAndReferenceNames）
     def get_property_and_reference_names(self, obj: dict) -> list[str]:

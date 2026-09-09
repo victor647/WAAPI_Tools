@@ -36,6 +36,7 @@
 
 - For repeated or user-visible Wwise operations over many objects, use `libraries/multi_thread/batch_processor.py` or the existing batch helper pattern instead of running long WAAPI loops directly in UI handlers.
 - Keep table/UI code and batch Wwise execution separated. UI code should gather inputs and wire callbacks; utility code should perform the operation.
+- 批量处理细节规则见 `.agents/rules/batch-processing.md`：必须用 BatchProcessor 异步执行（带进度条），工作线程不碰 UI，结果在主线程回调里更新，禁止主界面卡死等待。
 - When adding Wwise object operations, use project-provided constants, `WwiseObjectType`, generated IDs, and existing config helpers instead of duplicating string lookup logic.
 - Preserve existing Wwise version checks through `libraries/utils/wwise/project_utils.py` when behavior differs across Wwise versions.
 
@@ -43,8 +44,9 @@
 
 - 新增或修改 `windows/*_window.py` 时，界面布局必须先写在 `ui/<Name>.ui` 里，再用 pyuic 生成 `ui/<Name>_ui.py`（`pyside6-uic ui/<Name>.ui -o ui/<Name>_ui.py`），窗口类继承 `Ui_*` 并调用 `setupUi`；不要在窗口逻辑代码中手工添加控件/布局/菜单。调整已有窗口的布局同样只改 `.ui` 并重新生成，不要直接在逻辑代码里改 UI。
 - 所有按钮 / action / 控件的信号绑定统一放在 `setup_triggers` 方法中（由 `__init__` 调用），不要在 `__init__` 或其它方法里散落绑定代码。
+- 所有允许用户在界面设置的选项都必须持久化到 `user_config`，以窗口为节点（`window_settings.<window_key>`），开窗读取、关窗/变化时保存；详见 workflow 文件。
 - 详细流程与约定见 `.agents/rules/ui-window-workflow.md`。
-- `.ui` 控件 objectName 使用类型缩写前缀（`act`/`btn`/`cbb`/`cbx`/`lbl`/`rdo`/`ipt`/`pte`/`txe`/`spb`/`tbl`/`grp`/`mnu` 等，完整表见 workflow 文件），如 `btnSave`、`cbxTurboMode`。
+- `.ui` 控件 objectName 使用类型缩写前缀（`act`/`btn`/`cbb`/`cbx`/`lbl`/`rbn`/`ipt`/`pte`/`txe`/`spb`/`tbl`/`grp`/`mnu` 等，完整表见 workflow 文件），如 `btnSave`、`cbxTurboMode`。
 
 ## Logging
 

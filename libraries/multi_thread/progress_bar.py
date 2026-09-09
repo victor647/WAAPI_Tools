@@ -1,4 +1,5 @@
 from libraries.multi_thread.ProgressBar_ui import Ui_ProgressBar
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog
 
 
@@ -8,6 +9,8 @@ class ProgressBar(QDialog, Ui_ProgressBar):
     def __init__(self, total: int, title: str, processor):
         super().__init__()
         self.setupUi(self)
+        # 进度条始终置顶，避免被工具窗口挡住
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.total_count = total
         self.setWindowTitle(title)
         self.processor = processor

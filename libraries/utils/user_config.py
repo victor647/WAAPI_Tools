@@ -58,6 +58,34 @@ def get_config_path() -> str:
     return os.path.join(_find_repo_root(), CONFIG_FILE_NAME)
 
 
+def _bundled_config_path() -> str:
+    # 打包时随 exe 打入的资源副本（见 packager/WAAPI_Tools_GUI.spec 的 datas）
+    if not getattr(sys, "frozen", False):
+        return ""
+    from libraries.utils import path_utils
+
+    bundled = path_utils.get_resource_path(CONFIG_FILE_NAME)
+    return bundled if os.path.isfile(bundled) else ""
+
+
+def _initialize_config_file() -> str:
+    # 首次运行（exe 目录尚无 user_config.json）时把内置副本复制为用户的初始配置；
+    # 复制失败（例如目录只读）时本次直接读取内置副本
+    bundled = _bundled_config_path()
+    if not bundled:
+        return ""
+    user_path = get_config_path()
+    try:
+        os.makedirs(os.path.dirname(user_path), exist_ok=True)
+        with open(bundled, "r", encoding="utf-8") as src, open(user_path, "w", encoding="utf-8") as dst:
+            dst.write(src.read())
+        Logger().info(f"已使用内置配置初始化用户配置文件: {user_path}")
+        return user_path
+    except OSError as e:
+        Logger().warning(f"写入用户配置文件失败，本次直接读取内置配置: {user_path} ({e})")
+        return bundled
+
+
 def _deep_merge(base: dict, override: dict) -> dict:
     merged = dict(base)
     for key, value in override.items():
@@ -72,7 +100,10 @@ def _load_from_disk() -> dict:
     config = _deep_merge(DEFAULT_CONFIG, {})
     path = get_config_path()
     if not os.path.isfile(path):
-        return config
+        # exe 目录还没有用户配置时，用打包内置的副本初始化
+        path = _initialize_config_file()
+        if not path:
+            return config
     try:
         with open(path, "r", encoding="utf-8") as f:
             disk_config = json.load(f)
@@ -133,16 +164,26 @@ def get_ai_model() -> str:
     return load_config()["ai"].get("model", DEFAULT_CONFIG["ai"]["model"])
 
 
+# 读取 AI 设置整段（未配置项自动回退默认值）
+def get_ai_config() -> dict:
+    config = load_config()
+    ai_defaults = DEFAULT_CONFIG["ai"]
+    stored = config.get("ai")
+    if not isinstance(stored, dict):
+        stored = {}
+    return {key: stored.get(key, default) for key, default in ai_defaults.items()}
+
+
+# 部分更新 AI 设置（如 {"model": ...}），写回 user_config.json 并立即更新缓存
+def save_ai_config(patch: dict) -> None:
+    config = load_config()
+    config.setdefault("ai", {}).update(patch)
+    _write_config(config)
+
+
 # 把界面中选择的模型写回 user_config.json（下次启动仍生效）
 def save_ai_model(model: str) -> None:
-    config = load_config()
-    config.setdefault("ai", {})["model"] = model
-    path = get_config_path()
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-    except OSError as e:
-        Logger().error(f"写入 AI 模型配置失败：{path} ({e})")
+    save_ai_config({"model": model})
 
 
 def get_ai_max_context_objects() -> int:
@@ -151,6 +192,13 @@ def get_ai_max_context_objects() -> int:
 
 def get_ai_max_turns() -> int:
     return load_config()["ai"].get("max_turns", DEFAULT_CONFIG["ai"]["max_turns"])
+
+
+# 帮助文档链接：统一维护在 user_config.json 顶层 Documentation（兼容小写拼写），未配置返回空串
+def get_documentation_url() -> str:
+    config = load_config()
+    url = config.get("documentation") or config.get("Documentation")
+    return str(url or "").strip()
 
 
 def get_advanced_filter_settings() -> dict:

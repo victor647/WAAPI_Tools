@@ -11,6 +11,7 @@ import globals.global_variables as gv
 from data import project_conventions
 from data.action_help import ACTION_HELP
 from globals.version import get_software_version
+from globals.constants import DOCUMENTATION_URL
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_item_model import INCLUSION_COL
 from libraries.utils.log_utils import Logger
@@ -28,6 +29,8 @@ from windows.bank_assignment_window import BankAssignmentMatrix as BankAssignmen
 from windows.project_validation_window import ProjectValidation as ProjectValidation
 from windows.work_unit_import_window import WorkUnitImporter as WorkUnitImporter
 from windows.project_settings_window import ProjectSettingsWindow as ProjectSettingsWindow
+from windows.media_size_window import MediaSizeWindow as MediaSizeWindow
+from windows.property_query_window import PropertyQueryWindow as PropertyQueryWindow
 from waapi import CannotConnectToWaapiException
 from PySide6.QtWidgets import QDialog, QMainWindow, QMenu, QTableWidgetItem
 from ui.MainWindow_ui import Ui_MainWindow
@@ -325,8 +328,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开工程规范设置窗口
     def open_project_settings_window(self):
-        settings_window = ProjectSettingsWindow()
+        settings_window = ProjectSettingsWindow(on_ai_saved=self._reload_ai_model_from_settings)
         settings_window.exec()
+
+    # 设置窗口保存 AI 模型后，同步主窗口下拉框为配置值
+    def _reload_ai_model_from_settings(self):
+        model = user_config.get_ai_model()
+        if not model:
+            return
+        if self.cbbAiModel.findText(model) < 0:
+            self.cbbAiModel.addItem(model)
+        self.cbbAiModel.setCurrentText(model)
+
+    # 打开帮助文档：链接统一维护在 user_config.json 的 Documentation，未配置时回退内置常量
+    def open_help_documentation(self):
+        url = (
+            user_config.get_documentation_url()
+            or DOCUMENTATION_URL
+        )
+        if not url:
+            Logger().warning("未配置帮助文档链接，请在 user_config.json 的 Documentation 字段中填写")
+            return
+        webbrowser.open(url)
 
     # 极速模式勾选切换：勾选时快速查找完整列表；取消勾选进入完整模式，对当前可见对象读取全部属性
     def _on_turbo_mode_toggled(self, checked: bool):
@@ -501,6 +524,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actGenerateEventBankMap.triggered.connect(soundbank_utils.generate_event_bank_map)
         # 统计菜单
         self.actCalculateMediaSize.triggered.connect(self.calculate_media_size)
+        self.actPropertyQuery.triggered.connect(self.open_property_query_window)
         # GameSync菜单
         self.actCopyRtpcFromSelection.triggered.connect(self.copy_rtpc_from_selection)
         # 导入菜单
@@ -508,7 +532,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actImportFMODEvent.triggered.connect(migration_utils.import_fmod_events)
         self.actImportFMODPreset.triggered.connect(migration_utils.import_fmod_presets)
         # 其他菜单
-        self.actHelpDoc.triggered.connect(lambda: webbrowser.open(DOCUMENTATION_URL))
+        self.actHelpDoc.triggered.connect(self.open_help_documentation)
         self.actProjectValidation.triggered.connect(self.open_project_validation_window)        
 
         self.table.model.inclusion_updated.connect(self._on_wwise_inclusion_cell_changed)
@@ -778,12 +802,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             target_types = {target_types}
         else:
             target_types = set(target_types)
+        # 高级筛选中开启「按当前语言筛选」时，只收集当前语言的音频源
+        language_filter_active = (
+            user_config.get_advanced_filter_settings().get("language_filter") == "active"
+        )
+        active_language = (
+            localization_utils.get_current_language() if language_filter_active else None
+        )
         visible_objects = self.get_visible_objects()
         collected: list[WwiseObject] = []
         seen_ids: set[str] = set()
 
         def add_object(obj: WwiseObject):
             if obj.type in target_types and obj.id not in seen_ids:
+                if (
+                    language_filter_active
+                    and localization_utils.get_sound_language(obj) != active_language
+                ):
+                    return
                 seen_ids.add(obj.id)
                 collected.append(obj)
 
@@ -1035,30 +1071,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         trim_window.show()
         trim_window.exec()
 
-    # 计算表格可见对象的音频媒体资源总大小（任意对象类型：SoundBank 按包含展开，其余递归子对象中的 AudioFileSource）
+    # 打开媒体资源大小统计窗口（按每个对象逐项展示）
     def calculate_media_size(self):
         objects = [row_data.wwise_object for row_data in self.table.active_data]
         if not objects:
             Logger().warning('表格中没有可统计的对象')
             return
-        statistics = soundbank_utils.MediaSizeStatistics()
+        media_window = MediaSizeWindow(objects)
+        media_window.show()
+        media_window.exec()
 
-        # 后台线程逐对象累加，避免对象过多时阻塞界面；最后一个对象处理完即汇总
-        def accumulate(index, obj):
-            statistics.accumulate(obj)
-            if index == len(objects) - 1:
-                statistics.finish()
-            return True
-
-        # 进度条走完后再回到主线程打印统计结果
-        def on_finished():
-            wav_size, memory_wem_size, stream_wem_size, used_files = statistics.finish()
-            total_wem_size = memory_wem_size + stream_wem_size
-            text = (f'共统计{len(objects)}个对象\n共包含{len(used_files)}个音频文件\n原始wav大小: {wav_size}MB'
-                    f'\n压缩后的wem: {total_wem_size}MB\n内存加载的wem: {memory_wem_size}MB\n流式加载的wem: {stream_wem_size}MB')
-            Logger().query(f'统计完毕，{text}')
-
-        batch_processor.create_async(objects, accumulate, '计算媒体资源大小', 'name', on_finished=on_finished)
+    # 打开属性查询窗口，对表格可见对象批量读取指定属性
+    def open_property_query_window(self):
+        objects = [row_data.wwise_object for row_data in self.table.active_data]
+        if not objects:
+            Logger().warning('表格中没有可查询的对象')
+            return
+        query_window = PropertyQueryWindow(objects)
+        query_window.show()
+        query_window.exec()
 
     # 添加列表对象到选中的Bank中
     def add_to_selected_bank(self):

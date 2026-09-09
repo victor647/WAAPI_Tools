@@ -32,6 +32,10 @@ def get_object_property(obj: WwiseObject, property_name: str):
     return WAAPIClient().get_object_property(obj.wwise_dict, property_name)
 
 
+def get_object_properties(obj: WwiseObject, property_names: list) -> dict:
+    return WAAPIClient().get_object_properties(obj.wwise_dict, property_names)
+
+
 def get_property_and_reference_names(obj: WwiseObject) -> list[str]:
     return WAAPIClient().get_property_and_reference_names(obj.wwise_dict)
 

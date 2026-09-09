@@ -31,6 +31,11 @@ datas = [
     (os.path.join(root, "material.css"), "."),
     (os.path.join(root, "ai_assistant_prompt.md"), "."),
 ] + qt_material_datas
+# 工程根目录的用户配置随包携带：exe 目录无 user_config.json 时由
+# libraries/utils/user_config.py 复制出来，作为用户初始化的数据来源
+user_config_file = os.path.join(root, "user_config.json")
+if os.path.isfile(user_config_file):
+    datas.append((user_config_file, "."))
 binaries = qt_material_binaries
 hiddenimports = qt_material_hidden
 

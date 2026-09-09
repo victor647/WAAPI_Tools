@@ -41,21 +41,21 @@ class Ui_AdvancedFilter(object):
         self.grpEventFilter.setObjectName(u"grpEventFilter")
         self.horizontalLayout = QHBoxLayout(self.grpEventFilter)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.rdoEventAll = QRadioButton(self.grpEventFilter)
-        self.rdoEventAll.setObjectName(u"rdoEventAll")
-        self.rdoEventAll.setChecked(True)
+        self.rbnEventAll = QRadioButton(self.grpEventFilter)
+        self.rbnEventAll.setObjectName(u"rbnEventAll")
+        self.rbnEventAll.setChecked(True)
 
-        self.horizontalLayout.addWidget(self.rdoEventAll)
+        self.horizontalLayout.addWidget(self.rbnEventAll)
 
-        self.rdoEventHas = QRadioButton(self.grpEventFilter)
-        self.rdoEventHas.setObjectName(u"rdoEventHas")
+        self.rbnEventHas = QRadioButton(self.grpEventFilter)
+        self.rbnEventHas.setObjectName(u"rbnEventHas")
 
-        self.horizontalLayout.addWidget(self.rdoEventHas)
+        self.horizontalLayout.addWidget(self.rbnEventHas)
 
-        self.rdoEventNo = QRadioButton(self.grpEventFilter)
-        self.rdoEventNo.setObjectName(u"rdoEventNo")
+        self.rbnEventNo = QRadioButton(self.grpEventFilter)
+        self.rbnEventNo.setObjectName(u"rbnEventNo")
 
-        self.horizontalLayout.addWidget(self.rdoEventNo)
+        self.horizontalLayout.addWidget(self.rbnEventNo)
 
 
         self.verticalLayout.addWidget(self.grpEventFilter)
@@ -64,16 +64,16 @@ class Ui_AdvancedFilter(object):
         self.grpLanguageFilter.setObjectName(u"grpLanguageFilter")
         self.horizontalLayout_2 = QHBoxLayout(self.grpLanguageFilter)
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.rdoLangAll = QRadioButton(self.grpLanguageFilter)
-        self.rdoLangAll.setObjectName(u"rdoLangAll")
-        self.rdoLangAll.setChecked(True)
+        self.rbnLangAll = QRadioButton(self.grpLanguageFilter)
+        self.rbnLangAll.setObjectName(u"rbnLangAll")
+        self.rbnLangAll.setChecked(True)
 
-        self.horizontalLayout_2.addWidget(self.rdoLangAll)
+        self.horizontalLayout_2.addWidget(self.rbnLangAll)
 
-        self.rdoLangActive = QRadioButton(self.grpLanguageFilter)
-        self.rdoLangActive.setObjectName(u"rdoLangActive")
+        self.rbnLangActive = QRadioButton(self.grpLanguageFilter)
+        self.rbnLangActive.setObjectName(u"rbnLangActive")
 
-        self.horizontalLayout_2.addWidget(self.rdoLangActive)
+        self.horizontalLayout_2.addWidget(self.rbnLangActive)
 
 
         self.verticalLayout.addWidget(self.grpLanguageFilter)
@@ -103,12 +103,12 @@ class Ui_AdvancedFilter(object):
         self.cbxCaseSensitive.setText(QCoreApplication.translate("AdvancedFilter", u"\u533a\u5206\u5927\u5c0f\u5199", None))
         self.cbxOnlyIncluded.setText(QCoreApplication.translate("AdvancedFilter", u"\u4ec5\u663e\u793a\u542f\u7528\u5bf9\u8c61", None))
         self.grpEventFilter.setTitle(QCoreApplication.translate("AdvancedFilter", u"Event \u5f15\u7528\u7b5b\u9009", None))
-        self.rdoEventAll.setText(QCoreApplication.translate("AdvancedFilter", u"\u5168\u90e8", None))
-        self.rdoEventHas.setText(QCoreApplication.translate("AdvancedFilter", u"\u88ab\u5f15\u7528", None))
-        self.rdoEventNo.setText(QCoreApplication.translate("AdvancedFilter", u"\u672a\u88ab\u5f15\u7528", None))
+        self.rbnEventAll.setText(QCoreApplication.translate("AdvancedFilter", u"\u5168\u90e8", None))
+        self.rbnEventHas.setText(QCoreApplication.translate("AdvancedFilter", u"\u88ab\u5f15\u7528", None))
+        self.rbnEventNo.setText(QCoreApplication.translate("AdvancedFilter", u"\u672a\u88ab\u5f15\u7528", None))
         self.grpLanguageFilter.setTitle(QCoreApplication.translate("AdvancedFilter", u"\u8bed\u8a00\u7b5b\u9009", None))
-        self.rdoLangAll.setText(QCoreApplication.translate("AdvancedFilter", u"\u5168\u90e8", None))
-        self.rdoLangActive.setText(QCoreApplication.translate("AdvancedFilter", u"\u6309\u5f53\u524d\u8bed\u8a00\u7b5b\u9009", None))
+        self.rbnLangAll.setText(QCoreApplication.translate("AdvancedFilter", u"\u5168\u90e8", None))
+        self.rbnLangActive.setText(QCoreApplication.translate("AdvancedFilter", u"\u6309\u5f53\u524d\u8bed\u8a00\u7b5b\u9009", None))
         self.btnClose.setText(QCoreApplication.translate("AdvancedFilter", u"\u5173\u95ed", None))
     # retranslateUi
 

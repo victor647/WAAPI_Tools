@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'ProjectValidation.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.9.2
+## Created by: Qt User Interface Compiler version 6.11.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -227,43 +227,36 @@ class Ui_ProjectValidation(object):
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.btnSelectAll = QPushButton(ProjectValidation)
         self.btnSelectAll.setObjectName(u"btnSelectAll")
-        self.btnSelectAll.setMaximumSize(QSize(50, 20))
 
         self.horizontalLayout.addWidget(self.btnSelectAll)
 
         self.btnDeselectAll = QPushButton(ProjectValidation)
         self.btnDeselectAll.setObjectName(u"btnDeselectAll")
-        self.btnDeselectAll.setMaximumSize(QSize(50, 20))
 
         self.horizontalLayout.addWidget(self.btnDeselectAll)
 
         self.btnValidateEntireProject = QPushButton(ProjectValidation)
         self.btnValidateEntireProject.setObjectName(u"btnValidateEntireProject")
-        self.btnValidateEntireProject.setMaximumSize(QSize(16777215, 20))
 
         self.horizontalLayout.addWidget(self.btnValidateEntireProject)
 
         self.btnValidateListEntries = QPushButton(ProjectValidation)
         self.btnValidateListEntries.setObjectName(u"btnValidateListEntries")
-        self.btnValidateListEntries.setMaximumSize(QSize(16777215, 20))
 
         self.horizontalLayout.addWidget(self.btnValidateListEntries)
 
         self.btnValidateProjectSelection = QPushButton(ProjectValidation)
         self.btnValidateProjectSelection.setObjectName(u"btnValidateProjectSelection")
-        self.btnValidateProjectSelection.setMaximumSize(QSize(16777215, 20))
 
         self.horizontalLayout.addWidget(self.btnValidateProjectSelection)
 
         self.btnSendResultToMainWindow = QPushButton(ProjectValidation)
         self.btnSendResultToMainWindow.setObjectName(u"btnSendResultToMainWindow")
-        self.btnSendResultToMainWindow.setMaximumSize(QSize(16777215, 20))
 
         self.horizontalLayout.addWidget(self.btnSendResultToMainWindow)
 
         self.btnAutoFixSelection = QPushButton(ProjectValidation)
         self.btnAutoFixSelection.setObjectName(u"btnAutoFixSelection")
-        self.btnAutoFixSelection.setMaximumSize(QSize(16777215, 20))
 
         self.horizontalLayout.addWidget(self.btnAutoFixSelection)
 
@@ -282,6 +275,7 @@ class Ui_ProjectValidation(object):
         __qtablewidgetitem3 = QTableWidgetItem()
         self.tblValidationResults.setHorizontalHeaderItem(3, __qtablewidgetitem3)
         self.tblValidationResults.setObjectName(u"tblValidationResults")
+        self.tblValidationResults.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tblValidationResults.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
         self.tblValidationResults.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tblValidationResults.setSortingEnabled(False)
@@ -334,12 +328,12 @@ class Ui_ProjectValidation(object):
         self.btnSendResultToMainWindow.setText(QCoreApplication.translate("ProjectValidation", u"\u5c06\u5217\u8868\u9009\u4e2d\u9879\u53d1\u9001\u5230\u4e3b\u7a97\u53e3", None))
         self.btnAutoFixSelection.setText(QCoreApplication.translate("ProjectValidation", u"\u4e00\u952e\u4fee\u590d\u5217\u8868\u9009\u4e2d\u9879", None))
         ___qtablewidgetitem = self.tblValidationResults.horizontalHeaderItem(0)
-        ___qtablewidgetitem.setText(QCoreApplication.translate("ProjectValidation", u"\u7c7b\u522b", None));
+        ___qtablewidgetitem.setText(QCoreApplication.translate("ProjectValidation", u"\u7c7b\u522b", None))
         ___qtablewidgetitem1 = self.tblValidationResults.horizontalHeaderItem(1)
-        ___qtablewidgetitem1.setText(QCoreApplication.translate("ProjectValidation", u"\u95ee\u9898", None));
+        ___qtablewidgetitem1.setText(QCoreApplication.translate("ProjectValidation", u"\u95ee\u9898", None))
         ___qtablewidgetitem2 = self.tblValidationResults.horizontalHeaderItem(2)
-        ___qtablewidgetitem2.setText(QCoreApplication.translate("ProjectValidation", u"\u5bf9\u8c61\u7c7b\u578b", None));
+        ___qtablewidgetitem2.setText(QCoreApplication.translate("ProjectValidation", u"\u5bf9\u8c61\u7c7b\u578b", None))
         ___qtablewidgetitem3 = self.tblValidationResults.horizontalHeaderItem(3)
-        ___qtablewidgetitem3.setText(QCoreApplication.translate("ProjectValidation", u"\u5bf9\u8c61\u8def\u5f84\uff08\u53cc\u51fb\u53ef\u5728Wwise\u5de5\u7a0b\u4e2d\u67e5\u770b\uff09", None));
+        ___qtablewidgetitem3.setText(QCoreApplication.translate("ProjectValidation", u"\u5bf9\u8c61\u8def\u5f84\uff08\u53cc\u51fb\u53ef\u5728Wwise\u5de5\u7a0b\u4e2d\u67e5\u770b\uff09", None))
     # retranslateUi
 

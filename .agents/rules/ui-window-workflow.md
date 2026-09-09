@@ -36,7 +36,7 @@
 | QComboBox | `cbb` | cbbFilterType、cbbTableDisplayMode |
 | QCheckBox | `cbx` | cbxTurboMode、cbxOnlyIncludedEnabled |
 | QLabel | `lbl` | lblWwiseConnection、lblInfo |
-| QRadioButton | `rdo` | rdoEventAll、rdoLangActive |
+| QRadioButton | `rbn` | rbnEventAll、rbnLangActive |
 | QLineEdit | `ipt` | iptFindName、iptNetRole1P |
 | QPlainTextEdit | `pte` | pteLanguages |
 | QTextEdit | `txe` | txeOutputLogs |
@@ -51,3 +51,12 @@
 - 主窗口中的即时筛选/提示输入沿用历史 `led` 前缀（如 `ledFilterKeyword`、`ledAiPrompt`），不改名；新窗口普通单行输入统一用 `ipt`。
 - `QTabWidget` 主容器本身可用通用名 `tabWidget`。
 - 窗口逻辑代码中引用的属性名与 objectName 一致（由 `setupUi` 自动生成）。
+
+## 窗口设置持久化
+
+所有允许用户在界面上设置的选项（开关、数值、下拉选择、单选模式等）都必须保存到 `user_config`，并**以窗口为节点**管理：
+
+- 使用 `user_config.get_window_settings(<window_key>)` 读取、`user_config.set_window_settings(<window_key>, {...})` 写入；数据保存在 `user_config.json` 的 `window_settings.<window_key>` 下。
+- `<window_key>` 用窗口的语义名，例如裁剪工具用 `audio_silence_trim`。
+- 打开窗口时在 `__init__` 里调用一次“读取并回填控件”的方法（如 `load_user_settings`）；关闭窗口（`closeEvent`）或选项变化时保存（如 `save_user_settings`）。
+- 界面新增任何可设置项时，必须同步加入读取与保存逻辑，不要只存内存不落盘。

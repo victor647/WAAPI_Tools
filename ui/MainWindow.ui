@@ -591,6 +591,7 @@ Boss        包含 Boss
      <string>统计</string>
     </property>
     <addaction name="actCalculateMediaSize"/>
+    <addaction name="actPropertyQuery"/>
    </widget>
    <widget class="QMenu" name="mnuCommon">
     <property name="title">
@@ -807,6 +808,11 @@ Boss        包含 Boss
   <action name="actCalculateMediaSize">
    <property name="text">
     <string>计算媒体资源大小</string>
+   </property>
+  </action>
+  <action name="actPropertyQuery">
+   <property name="text">
+    <string>属性查询</string>
    </property>
   </action>
   <action name="actCreateSoundBank">

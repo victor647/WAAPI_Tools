@@ -15,10 +15,10 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QHBoxLayout,
-    QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-    QSizePolicy, QSpacerItem, QTabWidget, QVBoxLayout,
-    QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout,
+    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
+    QPushButton, QSizePolicy, QSpacerItem, QSpinBox,
+    QTabWidget, QVBoxLayout, QWidget)
 
 from libraries.widgets.map_edit_widget import MapEdit
 
@@ -163,6 +163,83 @@ class Ui_ProjectSettings(object):
         self.tabToolsLayout.addItem(self.toolsSpacer)
 
         self.tabWidget.addTab(self.tabTools, "")
+        self.tabAi = QWidget()
+        self.tabAi.setObjectName(u"tabAi")
+        self.tabAiLayout = QVBoxLayout(self.tabAi)
+        self.tabAiLayout.setObjectName(u"tabAiLayout")
+        self.aiForm = QFormLayout()
+        self.aiForm.setObjectName(u"aiForm")
+        self.lblAiProxy = QLabel(self.tabAi)
+        self.lblAiProxy.setObjectName(u"lblAiProxy")
+
+        self.aiForm.setWidget(0, QFormLayout.ItemRole.LabelRole, self.lblAiProxy)
+
+        self.iptAiProxy = QLineEdit(self.tabAi)
+        self.iptAiProxy.setObjectName(u"iptAiProxy")
+
+        self.aiForm.setWidget(0, QFormLayout.ItemRole.FieldRole, self.iptAiProxy)
+
+        self.lblAiApiKey = QLabel(self.tabAi)
+        self.lblAiApiKey.setObjectName(u"lblAiApiKey")
+
+        self.aiForm.setWidget(1, QFormLayout.ItemRole.LabelRole, self.lblAiApiKey)
+
+        self.iptAiApiKey = QLineEdit(self.tabAi)
+        self.iptAiApiKey.setObjectName(u"iptAiApiKey")
+        self.iptAiApiKey.setEchoMode(QLineEdit.Password)
+
+        self.aiForm.setWidget(1, QFormLayout.ItemRole.FieldRole, self.iptAiApiKey)
+
+        self.lblAiModel = QLabel(self.tabAi)
+        self.lblAiModel.setObjectName(u"lblAiModel")
+
+        self.aiForm.setWidget(2, QFormLayout.ItemRole.LabelRole, self.lblAiModel)
+
+        self.iptAiModel = QLineEdit(self.tabAi)
+        self.iptAiModel.setObjectName(u"iptAiModel")
+
+        self.aiForm.setWidget(2, QFormLayout.ItemRole.FieldRole, self.iptAiModel)
+
+        self.lblAiMaxContext = QLabel(self.tabAi)
+        self.lblAiMaxContext.setObjectName(u"lblAiMaxContext")
+
+        self.aiForm.setWidget(3, QFormLayout.ItemRole.LabelRole, self.lblAiMaxContext)
+
+        self.spnAiMaxContext = QSpinBox(self.tabAi)
+        self.spnAiMaxContext.setObjectName(u"spnAiMaxContext")
+        self.spnAiMaxContext.setMinimum(1)
+        self.spnAiMaxContext.setMaximum(10000)
+        self.spnAiMaxContext.setValue(300)
+
+        self.aiForm.setWidget(3, QFormLayout.ItemRole.FieldRole, self.spnAiMaxContext)
+
+        self.lblAiMaxTurns = QLabel(self.tabAi)
+        self.lblAiMaxTurns.setObjectName(u"lblAiMaxTurns")
+
+        self.aiForm.setWidget(4, QFormLayout.ItemRole.LabelRole, self.lblAiMaxTurns)
+
+        self.spnAiMaxTurns = QSpinBox(self.tabAi)
+        self.spnAiMaxTurns.setObjectName(u"spnAiMaxTurns")
+        self.spnAiMaxTurns.setMinimum(1)
+        self.spnAiMaxTurns.setMaximum(200)
+        self.spnAiMaxTurns.setValue(20)
+
+        self.aiForm.setWidget(4, QFormLayout.ItemRole.FieldRole, self.spnAiMaxTurns)
+
+
+        self.tabAiLayout.addLayout(self.aiForm)
+
+        self.lblAiHint = QLabel(self.tabAi)
+        self.lblAiHint.setObjectName(u"lblAiHint")
+        self.lblAiHint.setWordWrap(True)
+
+        self.tabAiLayout.addWidget(self.lblAiHint)
+
+        self.aiSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.tabAiLayout.addItem(self.aiSpacer)
+
+        self.tabWidget.addTab(self.tabAi, "")
 
         self.verticalLayout.addWidget(self.tabWidget)
 
@@ -211,6 +288,15 @@ class Ui_ProjectSettings(object):
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabHabits), QCoreApplication.translate("ProjectSettings", u"\u5de5\u7a0b\u4e60\u60ef", None))
         self.cbxAutoFetchChildren.setText(QCoreApplication.translate("ProjectSettings", u"\u5de5\u5177\u6267\u884c\u524d\u81ea\u52a8\u83b7\u53d6\u5b50\u5bf9\u8c61", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabTools), QCoreApplication.translate("ProjectSettings", u"\u5de5\u5177\u884c\u4e3a", None))
+        self.lblAiProxy.setText(QCoreApplication.translate("ProjectSettings", u"\u4ee3\u7406\u5730\u5740", None))
+        self.iptAiProxy.setPlaceholderText(QCoreApplication.translate("ProjectSettings", u"http://127.0.0.1:15721", None))
+        self.lblAiApiKey.setText(QCoreApplication.translate("ProjectSettings", u"API Key", None))
+        self.lblAiModel.setText(QCoreApplication.translate("ProjectSettings", u"\u6a21\u578b", None))
+        self.iptAiModel.setPlaceholderText(QCoreApplication.translate("ProjectSettings", u"\u7559\u7a7a\u8868\u793a\u4e0d\u6307\u5b9a\u6a21\u578b", None))
+        self.lblAiMaxContext.setText(QCoreApplication.translate("ProjectSettings", u"\u5355\u6b21\u6700\u5927\u5bf9\u8c61\u6570", None))
+        self.lblAiMaxTurns.setText(QCoreApplication.translate("ProjectSettings", u"\u6700\u5927\u5bf9\u8bdd\u8f6e\u6570", None))
+        self.lblAiHint.setText(QCoreApplication.translate("ProjectSettings", u"AI \u52a9\u624b\u8bbe\u7f6e\u4fdd\u5b58\u5728 user_config.json \u7684 ai \u8282\uff1a\u4ee3\u7406\u4e3a OpenAI \u517c\u5bb9\u5730\u5740\uff1b\u6a21\u578b\u53ef\u7559\u7a7a\uff1b\u4fee\u6539\u540e\u4e0b\u4e00\u6b21\u53d1\u9001\u6307\u4ee4\u751f\u6548\uff0c\u4e3b\u7a97\u53e3\u7684\u6a21\u578b\u4e0b\u62c9\u6846\u4f1a\u5728\u91cd\u542f\u540e\u540c\u6b65\u3002", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabAi), QCoreApplication.translate("ProjectSettings", u"AI \u52a9\u624b", None))
         self.btnSave.setText(QCoreApplication.translate("ProjectSettings", u"\u4fdd\u5b58", None))
         self.btnCancel.setText(QCoreApplication.translate("ProjectSettings", u"\u53d6\u6d88", None))
     # retranslateUi

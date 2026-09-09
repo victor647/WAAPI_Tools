@@ -55,7 +55,16 @@ def register_tool(
 ) -> ToolSpec:
     if name in _TOOLS:
         raise ValueError(f"工具已注册：{name}")
-    spec = ToolSpec(name, description, parameters, handler, mutating=mutating)
+    # 统一 OpenAI function-calling 参数结构：顶层必须是 type=object，
+    # 避免个别供应商拒绝缺 type/properties/required 的 schema
+    if not isinstance(parameters, dict):
+        parameters = {}
+    normalized = {
+        "type": "object",
+        "properties": parameters.get("properties") if isinstance(parameters.get("properties"), dict) else {},
+        "required": parameters.get("required") if isinstance(parameters.get("required"), list) else [],
+    }
+    spec = ToolSpec(name, description, normalized, handler, mutating=mutating)
     _TOOLS[name] = spec
     return spec
 

@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QHBoxLayout,
-    QLabel, QPushButton, QSizePolicy, QSpacerItem,
-    QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
+    QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QSpacerItem, QVBoxLayout, QWidget)
 
 from libraries.widgets.waveform_widget import WaveformWidget
 
@@ -29,16 +29,47 @@ class Ui_AudioPreview(object):
         AudioPreviewWindow.setMinimumSize(QSize(760, 280))
         self.verticalLayout = QVBoxLayout(AudioPreviewWindow)
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.controlsRow = QHBoxLayout()
-        self.controlsRow.setObjectName(u"controlsRow")
+        self.controlsInfoRow = QHBoxLayout()
+        self.controlsInfoRow.setObjectName(u"controlsInfoRow")
         self.lblInfo = QLabel(AudioPreviewWindow)
         self.lblInfo.setObjectName(u"lblInfo")
 
-        self.controlsRow.addWidget(self.lblInfo)
+        self.controlsInfoRow.addWidget(self.lblInfo)
 
+
+        self.verticalLayout.addLayout(self.controlsInfoRow)
+
+        self.controlsFileInfoRow = QHBoxLayout()
+        self.controlsFileInfoRow.setObjectName(u"controlsFileInfoRow")
+        self.lblFileDetails = QLabel(AudioPreviewWindow)
+        self.lblFileDetails.setObjectName(u"lblFileDetails")
+
+        self.controlsFileInfoRow.addWidget(self.lblFileDetails)
+
+        self.fileInfoSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.controlsFileInfoRow.addItem(self.fileInfoSpacer)
+
+
+        self.verticalLayout.addLayout(self.controlsFileInfoRow)
+
+        self.controlsRow = QHBoxLayout()
+        self.controlsRow.setObjectName(u"controlsRow")
         self.infoSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.controlsRow.addItem(self.infoSpacer)
+
+        self.lblDisplayMode = QLabel(AudioPreviewWindow)
+        self.lblDisplayMode.setObjectName(u"lblDisplayMode")
+
+        self.controlsRow.addWidget(self.lblDisplayMode)
+
+        self.cbbDisplayMode = QComboBox(AudioPreviewWindow)
+        self.cbbDisplayMode.addItem("")
+        self.cbbDisplayMode.addItem("")
+        self.cbbDisplayMode.setObjectName(u"cbbDisplayMode")
+
+        self.controlsRow.addWidget(self.cbbDisplayMode)
 
         self.chkLoop = QCheckBox(AudioPreviewWindow)
         self.chkLoop.setObjectName(u"chkLoop")
@@ -93,6 +124,11 @@ class Ui_AudioPreview(object):
     def retranslateUi(self, AudioPreviewWindow):
         AudioPreviewWindow.setWindowTitle(QCoreApplication.translate("AudioPreview", u"\u97f3\u9891\u9884\u89c8", None))
         self.lblInfo.setText("")
+        self.lblFileDetails.setText("")
+        self.lblDisplayMode.setText(QCoreApplication.translate("AudioPreview", u"\u663e\u793a", None))
+        self.cbbDisplayMode.setItemText(0, QCoreApplication.translate("AudioPreview", u"\u6ce2\u5f62", None))
+        self.cbbDisplayMode.setItemText(1, QCoreApplication.translate("AudioPreview", u"\u9891\u8c31", None))
+
         self.chkLoop.setText(QCoreApplication.translate("AudioPreview", u"\u5faa\u73af", None))
         self.btnPlay.setText(QCoreApplication.translate("AudioPreview", u"\u64ad\u653e", None))
         self.btnStop.setText(QCoreApplication.translate("AudioPreview", u"\u505c\u6b62", None))

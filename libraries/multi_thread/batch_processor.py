@@ -18,6 +18,8 @@ def create_async(objects: list, processor: Callable, title: str, obj_name: str =
     gv.batch_processor = BatchProcessorAsync(objects, processor, obj_name, on_finished, on_interrupted, on_item_processed)
     gv.progress_bar = ProgressBar(len(objects), title, gv.batch_processor)
     gv.progress_bar.show()
+    gv.progress_bar.raise_()
+    gv.progress_bar.activateWindow()
     gv.batch_processor.set_progress_bar(gv.progress_bar)
     gv.batch_processor.start()
 

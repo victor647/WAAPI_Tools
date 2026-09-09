@@ -1,3 +1,4 @@
+import clipboard
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMenu, QTableWidgetItem
 
@@ -5,6 +6,7 @@ from libraries.multi_thread import batch_processor
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, waapi_utils
 from libraries.wwise_object import WwiseObject
+from table.wwise_table_context_menu import add_common_object_actions
 from table.wwise_table_row_data import WwiseTableRowData
 from ui.SyncTrim_ui import Ui_SyncTrim
 
@@ -69,10 +71,16 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
         index = self.tblTrimInfo.indexAt(position)
         if not index.isValid():
             return
+        row = index.row()
         menu = QMenu(self)
+        cell = self.tblTrimInfo.item(row, index.column())
+        if cell is not None and cell.text():
+            menu.addAction('复制', lambda: clipboard.copy(cell.text()))
+        if 0 <= row < len(self.__sources):
+            add_common_object_actions(menu, self.__sources[row], self)
         sync_action = menu.addAction('使用此版本')
         if menu.exec(self.tblTrimInfo.viewport().mapToGlobal(position)) == sync_action:
-            self.sync_from_row(index.row())
+            self.sync_from_row(row)
 
     # 以指定行为基准，把所有使用同一 originalRelativeFilePath 的 AudioSource 裁剪信息改为该行数值
     def sync_from_row(self, row: int):

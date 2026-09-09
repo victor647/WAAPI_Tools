@@ -212,9 +212,3 @@ def has_event_play_prefix() -> bool:
     if not conventions or 'PlayPrefixInEvent' not in conventions:
         return False
     return conventions['PlayPrefixInEvent']
-
-# 获取帮助文档链接
-def get_documentation_url() -> str:
-    if not conventions or 'Documentation' not in conventions:
-        return 'https://lafaxi647.feishu.cn/wiki/PnUKwA4ctiI1uXkXEE6cQ93unog'
-    return conventions['Documentation']

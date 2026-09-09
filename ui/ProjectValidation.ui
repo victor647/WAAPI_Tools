@@ -337,12 +337,6 @@
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
       <widget class="QPushButton" name="btnSelectAll">
-       <property name="maximumSize">
-        <size>
-         <width>50</width>
-         <height>20</height>
-        </size>
-       </property>
        <property name="text">
         <string>全选</string>
        </property>
@@ -350,12 +344,6 @@
      </item>
      <item>
       <widget class="QPushButton" name="btnDeselectAll">
-       <property name="maximumSize">
-        <size>
-         <width>50</width>
-         <height>20</height>
-        </size>
-       </property>
        <property name="text">
         <string>全不选</string>
        </property>
@@ -363,12 +351,6 @@
      </item>
      <item>
       <widget class="QPushButton" name="btnValidateEntireProject">
-       <property name="maximumSize">
-        <size>
-         <width>16777215</width>
-         <height>20</height>
-        </size>
-       </property>
        <property name="text">
         <string>检查整个工程（可能会很慢）</string>
        </property>
@@ -376,12 +358,6 @@
      </item>
      <item>
       <widget class="QPushButton" name="btnValidateListEntries">
-       <property name="maximumSize">
-        <size>
-         <width>16777215</width>
-         <height>20</height>
-        </size>
-       </property>
        <property name="text">
         <string>检查主窗口列表对象</string>
        </property>
@@ -389,12 +365,6 @@
      </item>
      <item>
       <widget class="QPushButton" name="btnValidateProjectSelection">
-       <property name="maximumSize">
-        <size>
-         <width>16777215</width>
-         <height>20</height>
-        </size>
-       </property>
        <property name="text">
         <string>检查Wwise工程选中对象</string>
        </property>
@@ -402,12 +372,6 @@
      </item>
      <item>
       <widget class="QPushButton" name="btnSendResultToMainWindow">
-       <property name="maximumSize">
-        <size>
-         <width>16777215</width>
-         <height>20</height>
-        </size>
-       </property>
        <property name="text">
         <string>将列表选中项发送到主窗口</string>
        </property>
@@ -415,12 +379,6 @@
      </item>
      <item>
       <widget class="QPushButton" name="btnAutoFixSelection">
-       <property name="maximumSize">
-        <size>
-         <width>16777215</width>
-         <height>20</height>
-        </size>
-       </property>
        <property name="text">
         <string>一键修复列表选中项</string>
        </property>
@@ -430,6 +388,9 @@
    </item>
    <item>
     <widget class="QTableWidget" name="tblValidationResults">
+     <property name="contextMenuPolicy">
+      <enum>Qt::CustomContextMenu</enum>
+     </property>
      <property name="sizeAdjustPolicy">
       <enum>QAbstractScrollArea::AdjustToContents</enum>
      </property>

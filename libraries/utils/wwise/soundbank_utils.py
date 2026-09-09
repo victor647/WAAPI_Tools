@@ -77,6 +77,18 @@ def get_total_media_size(objects: list) -> tuple:
     return statistics.finish()
 
 
+# 单个对象子树独立的媒体大小统计（KB；不做跨对象去重、不触发缺失 wem 转码）
+# 返回 (wavKB, 内存wemKB, 流式wemKB, 文件列表, 流式源文件列表, 非流式源文件列表)
+def get_object_media_size(obj: WwiseObject) -> tuple:
+    stream_files, memory_files = [], []
+    total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
+        _accumulate_media_size(obj, 0.0, 0.0, 0.0, [], set(), set(), None, set(),
+                               stream_file_paths=stream_files, memory_file_paths=memory_files)
+    )
+    return (total_wav_size, total_memory_wem_size, total_stream_wem_size,
+            used_files, stream_files, memory_files)
+
+
 # 传统方式获取Bank大小（KB 累加，供工程检查等按单个 Bank 调用）
 def get_bank_size(bank: WwiseObject, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float, used_files: list) -> tuple:
     if bank.type != WwiseObjectType.SoundBank:
@@ -88,7 +100,8 @@ def get_bank_size(bank: WwiseObject, total_wav_size: float, total_memory_wem_siz
 # AudioFileSource 统计源文件大小，其余类型逐级下钻子对象
 def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float,
                            used_files: list, seen_sources: set, seen_walked: set,
-                           sources_to_convert: list = None, seen_wems: set = None) -> tuple:
+                           sources_to_convert: list = None, seen_wems: set = None,
+                           stream_file_paths: list = None, memory_file_paths: list = None) -> tuple:
     if not obj or not obj.id:
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if seen_wems is None:
@@ -110,6 +123,11 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             wav_size = os.path.getsize(wav_path) / 1024
             total_wav_size += wav_size
             Logger().debug(f'{wav_path} has size of {wav_size}KB')
+            if stream_file_paths is not None or memory_file_paths is not None:
+                is_streaming = waapi_utils.get_object_property(waapi_utils.get_parent_object(obj), 'IsStreamingEnabled')
+                bucket = stream_file_paths if is_streaming else memory_file_paths
+                if bucket is not None and wav_path not in bucket:
+                    bucket.append(wav_path)
         wem_path = waapi_utils.get_object_property(obj, 'convertedWemFilePath')
         if wem_path and os.path.exists(wem_path):
             # 同一 wem 被多个源引用时，压缩大小只累加一次
@@ -137,18 +155,21 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             inclusion_obj = waapi_utils.get_full_info_from_obj_id(inclusion['object'])
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(inclusion_obj, total_wav_size, total_memory_wem_size, total_stream_wem_size,
-                                       used_files, seen_sources, seen_walked, sources_to_convert, seen_wems))
+                                       used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
+                                       stream_file_paths, memory_file_paths))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if obj.type == WwiseObjectType.Event:
         for target in event_utils.get_event_targets(obj):
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(target, total_wav_size, total_memory_wem_size, total_stream_wem_size,
-                                       used_files, seen_sources, seen_walked, sources_to_convert, seen_wems))
+                                       used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
+                                       stream_file_paths, memory_file_paths))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     for child in waapi_utils.get_child_objects(obj):
         total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
             _accumulate_media_size(child, total_wav_size, total_memory_wem_size, total_stream_wem_size,
-                                   used_files, seen_sources, seen_walked, sources_to_convert, seen_wems))
+                                   used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
+                                   stream_file_paths, memory_file_paths))
     return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
 
 

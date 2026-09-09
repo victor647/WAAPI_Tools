@@ -18,11 +18,11 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
     def setup_triggers(self):
         self.cbxCaseSensitive.toggled.connect(self._on_case_sensitive_toggled)
         self.cbxOnlyIncluded.toggled.connect(self._on_only_included_toggled)
-        self.rdoEventAll.toggled.connect(self._on_event_ref_changed)
-        self.rdoEventHas.toggled.connect(self._on_event_ref_changed)
-        self.rdoEventNo.toggled.connect(self._on_event_ref_changed)
-        self.rdoLangAll.toggled.connect(self._on_language_changed)
-        self.rdoLangActive.toggled.connect(self._on_language_changed)
+        self.rbnEventAll.toggled.connect(self._on_event_ref_changed)
+        self.rbnEventHas.toggled.connect(self._on_event_ref_changed)
+        self.rbnEventNo.toggled.connect(self._on_event_ref_changed)
+        self.rbnLangAll.toggled.connect(self._on_language_changed)
+        self.rbnLangActive.toggled.connect(self._on_language_changed)
         self.btnClose.clicked.connect(self.accept)
 
     # 打开时从 user_config 恢复上次保存的选项，并让复选框设置即时生效于主窗口
@@ -31,11 +31,11 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
         widgets = (
             self.cbxCaseSensitive,
             self.cbxOnlyIncluded,
-            self.rdoEventAll,
-            self.rdoEventHas,
-            self.rdoEventNo,
-            self.rdoLangAll,
-            self.rdoLangActive,
+            self.rbnEventAll,
+            self.rbnEventHas,
+            self.rbnEventNo,
+            self.rbnLangAll,
+            self.rbnLangActive,
         )
         for widget in widgets:
             widget.blockSignals(True)
@@ -44,14 +44,14 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
         event_value = settings["event_filter"]
         if event_value not in ("all", "with_ref", "without_ref"):
             event_value = "all"
-        self.rdoEventAll.setChecked(event_value == "all")
-        self.rdoEventHas.setChecked(event_value == "with_ref")
-        self.rdoEventNo.setChecked(event_value == "without_ref")
+        self.rbnEventAll.setChecked(event_value == "all")
+        self.rbnEventHas.setChecked(event_value == "with_ref")
+        self.rbnEventNo.setChecked(event_value == "without_ref")
         language_value = settings["language_filter"]
         if language_value not in ("all", "active"):
             language_value = "all"
-        self.rdoLangAll.setChecked(language_value == "all")
-        self.rdoLangActive.setChecked(language_value == "active")
+        self.rbnLangAll.setChecked(language_value == "all")
+        self.rbnLangActive.setChecked(language_value == "active")
         for widget in widgets:
             widget.blockSignals(False)
         if self.__main.cbxCaseSensitive.isChecked() != settings["case_sensitive"]:
@@ -73,10 +73,10 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
     def _on_event_ref_changed(self, checked: bool):
         if not checked:
             return
-        if self.rdoEventHas.isChecked():
+        if self.rbnEventHas.isChecked():
             self.__main.filter_by_event_reference(True)
             user_config.save_advanced_filter_settings({"event_filter": "with_ref"})
-        elif self.rdoEventNo.isChecked():
+        elif self.rbnEventNo.isChecked():
             self.__main.filter_by_event_reference(False)
             user_config.save_advanced_filter_settings({"event_filter": "without_ref"})
         else:
@@ -87,7 +87,7 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
     def _on_language_changed(self, checked: bool):
         if not checked:
             return
-        if self.rdoLangActive.isChecked():
+        if self.rbnLangActive.isChecked():
             self.__main.filter_by_active_language()
             user_config.save_advanced_filter_settings({"language_filter": "active"})
         else:

@@ -41,7 +41,7 @@
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <item>
-       <widget class="QRadioButton" name="rdoEventAll">
+       <widget class="QRadioButton" name="rbnEventAll">
         <property name="text">
          <string>全部</string>
         </property>
@@ -51,14 +51,14 @@
        </widget>
       </item>
       <item>
-       <widget class="QRadioButton" name="rdoEventHas">
+       <widget class="QRadioButton" name="rbnEventHas">
         <property name="text">
          <string>被引用</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QRadioButton" name="rdoEventNo">
+       <widget class="QRadioButton" name="rbnEventNo">
         <property name="text">
          <string>未被引用</string>
         </property>
@@ -74,7 +74,7 @@
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout_2">
       <item>
-       <widget class="QRadioButton" name="rdoLangAll">
+       <widget class="QRadioButton" name="rbnLangAll">
         <property name="text">
          <string>全部</string>
         </property>
@@ -84,7 +84,7 @@
        </widget>
       </item>
       <item>
-       <widget class="QRadioButton" name="rdoLangActive">
+       <widget class="QRadioButton" name="rbnLangActive">
         <property name="text">
          <string>按当前语言筛选</string>
         </property>

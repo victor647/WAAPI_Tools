@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'AudioSilenceTrimmer.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.9.2
+## Created by: Qt User Interface Compiler version 6.11.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -17,8 +17,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QDialog,
     QHBoxLayout, QHeaderView, QLabel, QPushButton,
-    QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget)
+    QRadioButton, QSizePolicy, QSpacerItem, QSpinBox,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 class Ui_AudioSilenceTrimmer(object):
     def setupUi(self, AudioSilenceTrimmer):
@@ -102,6 +102,7 @@ class Ui_AudioSilenceTrimmer(object):
 
         self.horizontalLayout_2.addWidget(self.spbFadeInDuration)
 
+
         self.verticalLayout.addLayout(self.horizontalLayout_2)
 
         self.horizontalLayout_3 = QHBoxLayout()
@@ -141,6 +142,36 @@ class Ui_AudioSilenceTrimmer(object):
 
         self.verticalLayout.addLayout(self.horizontalLayout_3)
 
+        self.horizontalLayout_mode = QHBoxLayout()
+        self.horizontalLayout_mode.setObjectName(u"horizontalLayout_mode")
+        self.cbxSelectAll = QCheckBox(AudioSilenceTrimmer)
+        self.cbxSelectAll.setObjectName(u"cbxSelectAll")
+
+        self.horizontalLayout_mode.addWidget(self.cbxSelectAll)
+
+        self.lblMode = QLabel(AudioSilenceTrimmer)
+        self.lblMode.setObjectName(u"lblMode")
+
+        self.horizontalLayout_mode.addWidget(self.lblMode)
+
+        self.rbnModeTrim = QRadioButton(AudioSilenceTrimmer)
+        self.rbnModeTrim.setObjectName(u"rbnModeTrim")
+        self.rbnModeTrim.setChecked(True)
+
+        self.horizontalLayout_mode.addWidget(self.rbnModeTrim)
+
+        self.rbnModeZero = QRadioButton(AudioSilenceTrimmer)
+        self.rbnModeZero.setObjectName(u"rbnModeZero")
+
+        self.horizontalLayout_mode.addWidget(self.rbnModeZero)
+
+        self.modeSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_mode.addItem(self.modeSpacer)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_mode)
+
         self.tblFileList = QTableWidget(AudioSilenceTrimmer)
         if (self.tblFileList.columnCount() < 6):
             self.tblFileList.setColumnCount(6)
@@ -172,10 +203,10 @@ class Ui_AudioSilenceTrimmer(object):
         AudioSilenceTrimmer.setWindowTitle(QCoreApplication.translate("AudioSilenceTrimmer", u"\u97f3\u9891\u5934\u5c3e\u9759\u97f3\u88c1\u526a", None))
         self.btnImportFiles.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5bfc\u5165\u6587\u4ef6", None))
         self.btnImportFolder.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5bfc\u5165\u6587\u4ef6\u5939", None))
-        self.btnAnalyzeAudio.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5206\u6790\u97f3\u9891", None))
-        self.btnStartTrimming.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5f00\u59cb\u88c1\u526a", None))
         self.lblCutThreshold.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u9759\u97f3\u5224\u65ad\u9608\u503c", None))
         self.spbCutThreshold.setSuffix(QCoreApplication.translate("AudioSilenceTrimmer", u"dB", None))
+        self.btnAnalyzeAudio.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5206\u6790\u97f3\u9891", None))
+        self.btnStartTrimming.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5f00\u59cb\u88c1\u526a", None))
         self.cbxTrimHead.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u88c1\u526a\u97f3\u5934", None))
         self.lblTrimHeadThreshold.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5224\u5b9a\u9608\u503c", None))
         self.spbTrimHeadThreshold.setSuffix(QCoreApplication.translate("AudioSilenceTrimmer", u"ms", None))
@@ -186,17 +217,21 @@ class Ui_AudioSilenceTrimmer(object):
         self.spbTrimTailThreshold.setSuffix(QCoreApplication.translate("AudioSilenceTrimmer", u"ms", None))
         self.lblFadeOutDuration.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u4fdd\u7559\u6de1\u51fa", None))
         self.spbFadeOutDuration.setSuffix(QCoreApplication.translate("AudioSilenceTrimmer", u"ms", None))
+        self.cbxSelectAll.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5168\u9009", None))
+        self.lblMode.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u9759\u97f3\u5904\u7406\u65b9\u5f0f", None))
+        self.rbnModeTrim.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u88c1\u526a\uff08\u7f29\u77ed\u6587\u4ef6\u65f6\u957f\uff09", None))
+        self.rbnModeZero.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u9759\u97f3\u6539\u4e3a\u7eaf0\uff08\u65f6\u957f\u4e0d\u53d8\uff09", None))
         ___qtablewidgetitem = self.tblFileList.horizontalHeaderItem(0)
-        ___qtablewidgetitem.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u97f3\u9891\u6587\u4ef6\u8def\u5f84", None));
+        ___qtablewidgetitem.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u97f3\u9891\u6587\u4ef6\u8def\u5f84", None))
         ___qtablewidgetitem1 = self.tblFileList.horizontalHeaderItem(1)
-        ___qtablewidgetitem1.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u603b\u65f6\u957f", None));
+        ___qtablewidgetitem1.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u603b\u65f6\u957f", None))
         ___qtablewidgetitem2 = self.tblFileList.horizontalHeaderItem(2)
-        ___qtablewidgetitem2.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5934\u90e8\u9759\u97f3\u65f6\u957f", None));
+        ___qtablewidgetitem2.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5934\u90e8\u9759\u97f3\u65f6\u957f", None))
         ___qtablewidgetitem3 = self.tblFileList.horizontalHeaderItem(3)
-        ___qtablewidgetitem3.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5c3e\u90e8\u9759\u97f3\u65f6\u957f", None));
+        ___qtablewidgetitem3.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5c3e\u90e8\u9759\u97f3\u65f6\u957f", None))
         ___qtablewidgetitem4 = self.tblFileList.horizontalHeaderItem(4)
-        ___qtablewidgetitem4.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u9759\u97f3\u5360\u6bd4", None));
+        ___qtablewidgetitem4.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u9759\u97f3\u5360\u6bd4", None))
         ___qtablewidgetitem5 = self.tblFileList.horizontalHeaderItem(5)
-        ___qtablewidgetitem5.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5904\u7406\u72b6\u6001", None));
+        ___qtablewidgetitem5.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u5904\u7406\u72b6\u6001", None))
     # retranslateUi
 

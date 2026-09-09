@@ -9,9 +9,10 @@ from ui.ProjectSettings_ui import Ui_ProjectSettings
 # 工程规范设置窗口：把 project_conventions.json 的分段配置做成可视化 Tab 编辑
 class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
 
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, parent: QWidget = None, on_ai_saved=None):
         super().__init__(parent)
         self.setupUi(self)
+        self._on_ai_saved = on_ai_saved
         self.__conventions = dict(project_conventions.conventions or {})
         self.categoryMap.set_headers(["分类名", "缩写", "颜色值"])
         self.containerSuffix.set_headers(["容器类型", "后缀"])
@@ -19,6 +20,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbxAutoFetchChildren.setChecked(user_config.get_tool_auto_fetch_children())
         self.setup_triggers()
         self.__load_values()
+        self.__load_ai_values()
 
     # 绑定按钮与复选框信号槽
     def setup_triggers(self):
@@ -57,8 +59,32 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbxFullNameInSound.setChecked(bool(conventions.get("FullNameInSound", True)))
         self.cbxPlayPrefixInEvent.setChecked(bool(conventions.get("PlayPrefixInEvent", False)))
 
+    # 从 user_config.json 的 ai 节填充 AI 设置
+    def __load_ai_values(self):
+        ai = user_config.get_ai_config()
+        self.iptAiProxy.setText(ai.get("proxy", ""))
+        self.iptAiApiKey.setText(ai.get("api_key", ""))
+        self.iptAiModel.setText(ai.get("model", ""))
+        self.spnAiMaxContext.setValue(int(ai.get("max_context_objects") or 300))
+        self.spnAiMaxTurns.setValue(int(ai.get("max_turns") or 20))
+
+    # 保存 AI 设置到 user_config.json，并通知主窗口同步模型下拉框
+    def save_ai_settings(self):
+        defaults = user_config.DEFAULT_CONFIG["ai"]
+        patch = {
+            "proxy": self.iptAiProxy.text().strip() or defaults["proxy"],
+            "api_key": self.iptAiApiKey.text(),
+            "model": self.iptAiModel.text().strip(),
+            "max_context_objects": int(self.spnAiMaxContext.value()),
+            "max_turns": int(self.spnAiMaxTurns.value()),
+        }
+        user_config.save_ai_config(patch)
+        if self._on_ai_saved:
+            self._on_ai_saved()
+
     # 收集并保存
     def save_settings(self):
+        self.save_ai_settings()
         new_conventions = dict(self.__conventions)
         acronym_map = {}
         color_map = {}

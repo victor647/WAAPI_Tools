@@ -647,7 +647,6 @@ def run_assistant(
             waapi_utils.end_undo_group(undo_label)
             log("已结束撤销组：可在 Wwise 用「撤销」一次性回退本次任务的全部修改")
 
-    log(f"已加载 AI 提示词模板：{PROMPT_FILE_NAME}（{len(system_prompt)} 字符）")
     log(f"已发送请求到 AI 代理 {proxy_url}，表格对象 {len(objects)} 个")
     try:
         for turn in range(1, max_turns + 1):

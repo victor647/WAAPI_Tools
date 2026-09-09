@@ -9,11 +9,11 @@ from PySide6.QtCore import QModelIndex, Qt
 
 from libraries.utils import path_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import audio_source_utils, common_utils, transport_utils, waapi_utils
+from libraries.utils.wwise import common_utils, transport_utils, waapi_utils
 from libraries.wwise_object import WwiseObjectType
+from table.wwise_table_context_menu import add_common_object_actions
 from table.wwise_object_table import WwiseObjectTable, WwiseTableDisplayMode
 from table.wwise_table_headers import *
-from windows.audio_preview_window import AudioPreviewWindow
 
 
 class WwiseTableImpl_GUI(WwiseObjectTable):
@@ -48,18 +48,19 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         if not index.isValid():
             return
         column = index.column()
+        row_data = self.data[self.get_source_row(index)]
+        obj = row_data.wwise_object
         selection = self.table_view.selectionModel().selectedIndexes()
         items = [item for item in selection if item.column() == column]
         menu = QMenu()
+        if column in (NAME_COL, PATH_COL):
+            menu.addAction('复制', lambda: self.copy_cell_text(index))
+        # 通用对象动作（在Wwise中选中、AudioSource 预览）
+        add_common_object_actions(menu, obj, self.table_view)
         if column == NAME_COL:
-            menu.addAction("复制名称", lambda: self.copy_cell_text(index))
-            menu.addAction("选中", lambda: self.select_in_wwise(items))
             menu.addAction("WAAPI播放", lambda: self.play_in_wwise(index))
             if self.wwise_transport_id != -1:
                 menu.addAction("停止", self.stop_in_wwise)
-        elif column == PATH_COL:
-            menu.addAction("复制名称", lambda: self.copy_cell_text(index))
-            menu.addAction("选中", lambda: self.select_in_wwise(items))
         elif column == TYPE_COL:
             sub = menu.addMenu("改变类型为")
             sub.addAction(
@@ -89,18 +90,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         if self.display_mode == WwiseTableDisplayMode.Integration:
             if column == TARGET_PATH_COL:
                 menu.addAction("选中", lambda: self.select_in_wwise(items))
-        row_data = self.data[self.get_source_row(index)]
-        if row_data.type == WwiseObjectType.AudioSource:
-            menu.addAction("预览", lambda: self.preview_source_file(row_data.wwise_object))
         menu.exec(self.table_view.viewport().mapToGlobal(position))
-
-    # 预览 AudioSource 背后源文件的波形
-    def preview_source_file(self, source):
-        file_path = audio_source_utils.get_source_file_path(source)
-        if not file_path or not os.path.exists(file_path):
-            Logger().warning(f"找不到源文件：{file_path}")
-            return
-        AudioPreviewWindow(file_path, self.table_view).show()
 
     def refresh_rows_after_type_change(self, rows: list[int], paths: list[str]) -> None:
         for row, path in zip(rows, paths):

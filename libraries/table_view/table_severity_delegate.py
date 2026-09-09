@@ -15,14 +15,19 @@ class SeverityTableDelegate(QStyledItemDelegate):
         self.__cell = TableStandardModelCell(parent)
 
     def paint(self, painter, option, index):
-        table = self.parent()
-        item = table.item(index.row(), index.column()) if isinstance(table, QTableWidget) else None
-        if item is not None and isinstance(item.data(Qt.ItemDataRole.BackgroundRole), CellSeverity):
-            self.__cell.format_from_item(item)
-        else:
-            self.__cell.setProperty("urgent", "normal")
-        self.initStyleOption(option, index)
-        style = QApplication.style()
-        style.unpolish(self.__cell)
-        style.polish(self.__cell)
-        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, self.__cell)
+        try:
+            table = self.parent()
+            item = table.item(index.row(), index.column()) if isinstance(table, QTableWidget) else None
+            if item is not None and isinstance(item.data(Qt.ItemDataRole.BackgroundRole), CellSeverity):
+                self.__cell.format_from_item(item)
+            else:
+                self.__cell.setProperty("urgent", "normal")
+            self.initStyleOption(option, index)
+            style = QApplication.style()
+            style.unpolish(self.__cell)
+            style.polish(self.__cell)
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, self.__cell)
+        except KeyboardInterrupt:
+            # IDE 停止调试时 SIGINT 可能落在绘制回调内；静默忽略，
+            # 避免异常穿过 C++ 边界打印 “Error calling Python override ...”（正常关闭不受影响）
+            return

@@ -8,6 +8,59 @@ from table.wwise_table_headers import *
 
 PATH_DISPLAY_LIMIT = 64
 
+# Wwise EventAction 的 ActionType 数值 → 展示名（已取官方显示名路径末尾的名称）
+ACTION_TYPE_NAMES = {
+    1: "Play",
+    2: "Stop",
+    3: "Stop All",
+    4: "Mute",
+    5: "UnMute",
+    6: "UnMute All",
+    7: "Pause",
+    8: "Pause All",
+    9: "Resume",
+    10: "Resume All",
+    11: "Set Bus Volume",
+    12: "Set Voice Volume",
+    13: "Set Voice Pitch",
+    14: "Reset Bus Volume",
+    15: "Reset Bus Volume All",
+    16: "Reset Voice Volume",
+    17: "Reset Voice Volume All",
+    18: "Reset Pitch",
+    19: "Reset Pitch All",
+    20: "Enable State",
+    21: "Disable State",
+    22: "Set State",
+    23: "Set Switch",
+    26: "Set LPF",
+    27: "Reset LPF",
+    28: "Reset LPF All",
+    29: "Set HPF",
+    30: "Reset HPF",
+    31: "Reset HPF All",
+    34: "Break",
+    35: "Trigger",
+    36: "Seek",
+    37: "Seek All",
+    38: "Set Game Parameter",
+    39: "Reset Game Parameter",
+    40: "Release Envelope",
+    41: "Post Event",
+    42: "Reset Playlist",
+    43: "Set Effect",
+    44: "Reset Set Effect",
+    45: "Reset Set Effect All",
+    50: "Set - Bypass Effect Slot",
+    51: "Reset - Bypass Effect Slot",
+    52: "Reset - Bypass Effect Slot - All",
+    53: "Set - Bypass All Effects",
+    54: "Reset - Bypass All Effects",
+    55: "Reset - Bypass All Effects - All",
+    56: "Reset - All Effect Bypasses",
+    57: "Reset - All Effect Bypasses - All",
+}
+
 
 # 表格中每行的数据封装
 class WwiseTableRowData(TableRowData):
@@ -152,9 +205,23 @@ class WwiseTableRowData(TableRowData):
         self.apply_inclusion_text_style()
 
     def read_integration_info(self):
+        self.read_event_action_types()
         self.read_wwise_target_info()
         self.read_wwise_localization()
         self.apply_inclusion_text_style()
+
+    # 读取 Event 下所有 Action 的类型（集成视图「动作」列）；非 Event 显示不适用
+    def read_event_action_types(self):
+        if self.type != WwiseObjectType.Event:
+            self[ACTION_COL] = "不适用"
+            return
+        action_names = []
+        for action in waapi_utils.get_child_objects(self.wwise_object):
+            if action.type != WwiseObjectType.EventAction:
+                continue
+            action_type = waapi_utils.get_object_property(action, 'ActionType')
+            action_names.append(str(ACTION_TYPE_NAMES.get(action_type, action_type)))
+        self[ACTION_COL] = "/".join(action_names)
 
     # 读取总线
     def read_output_bus(self):

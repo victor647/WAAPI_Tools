@@ -1,12 +1,14 @@
 import re
 import os
 
+import clipboard
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QTableWidgetItem, QCheckBox, QGroupBox
+from PySide6.QtWidgets import QDialog, QTableWidgetItem, QCheckBox, QGroupBox, QMenu
 
 from data import project_conventions
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
+from table.wwise_table_context_menu import add_common_object_actions
 from libraries.utils import audio_utils
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, audio_source_utils, soundbank_utils, localization_utils, event_utils, \
@@ -40,6 +42,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             waapi_utils.get_selected_objects()))
         self.btnSendResultToMainWindow.clicked.connect(self.send_results_back)
         self.btnAutoFixSelection.clicked.connect(self.auto_fix_selection)
+        self.tblValidationResults.customContextMenuRequested.connect(self.show_result_context_menu)
 
         # self.grpProjectStandards.toggled.connect(lambda toggled: ScriptingHelper.on_group_box_toggled(self.grpProjectStandards, toggled))
         # self.grpDesignStructure.toggled.connect(lambda toggled: ScriptingHelper.on_group_box_toggled(self.grpDesignStructure, toggled))
@@ -74,6 +77,23 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         obj = waapi_utils.find_object_by_path(item.text())
         if obj:
             waapi_utils.select_objects_in_wwise([obj])
+
+    # 结果表右键：通用对象动作 + 自动修复
+    def show_result_context_menu(self, position):
+        index = self.tblValidationResults.indexAt(position)
+        if not index.isValid():
+            return
+        row = index.row()
+        menu = QMenu(self)
+        cell = self.tblValidationResults.item(row, index.column())
+        if cell is not None and cell.text():
+            menu.addAction('复制', lambda: clipboard.copy(cell.text()))
+        if 0 <= row < len(self.problematicObjects):
+            add_common_object_actions(menu, self.problematicObjects[row], self)
+        problem_item = self.tblValidationResults.item(row, 1)
+        if problem_item is not None:
+            menu.addAction('自动修复', lambda: self.auto_fix(problem_item))
+        menu.exec(self.tblValidationResults.viewport().mapToGlobal(position))
 
     # 将检查结果发送到主窗口
     def send_results_back(self):
