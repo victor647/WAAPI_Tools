@@ -267,6 +267,8 @@ def _create_play_event(args: dict) -> str:
 
 def _delete_objects(args: dict) -> str:
     # 危险操作：直接删除 Wwise 对象（含子树策略由 Wwise 决定）
+    if args.get("confirmed") is not True:
+        return "危险操作被拦截：请用户明确确认后，以 confirmed=true 重新调用"
     ids = _require_object_ids(args)
     ok_count = 0
     failures = []
@@ -454,8 +456,19 @@ def build_tool_schemas() -> list[dict]:
         ),
         function_schema(
             "delete_objects",
-            "删除对象（危险：Wwise 中直接删除，无法通过本工具恢复；仅在用户明确要求时使用）",
-            _object_ids_schema("要删除的对象 id"),
+            "删除对象（危险：Wwise 中直接删除，无法通过本工具恢复；仅在用户明确要求时使用，且必须 confirmed=true）",
+            {
+                "type": "object",
+                "properties": {
+                    "object_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要删除的对象 id",
+                    },
+                    "confirmed": {"type": "boolean", "description": "用户明确确认删除后传 true"},
+                },
+                "required": ["object_ids", "confirmed"],
+            },
         ),
         function_schema(
             "select_objects_in_wwise",

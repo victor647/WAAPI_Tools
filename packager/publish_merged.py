@@ -40,6 +40,9 @@ MCP_APP = _DIST / "WaapiMCP"
 MCP_WORKFLOW_SKILL_SRC = ROOT / ".cursor" / "skills" / "wwise-waapi" / "SKILL.md"
 MCP_WORKFLOW_SKILL_REL = Path("waapi-mcp-workflows/SKILL.md")
 
+sys.path.insert(0, str(_PACKAGER_DIR))
+from build_meta import commit_build, prepare_build, staged_minor  # noqa: E402
+
 
 def _resolve_dest(path_arg: Path | None) -> Path:
     if path_arg is None:
@@ -131,6 +134,11 @@ def main() -> int:
         action="store_true",
         help="不复制 .cursor/skills/wwise-waapi/SKILL.md",
     )
+    parser.add_argument(
+        "--no-version",
+        action="store_true",
+        help="不递增版本号（例如同一构建重复发布到多个目录时使用）",
+    )
     args = parser.parse_args()
 
     dest = _resolve_dest(args.dest)
@@ -142,6 +150,21 @@ def main() -> int:
     print(f"源 MCP: {mcp_d}", flush=True)
 
     copy_skill = not args.no_skill
+    # 版本号只在成功发布时递增一次；dry-run 或 --no-version 不参与
+    meta = None
+    if not args.dry_run and not args.no_version:
+        prev_staged = staged_minor()
+        meta = prepare_build()
+        if prev_staged is not None and prev_staged != meta["minor"]:
+            print(
+                f"构建产物内嵌版本为 V{meta['major']}.{prev_staged}，"
+                f"本次将发布 V{meta['major']}.{meta['minor']}，"
+                "看起来没有重新打包或该构建已发布过。",
+                file=sys.stderr,
+            )
+            print("如确需强制发布且不递增版本，请加 --no-version。", file=sys.stderr)
+            return 1
+        print(f"本次发布版本：{meta['version']}", flush=True)
 
     try:
         merge_onedir(gui_d.resolve(), mcp_d.resolve(), dest.resolve(), args.dry_run, copy_skill)
@@ -151,6 +174,9 @@ def main() -> int:
 
     if not args.dry_run:
         print(f"\nDone. 已写入: {dest}", flush=True)
+        if meta is not None:
+            commit_build(meta)
+            print(f"已递增版本号：{meta['version']}", flush=True)
     return 0
 
 

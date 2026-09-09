@@ -17,11 +17,13 @@ os.environ.setdefault("WAAPI_MCP", "1")
 # 先加载 waapi_utils 解开 waapi_client ↔ project_utils 循环导入，再建 WAAPI 客户端
 from libraries.utils.wwise import waapi_utils  # noqa: F401
 from libraries.waapi_client import WAAPIClient
+from globals.version import get_software_version
 from waapi import CannotConnectToWaapiException
 
 
 def main() -> None:
     # 进程主入口：创建全局 WaapiClient，然后启动 FastMCP 的 stdio 传输
+    print(f"WAAPI Tools {get_software_version()}", file=sys.stderr)
     # 第二步：与 Wwise 建立 WebSocket（WAAPI 模块内 WaapiClient）
     try:
         WAAPIClient().connect()

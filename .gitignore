@@ -31,6 +31,12 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# 打包入口 spec 是仓库必需的源文件，白名单放行（PyInstaller 随手生成的其它 spec 仍忽略）
+!packager/WaapiMCP_standalone.spec
+!packager/WAAPI_Tools_GUI.spec
+# 构建期自动生成（packager/build_meta.py）：小版本状态与打包时注入的运行版本模块
+packager/build_state.json
+globals/_build_info.py
 
 # Installer logs
 pip-log.txt

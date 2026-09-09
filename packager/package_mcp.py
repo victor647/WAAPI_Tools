@@ -18,6 +18,9 @@ SPEC = _PACKAGER_DIR / "WaapiMCP_standalone.spec"
 DISTPATH = _PACKAGER_DIR / "dist"
 WORKDIR = _PACKAGER_DIR / "build" / "mcp"
 
+sys.path.insert(0, str(_PACKAGER_DIR))
+from build_meta import prepare_build  # noqa: E402
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="PyInstaller：仅 MCP（WaapiMCP.exe）")
@@ -36,6 +39,9 @@ def main() -> int:
     except ImportError:
         print("未安装 PyInstaller：pip install pyinstaller", file=sys.stderr)
         return 1
+
+    meta = prepare_build()
+    print(f"候选构建版本：{meta['version']}（版本号将在 publish_merged 成功发布时递增）", flush=True)
 
     DISTPATH.parent.mkdir(parents=True, exist_ok=True)
     cmd = [

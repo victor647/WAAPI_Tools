@@ -8,7 +8,7 @@ from PySide6.QtGui import QAction, QTextCursor
 
 import globals.global_variables as gv
 from data import project_conventions
-from globals.constants import *
+from globals.version import get_software_version
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_item_model import INCLUSION_COL
 from libraries.utils.log_utils import Logger
@@ -105,7 +105,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, style_sheet):
         super().__init__()
         self.setupUi(self)
-        self.setWindowTitle(f"WAAPI 工具集 {SOFTWARE_VERSION}")
+        self.setWindowTitle(f"WAAPI 工具集 {get_software_version()}")
         self.style_sheet = style_sheet
         self.table = WwiseTableImpl(self.tblWwiseObjects)
         self._object_history: list[tuple] = []

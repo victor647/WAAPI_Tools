@@ -6,6 +6,7 @@ from typing import Any, Callable, TypeVar
 
 from libraries.waapi_client import WAAPIClient
 from waapi_mcp.mcp_instance import mcp
+from waapi_mcp.safety import require_confirmation
 from waapi_mcp.serialize import coerce_create_at_default_type
 
 from libraries.wwise_object import WwiseObject, WwiseObjectType
@@ -63,11 +64,6 @@ def get_object_property(object_id: str, property_name: str) -> Any:
 @_ensure_waapi_client
 def get_selected_objects() -> list:
     return WAAPIClient().get_selected_objects()
-
-@mcp.tool(description='按路径解析对象（内部随 Wwise 版本使用 WAQL 或 path 查询）。')
-@_ensure_waapi_client
-def get_object_from_path(path: str) -> Any:
-    return WAAPIClient().get_object_from_path(path)
 
 @mcp.tool(description='查询「引用该对象」的所有对象。')
 @_ensure_waapi_client
@@ -161,7 +157,8 @@ def set_object_notes(object_id: str, notes: str) -> bool:
 
 @mcp.tool(description='删除对象（含子树策略由 Wwise / API 决定）。')
 @_ensure_waapi_client
-def delete_object(object_id: str) -> bool:
+def delete_object(object_id: str, confirmed: bool) -> bool:
+    require_confirmation(confirmed)
     return WAAPIClient().delete_object(WwiseObject.dict_from_id(object_id))
 
 
@@ -194,11 +191,6 @@ def remove_switch_mappings(switch_container_object_id: str) -> bool:
 def import_audio_file(wave_path: str, sound_object_id: str, language: str = "SFX") -> Any:
     return WAAPIClient().import_audio_file(wave_path, WwiseObject.dict_from_id(sound_object_id), language=language)
 
-@mcp.tool(description='在对象下添加静音 SourcePlugin（length 等单位与 WAAPIClient() 一致）。')
-@_ensure_waapi_client
-def add_silence(object_id: str, length: int, language: str = "SFX") -> bool:
-    return WAAPIClient().add_silence(WwiseObject.dict_from_id(object_id), length, language=language)
-
 @mcp.tool(description='从 Sound 层级取第一个子对象（一般为 AudioFileSource）。')
 @_ensure_waapi_client
 def get_default_audio_source(sound_object_id: str) -> Any:
@@ -214,7 +206,8 @@ def get_bank_inclusions(bank_object_id: str) -> list:
 
 @mcp.tool(description='清空 SoundBank 的全部包含。')
 @_ensure_waapi_client
-def clear_bank_inclusions(bank_object_id: str) -> bool:
+def clear_bank_inclusions(bank_object_id: str, confirmed: bool) -> bool:
+    require_confirmation(confirmed)
     return WAAPIClient().clear_bank_inclusions(WwiseObject.dict_from_id(bank_object_id))
 
 @mcp.tool(description='设置或追加 SoundBank 包含；replace 为 True 时整批替换；inclusion 结构见 WAAPIClient()。')
@@ -231,11 +224,6 @@ def set_bank_inclusion(bank_object_id: str, inclusion: dict[str, Any],
 def add_rtpc(target_object_id: str, rtpc_object_id: str, target_property: str, points: list) -> bool:
     return WAAPIClient().add_rtpc(WwiseObject.dict_from_id(target_object_id), WwiseObject.dict_from_id(rtpc_object_id), target_property, points)
 
-@mcp.tool(description='清空对象上某列表型属性（如 @RTPC、@Effects 等，槽位名与 WAAPIClient() 一致）。')
-@_ensure_waapi_client
-def clear_slots(object_id: str, slot_name: str) -> bool:
-    return WAAPIClient().clear_slots(WwiseObject.dict_from_id(object_id), slot_name)
-
 @mcp.tool(description='追加一个 Effect 槽，引用指定名称的 ShareSet。')
 @_ensure_waapi_client
 def add_effect(object_id: str, share_set_name: str) -> bool:
@@ -244,23 +232,7 @@ def add_effect(object_id: str, share_set_name: str) -> bool:
 
 # ---------- 本地化 ----------
 
-@mcp.tool(description='列出工程中所有 Language 对象（名称等）。')
-@_ensure_waapi_client
-def get_language_list() -> list:
-    return WAAPIClient().get_language_list()
-
-
 # ---------- Transport 播放 ----------
-
-@mcp.tool(description='在 Transport 中播放该对象；返回 transport_id，供停止或销毁使用。')
-@_ensure_waapi_client
-def play_sound_in_transport(object_id: str) -> int:
-    return WAAPIClient().play_sound_in_transport(WwiseObject.dict_from_id(object_id))
-
-@mcp.tool(description='按 transport_id 停止播放并销毁 Transport。')
-@_ensure_waapi_client
-def stop_sound_in_transport(transport_id: int) -> bool:
-    return WAAPIClient().stop_sound_in_transport(transport_id)
 
 # ---------- UI / 撤销 / 源码管理 ----------
 
