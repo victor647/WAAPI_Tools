@@ -5,12 +5,14 @@ from enum import Enum
 from P4 import P4, P4Exception
 from PySide6.QtCore import QDateTime
 
+from libraries.utils import user_config
 from libraries.utils.log_utils import Logger
 from libraries.singleton import Singleton
 
-P4_SERVER = "10.21.100.45:1666"
-P4_CHARSET = "utf8"
-P4_CHANGELIST_DESCRIPTION = "【FFSoundTool】自动创建的修改"
+# 连接与默认 changelist 描述来自 user_config.json，缺省时使用 user_config 内置默认值
+P4_SERVER = user_config.get_p4_server()
+P4_CHARSET = user_config.get_p4_charset()
+P4_CHANGELIST_DESCRIPTION = user_config.get_p4_changelist_description()
 
 NEW_CHANGELIST_REGEX = re.compile(r"Change (\d+) created.")
 
@@ -82,6 +84,11 @@ class P4Path(object):
                 return ""
             self._depot_path = P4Client().convert_path(self._local_path, P4PathType.DepotPath)
         return self._depot_path
+
+    # 仓库侧路径，供与模式无关的调用方使用
+    @property
+    def repo_path(self) -> str:
+        return self.depot_path
 
     @property
     def local_path(self) -> str:

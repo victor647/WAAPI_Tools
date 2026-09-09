@@ -8,10 +8,13 @@ from waapi_mcp.bootstrap import ensure_project_root
 
 ensure_project_root()
 # 须先于 serialize / wwise_object 完成加载，避免 libraries 内 WAAPI ↔ wwise_object 循环 import
+# 也先于 waapi_client 链路加载 waapi_utils，解开 waapi_client ↔ project_utils 的循环导入
+from libraries.utils.wwise import waapi_utils  # noqa: F401, E402
 
 # 注册顺序：先核心 WAAPI，再各 *_utils 封装
 from waapi_mcp import utils_mcp_tools  # noqa: F401
 from waapi_mcp import waapi_mcp_tools  # noqa: F401
+from waapi_mcp import registry_mcp_tools  # noqa: F401
 from waapi_mcp.mcp_instance import mcp
 
 

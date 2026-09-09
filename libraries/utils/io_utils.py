@@ -31,6 +31,15 @@ def export_to_csv(data: list, file_name: str):
     writer.writerows(data)
 
 
+# 导出一维数据到txt文件
+def export_to_txt(data: list, file_name: str):
+    file_path = QFileDialog.getSaveFileName(filter='TXT(*.txt)', dir=file_name)
+    if file_path[0] == '':
+        return
+    file = open(file_path[0], mode='w')
+    file.write('\n'.join(str(line) for line in data))
+
+
 # 从csv文件导入
 def import_from_csv():
     file_path = QFileDialog.getOpenFileName(filter='CSV(*.csv)')

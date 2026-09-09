@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from libraries.utils.log_utils import Logger
-from libraries.utils.p4_utils import P4_CHANGELIST_DESCRIPTION, P4Client, P4Path
+from libraries.utils.vcs_utils import get_vcs_client, get_vcs_path
 
 # 检测是否运行在PyInstaller打包的环境中
 def is_bundled() -> bool:
@@ -151,14 +151,14 @@ def _clear_readonly_file(path: str) -> None:
             pass
 
 
-def _should_move_via_p4(client: P4Client, local_path: str) -> bool:
+def _should_move_via_vcs(client, local_path: str) -> bool:
     if not client.is_connected:
         return False
     abs_path = _norm_local_path(local_path)
-    p4_path = P4Path(local_path=abs_path)
-    if not p4_path.depot_path:
+    vcs_path = get_vcs_path(abs_path)
+    if not vcs_path.repo_path:
         return False
-    return client.is_in_depot(p4_path) or client.is_in_pending_changelist(p4_path)
+    return client.is_in_depot(vcs_path) or client.is_in_pending_changelist(vcs_path)
 
 
 def _filesystem_move_file(src: str, dst: str) -> bool:
@@ -188,23 +188,21 @@ def _filesystem_move_file(src: str, dst: str) -> bool:
     return True
 
 
-# 移动文件；覆盖只读目标时会先去掉只读；源若在 depot 或待提交列表中则用 P4 move
-def move_file(src: str, dst: str, p4_change_desc: Optional[str] = None) -> bool:
+# 移动文件；覆盖只读目标时会先去掉只读；源若在仓库或待提交列表中则用当前版本控制 move
+def move_file(src: str, dst: str, change_desc: Optional[str] = None) -> bool:
     src = _norm_local_path(src)
     dst = _norm_local_path(dst)
     if src == dst:
         return True
-    desc = p4_change_desc if p4_change_desc is not None else P4_CHANGELIST_DESCRIPTION
-    client = P4Client()
-    if _should_move_via_p4(client, src):
+    desc = change_desc
+    client = get_vcs_client()
+    if _should_move_via_vcs(client, src):
         dst_dir = os.path.dirname(dst)
         if dst_dir and not os.path.exists(dst_dir):
             os.makedirs(dst_dir, exist_ok=True)
-        src_p = P4Path(local_path=src)
-        dst_p = P4Path(local_path=dst)
-        result = client.move(src_p, dst_p, desc)
+        result = client.move(get_vcs_path(src), get_vcs_path(dst), desc)
         if result is None:
-            Logger().error(f"move_file: P4 move 失败，未回退为本地移动: {src} -> {dst}")
+            Logger().error(f"move_file: 版本控制 move 失败，未回退为本地移动: {src} -> {dst}")
             return False
         return True
     return _filesystem_move_file(src, dst)

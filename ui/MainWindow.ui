@@ -158,6 +158,25 @@
             </widget>
            </item>
            <item>
+            <widget class="QCheckBox" name="cbxTurboMode">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="toolTip">
+              <string>急速模式：只读取基础信息与启用状态；取消勾选后对当前可见对象读取备注、引用计数等完整属性。</string>
+             </property>
+             <property name="text">
+              <string>急速模式</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QPushButton" name="btnFindParent">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
@@ -192,6 +211,25 @@
              </property>
              <property name="text">
               <string>查找下级</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnFindReferences">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>78</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>查找引用</string>
              </property>
             </widget>
            </item>
@@ -239,111 +277,6 @@
                <height>16777215</height>
               </size>
              </property>
-             <item>
-              <property name="text">
-               <string>全部类型</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Action</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>ActorMixer</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>AudioFileSource</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>AuxBus</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>BlendContainer</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Bus</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Event</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Folder</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>GameParameter</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>MusicPlaylistContainer</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>MusicSegment</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>MusicSwitchContainer</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>MusicTrack</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>RandomSequenceContainer</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Sound</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>SoundBank</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>State</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Switch</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>SwitchContainer</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>WorkUnit</string>
-              </property>
-             </item>
             </widget>
            </item>
            <item>
@@ -413,6 +346,66 @@
        </size>
       </property>
      </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="horizontalLayout_ai">
+      <item>
+       <widget class="QLabel" name="lblAiAssistant">
+        <property name="text">
+         <string>AI 助手</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="lblAiModelStatus">
+        <property name="minimumSize">
+         <size>
+          <width>12</width>
+          <height>12</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>12</width>
+          <height>12</height>
+         </size>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="cbbAiModel">
+        <property name="editable">
+         <bool>true</bool>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>190</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="placeholderText">
+         <string>选择模型</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="ledAiPrompt">
+        <property name="placeholderText">
+         <string>输入指令让 AI 处理表格中的对象，例如：把列表里所有 Sound 改为全小写命名（Enter 发送）</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnAiSend">
+        <property name="text">
+         <string>发送给 AI</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </item>
    </layout>
   </widget>

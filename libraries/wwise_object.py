@@ -23,6 +23,7 @@ class WwiseObjectType(Enum):
     Bus = "Bus"
     AuxBus = "AuxBus"
     Effect = "EffectSlot"
+    Conversion = "Conversion"
 
 
 # Wwise对象封装

@@ -3,7 +3,8 @@ from collections.abc import Callable
 import clipboard
 import webbrowser
 
-from PySide6.QtGui import QTextCursor
+from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QAction, QTextCursor
 
 import globals.global_variables as gv
 from data import project_conventions
@@ -11,12 +12,13 @@ from globals.constants import *
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_item_model import INCLUSION_COL
 from libraries.utils.log_utils import Logger
-from libraries.utils.p4_utils import P4Client
+from libraries.utils.vcs_utils import get_vcs_client
 from libraries.waapi_client import WAAPIClient
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_object_table_gui import WwiseTableImpl
-from table.wwise_table_headers import TABLE_DISPLAY_MODE_LABELS, PATH_COL
+from table.wwise_table_headers import CHECK_BOX_COL, COMMON_HEADERS, ENABLE_COL, TABLE_DISPLAY_MODE_LABELS, PATH_COL
 from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSilenceTrimWindow
+from windows.sync_trim_window import SyncTrimWindow as SyncTrimWindow
 from windows.table_rename_window import TableRenamer as TableRenamer
 from windows.template_replace_window import TemplateReplacer as TemplateReplacer
 from windows.bank_assignment_window import BankAssignmentMatrix as BankAssignmentMatrix
@@ -24,11 +26,67 @@ from windows.project_validation_window import ProjectValidation as ProjectValida
 from windows.unity_asset_manager_window import UnityAssetManager as UnityAssetManager
 from windows.work_unit_import_window import WorkUnitImporter as WorkUnitImporter
 from waapi import CannotConnectToWaapiException
-from PySide6.QtWidgets import QMainWindow, QStyle, QTableWidgetItem, QToolButton
+from PySide6.QtWidgets import QDialog, QMainWindow, QStyle, QTableWidgetItem, QToolButton
 from ui.MainWindow_ui import Ui_MainWindow
+from windows.export_object_list_window import ExportObjectListWindow as ExportObjectListWindow
 from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_utils, soundbank_utils, \
     localization_utils, project_utils, event_utils, container_utils, migration_utils, waapi_utils, mixing_utils
-from libraries.utils import io_utils
+from libraries.utils import ai_utils, io_utils, user_config
+
+
+# AI 模型列表后台拉取线程：避免启动时在界面线程发 HTTP 请求
+class AiModelListWorker(QThread):
+    models_loaded = Signal(list)
+
+    def __init__(self, proxy_url: str, api_key: str, parent=None):
+        super().__init__(parent)
+        self._proxy_url = proxy_url
+        self._api_key = api_key
+
+    def run(self):
+        try:
+            models = ai_utils.list_models(self._proxy_url, self._api_key)
+        except Exception:
+            models = []
+        self.models_loaded.emit(models)
+
+
+# AI 对话工作线程：在后台请求 AI 代理并执行模型请求的工具调用，避免阻塞界面
+class AiChatWorker(QThread):
+    log_signal = Signal(str)
+    finished_signal = Signal(str)
+    failed_signal = Signal(str)
+    # 参数一：仍有效的对象列表；参数二：发送时可见对象的原始 id 列表
+    objects_refreshed_signal = Signal(list, list)
+
+    def __init__(self, prompt: str, objects: list, parent=None):
+        super().__init__(parent)
+        self._prompt = prompt
+        self._objects = objects
+
+    def run(self):
+        try:
+            from libraries.ai_assistant import run_assistant
+
+            result = run_assistant(self._prompt, self._objects, on_log=self.log_signal.emit)
+            if result.mutated:
+                refreshed = self._resolve_objects_after_ai()
+                self.objects_refreshed_signal.emit(refreshed, [obj.id for obj in self._objects])
+            self.finished_signal.emit(result.content)
+        except Exception as e:
+            self.failed_signal.emit(str(e))
+
+    # AI 修改过对象后，逐个重新解析可见对象的最新状态
+    def _resolve_objects_after_ai(self):
+        refreshed = []
+        for obj in self._objects:
+            updated = waapi_utils.get_full_info_from_obj_id(obj.id)
+            if not updated.is_valid:
+                # 原 id 已失效（删除或类型转换等），尝试按原路径找回
+                updated = waapi_utils.find_object_by_path(obj.path)
+            if updated and updated.is_valid:
+                refreshed.append(updated)
+        return refreshed
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -53,10 +111,141 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._object_history: list[tuple] = []
         self._history_index: int = -1
         self._restoring_history: bool = False
+        self._full_mode_origin: list[WwiseObject] | None = None
+        self._full_mode_entry_ids: tuple | None = None
+        self._ai_worker = None
+        self._ai_model_worker = None
         self._setup_filter_help_button()
         self.setup_triggers()
+        self._setup_ai_assistant()
         self.check_wwise_connection()
         self._update_history_buttons()
+
+    # 绑定底部 AI 助手输入栏的信号槽
+    def _setup_ai_assistant(self):
+        self.btnAiSend.clicked.connect(self._on_ai_send)
+        self.ledAiPrompt.returnPressed.connect(self._on_ai_send)
+        # 状态圆点：初始为未确认（红），模型列表拉取成功后转绿
+        self._set_ai_proxy_dot(False)
+        self.cbbAiModel.clear()
+        saved_model = user_config.get_ai_model()
+        if saved_model:
+            self.cbbAiModel.addItem(saved_model)
+            self.cbbAiModel.setCurrentText(saved_model)
+        # 后台拉取代理支持的模型列表（失败时仍可手动输入）
+        self._ai_model_worker = AiModelListWorker(
+            user_config.get_ai_proxy_url(), user_config.get_ai_api_key(), self
+        )
+        self._ai_model_worker.models_loaded.connect(self._on_ai_models_loaded)
+        self._ai_model_worker.start()
+
+    # AI 助手 label 右侧的连接状态圆点：绿=代理可达，红=未连接/拉取失败
+    def _set_ai_proxy_dot(self, connected: bool):
+        color = "#2ECC71" if connected else "#E74C3C"
+        self.lblAiModelStatus.setToolTip(
+            "AI 代理服务器已连接" if connected else "未连接到 AI 代理服务器"
+        )
+        self.lblAiModelStatus.setStyleSheet(
+            f"background-color: {color}; border-radius: 6px;"
+        )
+
+    # 模型列表就绪后填充下拉框并尽量保持上次选择
+    def _on_ai_models_loaded(self, models: list):
+        if not models:
+            self._set_ai_proxy_dot(False)
+            Logger().warning("无法从 AI 代理获取模型列表，请直接在模型下拉框中输入模型名")
+            return
+        self._set_ai_proxy_dot(True)
+        saved_model = user_config.get_ai_model()
+        self.cbbAiModel.blockSignals(True)
+        self.cbbAiModel.clear()
+        self.cbbAiModel.addItems(models)
+        if saved_model and saved_model in models:
+            self.cbbAiModel.setCurrentText(saved_model)
+        elif saved_model:
+            # 已保存的模型不在当前列表，保留该值供手动重选
+            self.cbbAiModel.addItem(saved_model)
+            self.cbbAiModel.setCurrentText(saved_model)
+        else:
+            self.cbbAiModel.setCurrentIndex(0)
+        self.cbbAiModel.blockSignals(False)
+        Logger().info(
+            f"AI 模型列表已加载（共 {len(models)} 个），当前：{self.cbbAiModel.currentText()}"
+        )
+
+    # 发送/处理期间禁用发送按钮，避免重复触发
+    def _set_ai_busy(self, busy: bool):
+        self.btnAiSend.setEnabled(not busy)
+        self.ledAiPrompt.setPlaceholderText(
+            "AI 正在处理中，请稍候…" if busy
+            else "输入指令让 AI 处理表格中的对象，例如：把列表里所有 Sound 改为全小写命名（Enter 发送）"
+        )
+
+    # 读取输入并启动后台 AI 对话线程
+    def _on_ai_send(self):
+        if self._ai_worker and self._ai_worker.isRunning():
+            Logger().warning("AI 正在处理中，请等待当前任务完成")
+            return
+        prompt = self.ledAiPrompt.text().strip()
+        if not prompt:
+            return
+        objects = self.get_visible_objects()
+        if not objects:
+            Logger().warning("表格中没有可处理的对象，请先在 Wwise 中选中对象或点击「获取Wwise选中对象」")
+            return
+        model = self.cbbAiModel.currentText().strip()
+        if not model:
+            Logger().warning("请先选择或输入 AI 模型（输入框左侧的下拉框）")
+            return
+        user_config.save_ai_model(model)
+        Logger().query(f"AI 指令：{prompt}（共 {len(objects)} 个对象）")
+        self.ledAiPrompt.clear()
+        self._set_ai_busy(True)
+        worker = AiChatWorker(prompt, objects, self)
+        worker.log_signal.connect(self._on_ai_log)
+        worker.objects_refreshed_signal.connect(self._on_ai_objects_refreshed)
+        worker.finished_signal.connect(self._on_ai_finished)
+        worker.failed_signal.connect(self._on_ai_failed)
+        self._ai_worker = worker
+        worker.start()
+
+    def _on_ai_log(self, text: str):
+        Logger().info(f"[AI] {text}")
+
+    def _on_ai_finished(self, content: str):
+        self._set_ai_busy(False)
+        self._set_ai_proxy_dot(True)
+        if content:
+            from libraries.ai_assistant import clean_display_content
+
+            Logger().query(f"AI：{clean_display_content(content)}")
+
+    def _on_ai_failed(self, error: str):
+        self._set_ai_busy(False)
+        self._set_ai_proxy_dot(False)
+        Logger().error(f"AI 处理失败：{error}")
+
+    # AI 修改过对象后重建 gv.active_objects 并刷新表格
+    def _on_ai_objects_refreshed(self, refreshed_objects: list, processed_ids: list[str]):
+        replacement = {obj.id: obj for obj in refreshed_objects}
+        processed = set(processed_ids)
+        rebuilt = []
+        dropped = 0
+        for obj in gv.active_objects:
+            if obj.id in replacement:
+                rebuilt.append(replacement[obj.id])
+            elif obj.id not in processed:
+                # 隐藏行未交给 AI 处理，保持原样
+                rebuilt.append(obj)
+            else:
+                # 交给 AI 处理后已无法解析（被删除或类型转换），从列表移除
+                dropped += 1
+        gv.active_objects = rebuilt
+        if dropped:
+            Logger().info(f"AI 处理后有 {dropped} 个对象已不存在（被删除或转换），已从表格移除")
+        else:
+            Logger().info("AI 已修改对象，正在刷新表格…")
+        self.show_obj_list()
 
     # 初始化表格视图模式下拉框（选项与列定义见 wwise_table_headers / WwiseTableDisplayMode）
     def _setup_table_display_mode_combo(self):
@@ -66,6 +255,53 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.cbbTableDisplayMode.setCurrentIndex(self.table.display_mode.value)
         self.cbbTableDisplayMode.blockSignals(False)
         self.cbbTableDisplayMode.currentIndexChanged.connect(self.on_table_display_mode_changed)
+
+    # 类型筛选下拉框：全部类型 + 动态取自 WwiseObjectType 的所有值
+    def _setup_type_filter_combo(self):
+        self.cbbFilterType.blockSignals(True)
+        self.cbbFilterType.clear()
+        self.cbbFilterType.addItem('全部类型')
+        for member in sorted(WwiseObjectType, key=lambda item: item.value):
+            self.cbbFilterType.addItem(member.value)
+        self.cbbFilterType.blockSignals(False)
+
+    # 绑定「急速模式」开关：默认勾选，只加载基础属性与启用状态
+    def _setup_turbo_mode_checkbox(self):
+        self.table.light_mode = self.cbxTurboMode.isChecked()
+        self.cbxTurboMode.toggled.connect(self._on_turbo_mode_toggled)
+
+    # 「设置」菜单：工具执行前自动获取子对象
+    def _setup_settings_menu(self):
+        settings_menu = self.menuBar().addMenu("设置")
+        self.actAutoFetchChildren = QAction("工具执行前自动获取子对象", self)
+        self.actAutoFetchChildren.setCheckable(True)
+        self.actAutoFetchChildren.setChecked(user_config.get_tool_auto_fetch_children())
+        self.actAutoFetchChildren.toggled.connect(user_config.set_tool_auto_fetch_children)
+        settings_menu.addAction(self.actAutoFetchChildren)
+
+    # 急速模式勾选切换：勾选时快速查找完整列表；取消勾选进入完整模式，对当前可见对象读取全部属性
+    def _on_turbo_mode_toggled(self, checked: bool):
+        if self._restoring_history:
+            return
+        if checked:
+            # 若完整模式下没有切换过对象列表，则恢复进入完整模式前的完整列表以便继续查找
+            if (self._full_mode_entry_ids is not None
+                    and self._object_id_sequence(gv.active_objects) == self._full_mode_entry_ids):
+                gv.active_objects = self._full_mode_origin
+            self._full_mode_origin = None
+            self._full_mode_entry_ids = None
+        else:
+            self._full_mode_origin = self._clone_object_list(gv.active_objects)
+            # 完整模式只针对查找后剩余的可见对象
+            visible = self.get_visible_objects()
+            self._full_mode_entry_ids = self._object_id_sequence(visible)
+            gv.active_objects = visible
+        self.table.light_mode = checked
+        self.show_obj_list()
+
+    @staticmethod
+    def _object_id_sequence(objs: list) -> tuple:
+        return tuple(obj.id for obj in objs)
 
     def _setup_filter_help_button(self):
         self.btnFilterHelp = QToolButton(self.grpTableView)
@@ -121,6 +357,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 绑定菜单、工具栏与按钮的信号槽
     def setup_triggers(self):
         self._setup_table_display_mode_combo()
+        self._setup_type_filter_combo()
+        self._setup_turbo_mode_checkbox()
+        self._setup_settings_menu()
         # 日志绑定
         Logger().set_log_window_stream(self.add_log)
         Logger().set_status_bar_stream(lambda text: self.statusbar.showMessage(text))
@@ -128,10 +367,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actReconnectWwise.triggered.connect(self.check_wwise_connection)
         self.btnGetSelectedObjects.clicked.connect(self.get_selected_objects)
         self.btnClearTable.clicked.connect(self.clear_object_list)
+        self.cbxTableSelectAll.toggled.connect(self.select_all_rows)
         self.btnMultiEditor.clicked.connect(self.open_in_multi_editor)
         self.btnBatchRename.clicked.connect(self.open_in_batch_rename)
         self.btnFindParent.clicked.connect(self.find_parent)
         self.btnFindChildren.clicked.connect(self.find_children)
+        self.btnFindReferences.clicked.connect(self.find_references)
         self.ledFilterKeyword.textChanged.connect(self._on_filter_keyword_changed)
         self.cbxCaseSensitive.toggled.connect(self._on_case_sensitive_changed)
         self.cbxOnlyIncludedEnabled.toggled.connect(self._on_only_included_toggled)
@@ -172,6 +413,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actRenameByDataTable.triggered.connect(self.open_table_rename_window)
         # 源文件菜单
         self.actTrimAudioSilence.triggered.connect(self.open_audio_silence_trimmer_window)
+        self.setup_sync_trim_action()
         self.setup_batch_processor(self.actApplyEditsToOriginal, lambda index, obj: audio_source_utils.apply_source_edits(obj))
         self.setup_batch_processor(self.actResetSourceEdits, lambda index, obj: audio_source_utils.reset_source_editor(obj))
         self.setup_batch_processor(self.actRenameOriginalToWwise, lambda index, obj: audio_source_utils.rename_original_to_wwise(obj))
@@ -231,6 +473,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actUnityAssetManager.triggered.connect(self.open_unity_asset_manager_window)
 
         self.table.model.inclusion_updated.connect(self._on_wwise_inclusion_cell_changed)
+
+    # 在「源文件」菜单中加入同步裁剪入口（紧随裁剪头尾静音）
+    def setup_sync_trim_action(self):
+        self.actSyncTrim = QAction('同步裁剪', self)
+        self.actSyncTrim.triggered.connect(self.open_sync_trim_window)
+        menu_actions = self.mnuAudioSource.actions()
+        insert_index = menu_actions.index(self.actTrimAudioSilence) + 1
+        before_action = menu_actions[insert_index] if insert_index < len(menu_actions) else None
+        self.mnuAudioSource.insertAction(before_action, self.actSyncTrim)
 
     # 连接批处理器到操作（processor 签名为 (index, obj)，与 batch_processor.create_async 一致）
     def setup_batch_processor(self, action, obj_func: Callable):
@@ -297,6 +548,45 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.table.refresh_table(True)
         self.apply_table_filter()
         self._object_history_reset_with_current()
+
+    # 由 Wwise 右键菜单（--from-wwise）启动时：读取 Wwise 当前选中的对象载入列表
+    def load_current_wwise_selection(self):
+        try:
+            if not WAAPIClient().is_connected():
+                Logger().warning("无法连接到Wwise，请确认Wwise工程已打开且已启用Authoring API")
+                return
+        except CannotConnectToWaapiException:
+            Logger().warning("无法连接到Wwise，请确认Wwise工程已打开且已启用Authoring API")
+            return
+        self.get_selected_objects()
+
+    # 接收 Wwise 右键菜单（Open in WAAPI Tools）传入的对象 GUID 并载入列表
+    def load_external_objects(self, object_ids: list[str]):
+        if not object_ids:
+            return
+        try:
+            if not WAAPIClient().is_connected():
+                Logger().warning("无法连接到Wwise，请确认Wwise工程已打开且已启用Authoring API")
+                return
+        except CannotConnectToWaapiException:
+            Logger().warning("无法连接到Wwise，请确认Wwise工程已打开且已启用Authoring API")
+            return
+        objects = []
+        for raw_id in object_ids:
+            obj = waapi_utils.get_full_info_from_obj_id(str(raw_id).strip())
+            if obj.is_valid:
+                objects.append(obj)
+            else:
+                Logger().debug(f"无法解析Wwise对象ID，已跳过：{raw_id}")
+        if not objects:
+            Logger().warning("Wwise右键传入的对象均无法在工程中解析，请确认已打开正确的Wwise工程")
+            return
+        gv.active_objects = objects
+        self.reset_filter(False)
+        self.table.refresh_table(True)
+        self.apply_table_filter()
+        self._object_history_reset_with_current()
+        Logger().info(f"已从Wwise右键菜单载入 {len(objects)} 个对象")
 
     # 拷贝 WwiseObject 列表（字典级拷贝）
     @staticmethod
@@ -411,9 +701,45 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 checked += 1
         Logger().status(f"已选中({checked}/{total})")
 
+    # 全选/取消全选当前可见行的「选中」列
+    def select_all_rows(self, checked: bool):
+        proxy = self.tblWwiseObjects.model()
+        for row in range(proxy.rowCount()):
+            if self.tblWwiseObjects.isRowHidden(row):
+                continue
+            source_row = proxy.mapToSource(proxy.index(row, INCLUSION_COL)).row()
+            self.table.model.check_row_inclusion(source_row, checked)
+        self.table.model.refresh_column(INCLUSION_COL)
+        self.calculate_checked_rows()
+
     # 获取当前筛选后仍可见的 Wwise 对象
     def get_visible_objects(self) -> list[WwiseObject]:
         return [row_data.wwise_object for row_data in self.table.active_data]
+
+    # 获取目标类型对象：按「自动获取子对象」设置决定只取可见行还是先展开子级再筛选
+    def get_tool_target_objects(self, target_types) -> list[WwiseObject]:
+        if isinstance(target_types, WwiseObjectType):
+            target_types = {target_types}
+        else:
+            target_types = set(target_types)
+        visible_objects = self.get_visible_objects()
+        collected: list[WwiseObject] = []
+        seen_ids: set[str] = set()
+
+        def add_object(obj: WwiseObject):
+            if obj.type in target_types and obj.id not in seen_ids:
+                seen_ids.add(obj.id)
+                collected.append(obj)
+
+        if not user_config.get_tool_auto_fetch_children():
+            for obj in visible_objects:
+                add_object(obj)
+            return collected
+        for obj in visible_objects:
+            add_object(obj)
+            for child in waapi_utils.get_child_objects(obj, True):
+                add_object(child)
+        return collected
 
     # 查找父级对象
     def find_parent(self):
@@ -442,6 +768,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.table.refresh_table(True)
         self.apply_table_filter()
         self._history_append_current_if_changed()
+
+    # 查找引用当前表格对象的所有对象，逐一查询并去重后加入表格
+    def find_references(self):
+        visible_objects = self.get_visible_objects()
+        found_objects = list(visible_objects) if self.cbxKeepSelf.isChecked() else []
+        seen_ids = {obj.id for obj in found_objects}
+        for obj in visible_objects:
+            if obj.type == WwiseObjectType.AudioSource:
+                references = self._get_audio_source_references(obj)
+            else:
+                references = waapi_utils.get_object_references(obj)
+            for reference in references:
+                if reference.id not in seen_ids:
+                    seen_ids.add(reference.id)
+                    found_objects.append(reference)
+        gv.active_objects = found_objects
+        self.table.refresh_table(True)
+        self.apply_table_filter()
+        self._history_append_current_if_changed()
+
+    # AudioFileSource 无法用 referencesTo 反查，改为按 originalRelativeFilePath 反查同源文件对象
+    # 结果始终包含自身，保证未勾选「保留原始层级」时也能把当前对象搜出来
+    def _get_audio_source_references(self, source: WwiseObject) -> list[WwiseObject]:
+        relative_path = waapi_utils.get_object_property(source, 'originalRelativeFilePath')
+        if not relative_path:
+            return []
+        return waapi_utils.find_audio_sources_by_original_path(relative_path)
 
     # 按工程当前参考语言筛选对象
     def filter_by_active_language(self):
@@ -479,12 +832,67 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 导出对象列表
     def export_object_list(self):
-        io_utils.export_to_json(self.get_visible_objects(), 'WAAPI_Tools_Objects')
+        headers = self.table.header_list
+        # 「选中」「启用」为表格操作列，不参与导出
+        export_headers = [
+            header
+            for column, header in enumerate(headers)
+            if column not in (CHECK_BOX_COL, ENABLE_COL)
+        ]
+        export_window = ExportObjectListWindow(export_headers)
+        if export_window.exec() != QDialog.DialogCode.Accepted:
+            return
+        selected_headers = export_window.get_selected_headers()
+        if not selected_headers:
+            Logger().warning("未选择任何导出属性，已取消导出")
+            return
+        selected_columns = [headers.index(header) for header in selected_headers]
+        # 只勾选一列时导出为txt，且不含表头
+        if len(selected_columns) == 1:
+            io_utils.export_to_txt(
+                self.table.build_export_column(selected_columns[0]), 'WAAPI_Tools_Objects'
+            )
+            return
+        rows = [selected_headers]
+        rows.extend(self.table.build_export_rows(selected_columns))
+        io_utils.export_to_csv(rows, 'WAAPI_Tools_Objects')
 
     # 导入对象列表
     def import_object_list(self):
-        gv.active_objects = io_utils.import_from_json()
+        csv_data = io_utils.import_from_csv()
+        if not csv_data:
+            return
+        headers = [str(header).strip() for header in csv_data[0]]
+        path_header = COMMON_HEADERS[PATH_COL]
+        if path_header not in headers:
+            Logger().warning(f"导入失败：CSV中未包含「{path_header}」列，仅支持包含该列的CSV文件")
+            return
+        path_column = headers.index(path_header)
+        paths = []
+        for row in csv_data[1:]:
+            if len(row) <= path_column:
+                continue
+            path = str(row[path_column]).strip()
+            if path and path not in paths:
+                paths.append(path)
+        if not paths:
+            Logger().warning("导入失败：CSV中没有可导入的路径数据")
+            return
+        objects = []
+        missing_count = 0
+        for path in paths:
+            obj = waapi_utils.find_object_by_path(path)
+            if obj and obj.is_valid:
+                objects.append(obj)
+            else:
+                missing_count += 1
+        if not objects:
+            Logger().error("导入失败：CSV中的路径在Wwise工程中均未找到")
+            return
+        gv.active_objects = objects
         self.show_obj_list()
+        suffix = f"，{missing_count}个路径未找到" if missing_count else ""
+        Logger().info(f"导入完成，共导入{len(objects)}个对象{suffix}")
 
     # 导入Work Unit
     @staticmethod
@@ -517,7 +925,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开音频末尾静音裁剪窗口
     def open_audio_silence_trimmer_window(self):
-        trim_window = AudioSilenceTrimWindow(self.get_visible_objects())
+        target_objects = self.get_tool_target_objects(WwiseObjectType.AudioSource)
+        trim_window = AudioSilenceTrimWindow(target_objects)
+        trim_window.show()
+        trim_window.exec()
+
+    # 打开同步裁剪窗口，列出主窗口表格中的所有 AudioSource 及其裁剪信息
+    def open_sync_trim_window(self):
+        sources = [
+            row.wwise_object
+            for row in self.table.data
+            if row.wwise_object.type == WwiseObjectType.AudioSource
+        ]
+        if not sources:
+            Logger().warning('当前表格中没有 AudioSource 对象')
+            return
+        trim_window = SyncTrimWindow(sources)
         trim_window.show()
         trim_window.exec()
 
@@ -577,6 +1000,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 窗口关闭事件处理
     def closeEvent(self, event):
         Logger().info("正在关闭应用程序...")
+        # 等待 AI 对话线程结束（最多 3 秒）
+        if self._ai_worker and self._ai_worker.isRunning():
+            self._ai_worker.wait(3000)
+        if self._ai_model_worker and self._ai_model_worker.isRunning():
+            self._ai_model_worker.wait(2000)
         # 停止所有正在运行的批处理线程
         if gv.batch_processor and hasattr(gv.batch_processor, "isRunning"):
             gv.batch_processor.stop()
@@ -585,9 +1013,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 关闭进度条窗口
         if gv.progress_bar:
             gv.progress_bar.close()
-        # 断开P4连接
+        # 断开版本控制连接
         try:
-            client = P4Client()
+            client = get_vcs_client()
             if client.is_connected:
                 client.disconnect()
         except Exception as e:

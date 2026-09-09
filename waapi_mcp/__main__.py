@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 from waapi_mcp.bootstrap import ensure_project_root
 
@@ -13,12 +14,20 @@ ensure_project_root()
 # MCP stdio：日志仅 stderr，避免 print 污染 stdout（JSON-RPC）
 os.environ.setdefault("WAAPI_MCP", "1")
 
+# 先加载 waapi_utils 解开 waapi_client ↔ project_utils 循环导入，再建 WAAPI 客户端
+from libraries.utils.wwise import waapi_utils  # noqa: F401
+from libraries.waapi_client import WAAPIClient
+from waapi import CannotConnectToWaapiException
+
 
 def main() -> None:
     # 进程主入口：创建全局 WaapiClient，然后启动 FastMCP 的 stdio 传输
     # 第二步：与 Wwise 建立 WebSocket（WAAPI 模块内 WaapiClient）
-
-    WAAPI.connect()
+    try:
+        WAAPIClient().connect()
+    except CannotConnectToWaapiException:
+        # Wwise 未打开时允许服务先启动，工具调用阶段再重试连接
+        print("无法连接 Wwise，请确认 Wwise 工程已打开", file=sys.stderr)
     # 第三步：加载并注册所有 MCP tool，然后进入 mcp.run()（阻塞）
     from waapi_mcp.server import run_stdio
 

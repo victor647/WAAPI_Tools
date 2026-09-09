@@ -173,3 +173,6 @@ cython_debug/
 .cursor/
 .cursorignore
 .cursorindexingignore
+
+# 用户配置文件（含 SVN 凭据等本机个性化设置）
+user_config.json

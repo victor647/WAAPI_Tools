@@ -17,6 +17,15 @@ from table.wwise_table_row_data import WwiseTableRowData
 from libraries.utils.log_utils import Logger
 
 
+# 导出单元格的值：路径列使用完整原始路径，布尔值转为是/否
+def _export_cell_value(cell: TableCellData):
+    if isinstance(cell.display_value, bool):
+        return "是" if cell.display_value else "否"
+    if cell.sort_value is not None:
+        return cell.sort_value
+    return cell.display_value
+
+
 # 与 Wwise 表格配合：「启用」列勾选时写入工程并回读有效状态（含父级链路）
 class WwiseObjectTableModel(TableItemModel):
     inclusion_updated = Signal(int)
@@ -76,9 +85,12 @@ class WwiseObjectTableModel(TableItemModel):
             if not row_data.cells[ENABLE_COL].is_enabled:
                 return False
             checked = value == Qt.CheckState.Checked or value == 2
-            common_utils.set_object_inclusion(row_data.wwise_object, checked)
-            actual = common_utils.is_object_included(row_data.wwise_object)
-            row_data[ENABLE_COL] = actual
+            obj = row_data.wwise_object
+            Logger().debug(f"WAAPI - 表格勾选启用状态：{obj.type} [{obj.name}] 请求 {checked}")
+            if not common_utils.set_object_inclusion(obj, checked):
+                Logger().error(f"WAAPI - 无法设置启用状态：{obj.path} -> {checked}")
+            # 以成功写入的请求值为准更新显示，避免回读「含父级的有效状态」导致刚写入的状态被覆盖
+            row_data[ENABLE_COL] = checked
             self.refresh_cell(row, ENABLE_COL)
             self.inclusion_updated.emit(row)
             return True
@@ -95,6 +107,8 @@ class WwiseObjectTable(TableFacade):
     def __init__(self, table_view: QTableView | None = None):
         super().__init__(table_view, item_model_class=WwiseObjectTableModel)
         self.display_mode: WwiseTableDisplayMode = WwiseTableDisplayMode.General
+        # 急速模式(True)只填充基础属性与启用状态，完整模式才逐个对象读取备注、引用计数等属性
+        self.light_mode: bool = False
         self.model.row_metadata_changed.connect(self._on_row_wwise_object_updated)
         self.wwise_transport_id: int = -1
         self._inclusion_cache: dict[str, bool] = {}
@@ -145,7 +159,7 @@ class WwiseObjectTable(TableFacade):
         )
 
     def read_common_data(self, row_data: WwiseTableRowData):
-        row_data.read_common_data(self._inclusion_cache)
+        row_data.read_common_data(self._inclusion_cache, read_optional=not self.light_mode)
 
     def filter_by_type(self, obj_type: WwiseObjectType | None) -> int:
         if not self.table_view:
@@ -175,17 +189,33 @@ class WwiseObjectTable(TableFacade):
         if not data:
             return
         row_data = WwiseTableRowData(row, len(self.header_list), data)
-        row_data.read_common_data(self._inclusion_cache)
+        self.read_common_data(row_data)
         self.read_data_by_display_mode(row_data)
         self.model.append_row(row_data)
 
     def read_data_by_display_mode(self, row_data: WwiseTableRowData):
+        if self.light_mode:
+            return
         if self.display_mode == WwiseTableDisplayMode.Design:
             row_data.read_design_info()
         elif self.display_mode == WwiseTableDisplayMode.Integration:
             row_data.read_integration_info()
 
     # endregion ReadData
+
+    # region Export
+    # 按指定列导出当前可见行的数据（不含标题行，标题由调用方拼装）
+    def build_export_rows(self, columns: list[int]) -> list[list]:
+        rows = []
+        for row_data in self.active_data:
+            rows.append([_export_cell_value(row_data.cells[column]) for column in columns])
+        return rows
+
+    # 按单列导出当前可见行的数据（单属性导出为txt时使用）
+    def build_export_column(self, column: int) -> list:
+        return [_export_cell_value(row_data.cells[column]) for row_data in self.active_data]
+
+    # endregion Export
 
 
 def __getattr__(name: str):

@@ -199,6 +199,26 @@ class WAAPIClient(metaclass=Singleton):
             Logger().error(str(e))
             return []
 
+    # AudioFileSource 无法用 referencesTo 反查引用，按源文件相对路径反查所有使用同一源文件的对象
+    def find_audio_sources_by_original_path(self, original_relative_path: str) -> list[dict]:
+        if not self.client or not original_relative_path:
+            return []
+        try:
+            get_args = {}
+            if project_utils.get_project_version() > 2020:
+                get_args['waql'] = f'from type AudioFileSource where originalRelativeFilePath = "{original_relative_path}"'
+            else:
+                get_args['from'] = {'ofType': ['AudioFileSource']}
+                get_args['transform'] = [{'where': ['originalRelativeFilePath:matches', original_relative_path]}]
+            get_args['options'] = RETURN_FIELDS
+            result = self.client.call('ak.wwise.core.object.get', get_args)
+            if not result or not result.get('return'):
+                return []
+            return list(result['return'])
+        except Exception as e:
+            Logger().error(str(e))
+            return []
+
     # 获取一个对象直属上层的对象
     def get_parent_object(self, obj: dict) -> dict:
         if not self.client or not obj:

@@ -25,7 +25,7 @@ class AudioTailTrimWindow(QDialog, Ui_AudioTailTrimmer):
         self.__fadeDuration = 0
         self.__soundFiles = []
         # 主窗口中有wwise对象，从中查找音频源文件
-        if len(active_objects) > 0 and waapi_utils.client:
+        if len(active_objects) > 0:
             self.populate_from_wwise(active_objects)
         self.tblFileList.resizeColumnsToContents()
 

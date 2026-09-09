@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'MainWindow.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.9.2
+## Created by: Qt User Interface Compiler version 6.11.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -339,6 +339,14 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addWidget(self.cbxKeepSelf)
 
+        self.cbxTurboMode = QCheckBox(self.grpTableView)
+        self.cbxTurboMode.setObjectName(u"cbxTurboMode")
+        sizePolicy1.setHeightForWidth(self.cbxTurboMode.sizePolicy().hasHeightForWidth())
+        self.cbxTurboMode.setSizePolicy(sizePolicy1)
+        self.cbxTurboMode.setChecked(True)
+
+        self.horizontalLayout_4.addWidget(self.cbxTurboMode)
+
         self.btnFindParent = QPushButton(self.grpTableView)
         self.btnFindParent.setObjectName(u"btnFindParent")
         sizePolicy1.setHeightForWidth(self.btnFindParent.sizePolicy().hasHeightForWidth())
@@ -351,9 +359,17 @@ class Ui_MainWindow(object):
         self.btnFindChildren.setObjectName(u"btnFindChildren")
         sizePolicy1.setHeightForWidth(self.btnFindChildren.sizePolicy().hasHeightForWidth())
         self.btnFindChildren.setSizePolicy(sizePolicy1)
-        self.btnFindChildren.setMaximumSize(QSize(72, 16777215))
+        self.btnFindChildren.setMaximumSize(QSize(78, 16777215))
 
         self.horizontalLayout_4.addWidget(self.btnFindChildren)
+
+        self.btnFindReferences = QPushButton(self.grpTableView)
+        self.btnFindReferences.setObjectName(u"btnFindReferences")
+        sizePolicy1.setHeightForWidth(self.btnFindReferences.sizePolicy().hasHeightForWidth())
+        self.btnFindReferences.setSizePolicy(sizePolicy1)
+        self.btnFindReferences.setMaximumSize(QSize(78, 16777215))
+
+        self.horizontalLayout_4.addWidget(self.btnFindReferences)
 
         self.btnObjectHistoryBack = QPushButton(self.grpTableView)
         self.btnObjectHistoryBack.setObjectName(u"btnObjectHistoryBack")
@@ -373,27 +389,6 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
         self.cbbFilterType = QComboBox(self.grpTableView)
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
-        self.cbbFilterType.addItem("")
         self.cbbFilterType.setObjectName(u"cbbFilterType")
         sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         sizePolicy3.setHorizontalStretch(0)
@@ -445,6 +440,40 @@ class Ui_MainWindow(object):
         self.txeOutputLogs.setMaximumSize(QSize(16777215, 120))
 
         self.verticalLayout_3.addWidget(self.txeOutputLogs)
+
+        self.horizontalLayout_ai = QHBoxLayout()
+        self.horizontalLayout_ai.setObjectName(u"horizontalLayout_ai")
+        self.lblAiAssistant = QLabel(self.centralwidget)
+        self.lblAiAssistant.setObjectName(u"lblAiAssistant")
+
+        self.horizontalLayout_ai.addWidget(self.lblAiAssistant)
+
+        self.lblAiModelStatus = QLabel(self.centralwidget)
+        self.lblAiModelStatus.setObjectName(u"lblAiModelStatus")
+        self.lblAiModelStatus.setMinimumSize(QSize(12, 12))
+        self.lblAiModelStatus.setMaximumSize(QSize(12, 12))
+
+        self.horizontalLayout_ai.addWidget(self.lblAiModelStatus)
+
+        self.cbbAiModel = QComboBox(self.centralwidget)
+        self.cbbAiModel.setObjectName(u"cbbAiModel")
+        self.cbbAiModel.setEditable(True)
+        self.cbbAiModel.setMinimumSize(QSize(190, 0))
+
+        self.horizontalLayout_ai.addWidget(self.cbbAiModel)
+
+        self.ledAiPrompt = QLineEdit(self.centralwidget)
+        self.ledAiPrompt.setObjectName(u"ledAiPrompt")
+
+        self.horizontalLayout_ai.addWidget(self.ledAiPrompt)
+
+        self.btnAiSend = QPushButton(self.centralwidget)
+        self.btnAiSend.setObjectName(u"btnAiSend")
+
+        self.horizontalLayout_ai.addWidget(self.btnAiSend)
+
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_ai)
 
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
@@ -750,36 +779,24 @@ class Ui_MainWindow(object):
         self.grpTableView.setTitle(QCoreApplication.translate("MainWindow", u"\u8868\u683c\u5bf9\u8c61", None))
         self.cbxRecursiveFind.setText(QCoreApplication.translate("MainWindow", u"\u9012\u5f52\u67e5\u627e", None))
         self.cbxKeepSelf.setText(QCoreApplication.translate("MainWindow", u"\u4fdd\u7559\u539f\u59cb\u5c42\u7ea7", None))
+#if QT_CONFIG(tooltip)
+        self.cbxTurboMode.setToolTip(QCoreApplication.translate("MainWindow", u"\u6025\u901f\u6a21\u5f0f\uff1a\u53ea\u8bfb\u53d6\u57fa\u7840\u4fe1\u606f\u4e0e\u542f\u7528\u72b6\u6001\uff1b\u53d6\u6d88\u52fe\u9009\u540e\u5bf9\u5f53\u524d\u53ef\u89c1\u5bf9\u8c61\u8bfb\u53d6\u5907\u6ce8\u3001\u5f15\u7528\u8ba1\u6570\u7b49\u5b8c\u6574\u5c5e\u6027\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.cbxTurboMode.setText(QCoreApplication.translate("MainWindow", u"\u6025\u901f\u6a21\u5f0f", None))
         self.btnFindParent.setText(QCoreApplication.translate("MainWindow", u"\u67e5\u627e\u4e0a\u7ea7", None))
         self.btnFindChildren.setText(QCoreApplication.translate("MainWindow", u"\u67e5\u627e\u4e0b\u7ea7", None))
+        self.btnFindReferences.setText(QCoreApplication.translate("MainWindow", u"\u67e5\u627e\u5f15\u7528", None))
         self.btnObjectHistoryBack.setText(QCoreApplication.translate("MainWindow", u"\u540e\u9000", None))
         self.btnObjectHistoryForward.setText(QCoreApplication.translate("MainWindow", u"\u524d\u8fdb", None))
-        self.cbbFilterType.setItemText(0, QCoreApplication.translate("MainWindow", u"\u5168\u90e8\u7c7b\u578b", None))
-        self.cbbFilterType.setItemText(1, QCoreApplication.translate("MainWindow", u"Action", None))
-        self.cbbFilterType.setItemText(2, QCoreApplication.translate("MainWindow", u"ActorMixer", None))
-        self.cbbFilterType.setItemText(3, QCoreApplication.translate("MainWindow", u"AudioFileSource", None))
-        self.cbbFilterType.setItemText(4, QCoreApplication.translate("MainWindow", u"AuxBus", None))
-        self.cbbFilterType.setItemText(5, QCoreApplication.translate("MainWindow", u"BlendContainer", None))
-        self.cbbFilterType.setItemText(6, QCoreApplication.translate("MainWindow", u"Bus", None))
-        self.cbbFilterType.setItemText(7, QCoreApplication.translate("MainWindow", u"Event", None))
-        self.cbbFilterType.setItemText(8, QCoreApplication.translate("MainWindow", u"Folder", None))
-        self.cbbFilterType.setItemText(9, QCoreApplication.translate("MainWindow", u"GameParameter", None))
-        self.cbbFilterType.setItemText(10, QCoreApplication.translate("MainWindow", u"MusicPlaylistContainer", None))
-        self.cbbFilterType.setItemText(11, QCoreApplication.translate("MainWindow", u"MusicSegment", None))
-        self.cbbFilterType.setItemText(12, QCoreApplication.translate("MainWindow", u"MusicSwitchContainer", None))
-        self.cbbFilterType.setItemText(13, QCoreApplication.translate("MainWindow", u"MusicTrack", None))
-        self.cbbFilterType.setItemText(14, QCoreApplication.translate("MainWindow", u"RandomSequenceContainer", None))
-        self.cbbFilterType.setItemText(15, QCoreApplication.translate("MainWindow", u"Sound", None))
-        self.cbbFilterType.setItemText(16, QCoreApplication.translate("MainWindow", u"SoundBank", None))
-        self.cbbFilterType.setItemText(17, QCoreApplication.translate("MainWindow", u"State", None))
-        self.cbbFilterType.setItemText(18, QCoreApplication.translate("MainWindow", u"Switch", None))
-        self.cbbFilterType.setItemText(19, QCoreApplication.translate("MainWindow", u"SwitchContainer", None))
-        self.cbbFilterType.setItemText(20, QCoreApplication.translate("MainWindow", u"WorkUnit", None))
-
         self.ledFilterKeyword.setInputMask("")
         self.ledFilterKeyword.setText("")
         self.cbxCaseSensitive.setText(QCoreApplication.translate("MainWindow", u"\u533a\u5206\u5927\u5c0f\u5199", None))
         self.cbxOnlyIncludedEnabled.setText(QCoreApplication.translate("MainWindow", u"\u4ec5\u663e\u793a\u542f\u7528\u5bf9\u8c61", None))
+        self.lblAiAssistant.setText(QCoreApplication.translate("MainWindow", u"AI \u52a9\u624b", None))
+        self.lblAiModelStatus.setText("")
+        self.cbbAiModel.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u9009\u62e9\u6a21\u578b", None))
+        self.ledAiPrompt.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u8f93\u5165\u6307\u4ee4\u8ba9 AI \u5904\u7406\u8868\u683c\u4e2d\u7684\u5bf9\u8c61\uff0c\u4f8b\u5982\uff1a\u628a\u5217\u8868\u91cc\u6240\u6709 Sound \u6539\u4e3a\u5168\u5c0f\u5199\u547d\u540d\uff08Enter \u53d1\u9001\uff09", None))
+        self.btnAiSend.setText(QCoreApplication.translate("MainWindow", u"\u53d1\u9001\u7ed9 AI", None))
         self.mnuAudioSource.setTitle(QCoreApplication.translate("MainWindow", u"\u6e90\u6587\u4ef6", None))
         self.mnuContainer.setTitle(QCoreApplication.translate("MainWindow", u"Container", None))
         self.mnuSwitchContainer.setTitle(QCoreApplication.translate("MainWindow", u"Switch", None))

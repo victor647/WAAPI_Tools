@@ -49,19 +49,62 @@ class WwiseTableRowData(TableRowData):
     def notes(self) -> str:
         return waapi_utils.get_object_property(self.wwise_object, "notes")
 
+    # 当前对象被多少个对象直接引用（WAAPI: referencesTo）
+    @property
+    def reference_count(self) -> int:
+        return len(waapi_utils.get_object_references(self.wwise_object))
+
     @staticmethod
     def get_path_display_text(path: str) -> str:
         if not isinstance(path, str) or len(path) <= PATH_DISPLAY_LIMIT:
             return path
         separator = "\\" if "\\" in path else "/"
-        parts = []
-        for part in path.split(separator):
+        parts = path.split(separator)
+        # 末尾的对象名不做缩写，保证最后一级完整可读
+        for index, part in enumerate(parts):
+            if index == len(parts) - 1:
+                continue
             suffix = part.rsplit("_", 1)[-1]
-            parts.append(f"...{suffix}" if suffix != part else part)
+            parts[index] = f"...{suffix}" if suffix != part else part
         return separator.join(parts)
 
+    # 缩写路径：按 _ 拆出的字段只要在路径前面的任意节点出现过就用 ... 代替，只保留新字段
+    @staticmethod
+    def get_path_compact_text(path: str) -> str:
+        if not isinstance(path, str) or not path:
+            return path
+        separator = "\\" if "\\" in path else "/"
+        parts = path.split(separator)
+        seen_tokens: set[str] = set()
+        compact_parts = []
+        for part in parts:
+            if not part:
+                compact_parts.append(part)
+                continue
+            leading_underscores = len(part) - len(part.lstrip("_"))
+            tokens = part[leading_underscores:].split("_")
+            # 先按历史出现情况判断，再记录本节点字段
+            flags = [token in seen_tokens for token in tokens]
+            seen_tokens.update(token for token in tokens if token)
+            compact = "_" * leading_underscores
+            pending_elided = False
+            for token, was_seen in zip(tokens, flags):
+                if was_seen:
+                    pending_elided = True
+                    continue
+                if compact and not pending_elided:
+                    compact += "_"
+                elif pending_elided:
+                    compact += "..." if not compact.endswith("...") else ""
+                    pending_elided = False
+                compact += token
+            if pending_elided:
+                compact += "..." if not compact.endswith("...") else ""
+            compact_parts.append(compact)
+        return separator.join(compact_parts)
+
     def set_path_cell(self, column: int, path: str):
-        self.set_cell_value(column, self.get_path_display_text(path), path)
+        self.set_cell_value(column, self.get_path_compact_text(path), path)
 
     # 筛选时决定需要筛选的条目
     def get_searched_properties(self) -> list[str]:
@@ -70,19 +113,27 @@ class WwiseTableRowData(TableRowData):
         p = self.path or ""
         return [str(n), str(p)]
 
-    # 读取所有显示模式共有的信息
-    def read_common_data(self, inclusion_cache: dict[str, bool] | None = None):
+    # 读取所有显示模式共有的信息；read_optional=False 时为急速模式，
+    # 只填充基础属性与启用状态，避免逐个对象查询备注、引用计数等
+    def read_common_data(self, inclusion_cache: dict[str, bool] | None = None, read_optional: bool = True):
         self[CHECK_BOX_COL] = True
-        can_set_inclusion = common_utils.can_set_object_inclusion(self.wwise_object)
-        is_included = common_utils.is_object_included(self.wwise_object, inclusion_cache=inclusion_cache)
-        self[ENABLE_COL] = is_included
-        if not can_set_inclusion:
-            self.cells[ENABLE_COL].is_enabled = False
-            self.set_cell_severity(ENABLE_COL, CellSeverity.Ignored)
         self[NAME_COL] = self.name
         self[TYPE_COL] = self.type.name
         self.set_path_cell(PATH_COL, self.path)
+        # 启用状态始终读取，默认轻量模式也允许直接勾选启用
+        can_set_inclusion = common_utils.can_set_object_inclusion(self.wwise_object)
+        if not can_set_inclusion:
+            # Wwise 不支持单独启用的对象（如 EventAction、AudioSource、State 等）留空置灰
+            self.cells[ENABLE_COL].display_value = ""
+            self.cells[ENABLE_COL].is_enabled = False
+            self.set_cell_severity(ENABLE_COL, CellSeverity.Ignored)
+        else:
+            is_included = common_utils.is_object_included(self.wwise_object, inclusion_cache=inclusion_cache)
+            self[ENABLE_COL] = is_included
+        if not read_optional:
+            return
         self[DESCRIPTION_COL] = self.notes
+        self[REFERENCE_COUNT_COL] = self.reference_count
         self.apply_inclusion_text_style()
 
     def apply_inclusion_text_style(self):

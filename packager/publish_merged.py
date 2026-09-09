@@ -5,8 +5,11 @@
   - ``packager/dist/WAAPI_Tools/``（``WAAPI_Tools.exe`` + ``_internal``）
   - ``packager/dist/WaapiMCP/``（``WaapiMCP.exe`` + ``_internal``）
 
-合并到 ``<dest>/``（默认 ``D:/Audio_P4/Tools/WAAPI_Tools``）：两个 exe 同级，
+合并到 ``<dest>/``（默认 ``S:/sound_tools/waapi_tools``）：两个 exe 同级，
 ``_internal`` 为两边文件并集（MCP 侧覆盖同名文件）。
+
+``S:/sound_tools/waapi_tools`` 即 Wwise Add-ons 相对引用的目录：
+``Add-ons/Commands`` 上三级到 ``S:/``，再进 ``sound_tools/waapi_tools``。
 
 另将仓库内 ``.cursor/skills/wwise-waapi/SKILL.md`` 复制到发布目录
 ``waapi-mcp-workflows/SKILL.md``（与 exe 同级）；需要 Cursor skill 时可将 ``waapi-mcp-workflows/``
@@ -28,8 +31,8 @@ from pathlib import Path
 
 _PACKAGER_DIR = Path(__file__).resolve().parent
 ROOT = _PACKAGER_DIR.parent
-# 默认：相对仓库根，解析为 D:\\Audio_P4\\Tools\\WAAPI_Tools（与 TechAudio\\Tools\\WAAPI_Tools 同级 Tools 目录）
-DEFAULT_DEST_REL = Path("../../../Tools/WAAPI_Tools")
+# 默认发布目录：Wwise Add-ons 通过 ../../../sound_tools/waapi_tools 相对引用此处的 exe
+DEFAULT_DEST = Path("S:/sound_tools/waapi_tools")
 
 _DIST = _PACKAGER_DIR / "dist"
 GUI_APP = _DIST / "WAAPI_Tools"
@@ -40,7 +43,7 @@ MCP_WORKFLOW_SKILL_REL = Path("waapi-mcp-workflows/SKILL.md")
 
 def _resolve_dest(path_arg: Path | None) -> Path:
     if path_arg is None:
-        return (ROOT / DEFAULT_DEST_REL).resolve()
+        return DEFAULT_DEST
     p = Path(path_arg)
     return p.resolve() if p.is_absolute() else (ROOT / p).resolve()
 
@@ -108,7 +111,7 @@ def main() -> int:
         type=Path,
         default=None,
         metavar="DIR",
-        help=f"发布目录（默认相对仓库 {DEFAULT_DEST_REL}，即 D:/Audio_P4/Tools/WAAPI_Tools）",
+        help=f"发布目录（默认 {DEFAULT_DEST}，Wwise Add-ons 相对引用目录）",
     )
     parser.add_argument(
         "--gui-dir",

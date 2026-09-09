@@ -38,6 +38,21 @@ def get_source_relative_path(sound_or_source: WwiseObject) -> str:
     original_path = project_utils.get_originals_folder()
     return os.path.relpath(full_path, original_path)
 
+
+# 把 Originals 下的绝对路径转为相对路径（等同 Wwise 的 originalRelativeFilePath）；否则原样返回
+def to_originals_relative_path(file_path: str) -> str:
+    if not file_path:
+        return file_path
+    try:
+        originals_folder = project_utils.get_originals_folder()
+        relative_path = os.path.relpath(file_path, originals_folder)
+    except (TypeError, ValueError):
+        return file_path
+    if relative_path.startswith("..") or os.path.isabs(relative_path):
+        return file_path
+    return relative_path
+
+
 # 自根对象递归收集其下所有音频源文件路径（Event 通过 event_utils 解析 targets；结果按路径去重）
 def get_all_audio_file_paths(root: WwiseObject) -> list[str]:
     if not root or not root.id:
@@ -69,6 +84,41 @@ def get_all_audio_file_paths(root: WwiseObject) -> list[str]:
     visit(root)
     return list(dict.fromkeys(p for p in collected if p))
 
+# 获取Source Editor里的裁剪信息（返回 TrimBegin/TrimEnd/FadeIn/FadeOut/LoopBegin/LoopEnd）
+def get_source_edit_info(obj: WwiseObject):
+    if obj.type != WwiseObjectType.AudioSource:
+        return None
+    trim_begin = waapi_utils.get_object_property(obj, 'TrimBegin')
+    trim_end = waapi_utils.get_object_property(obj, 'TrimEnd')
+    fade_in = waapi_utils.get_object_property(obj, 'FadeInDuration')
+    fade_out = waapi_utils.get_object_property(obj, 'FadeOutDuration')
+    loop_begin = waapi_utils.get_object_property(obj, 'LoopBegin')
+    loop_end = waapi_utils.get_object_property(obj, 'LoopEnd')
+    return trim_begin, trim_end, fade_in, fade_out, loop_begin, loop_end
+
+
+# 写入Source Editor里的裁剪信息
+def set_source_edit_info(
+    obj: WwiseObject,
+    trim_begin,
+    trim_end,
+    fade_in,
+    fade_out,
+    loop_begin,
+    loop_end,
+) -> bool:
+    if obj.type != WwiseObjectType.AudioSource:
+        return False
+    modified = True
+    modified &= waapi_utils.set_object_property(obj, 'TrimBegin', trim_begin)
+    modified &= waapi_utils.set_object_property(obj, 'TrimEnd', trim_end)
+    modified &= waapi_utils.set_object_property(obj, 'FadeInDuration', fade_in)
+    modified &= waapi_utils.set_object_property(obj, 'FadeOutDuration', fade_out)
+    modified &= waapi_utils.set_object_property(obj, 'LoopBegin', loop_begin)
+    modified &= waapi_utils.set_object_property(obj, 'LoopEnd', loop_end)
+    return modified
+
+
 # 将Source Editor里编辑的信息写入源文件中
 def apply_source_edits(obj: WwiseObject) -> bool:
     modified = False
@@ -81,10 +131,7 @@ def apply_source_edits(obj: WwiseObject) -> bool:
     source_path = get_source_file_path(obj)
     if not source_path:
         return False
-    trim_begin = waapi_utils.get_object_property(obj, 'TrimBegin')
-    trim_end = waapi_utils.get_object_property(obj, 'TrimEnd')
-    fade_in_duration = waapi_utils.get_object_property(obj, 'FadeInDuration')
-    fade_out_duration = waapi_utils.get_object_property(obj, 'FadeOutDuration')
+    trim_begin, trim_end, fade_in, fade_out, _, _ = get_source_edit_info(obj)
     sound_file = soundfile.SoundFile(file=source_path)
     sound_data = sound_file.read()
     sample_rate = sound_file.samplerate
@@ -92,10 +139,10 @@ def apply_source_edits(obj: WwiseObject) -> bool:
         sound_data = audio_utils.trim(sound_data, 0, trim_end * sample_rate)
     if trim_begin > 0:
         sound_data = audio_utils.trim(sound_data, trim_begin * sample_rate, 0)
-    if fade_in_duration > 0:
-        audio_utils.fade(sound_data, fade_in_duration * sample_rate, 1)
-    if fade_out_duration > 0:
-        audio_utils.fade(sound_data, fade_out_duration * sample_rate, -1)
+    if fade_in > 0:
+        audio_utils.fade(sound_data, fade_in * sample_rate, 1)
+    if fade_out > 0:
+        audio_utils.fade(sound_data, fade_out * sample_rate, -1)
     soundfile.write(file=source_path, data=sound_data, samplerate=sample_rate)
     return reset_source_editor(obj)
 
@@ -121,12 +168,7 @@ def replace_audio_file(sound: WwiseObject, new_wav_path: str, language: str) -> 
     old_source = waapi_utils.get_default_audio_source(sound)
     if not old_source:
         return False
-    fade_in = waapi_utils.get_object_property(old_source, 'FadeInDuration')
-    fade_out = waapi_utils.get_object_property(old_source, 'FadeOutDuration')
-    trim_begin = waapi_utils.get_object_property(old_source, 'TrimBegin')
-    trim_end = waapi_utils.get_object_property(old_source, 'TrimEnd')
-    loop_begin = waapi_utils.get_object_property(old_source, 'LoopBegin')
-    loop_end = waapi_utils.get_object_property(old_source, 'LoopEnd')
+    trim_begin, trim_end, fade_in, fade_out, loop_begin, loop_end = get_source_edit_info(old_source)
     delete_audio_source_by_language(sound, language)
 
     if not waapi_utils.import_audio_file(new_wav_path, sound, language):
@@ -134,12 +176,7 @@ def replace_audio_file(sound: WwiseObject, new_wav_path: str, language: str) -> 
     new_source = waapi_utils.get_default_audio_source(sound)
     if not new_source:
         return False
-    waapi_utils.set_object_property(new_source, 'FadeInDuration', fade_in)
-    waapi_utils.set_object_property(new_source, 'FadeOutDuration', fade_out)
-    waapi_utils.set_object_property(new_source, 'TrimBegin', trim_begin)
-    waapi_utils.set_object_property(new_source, 'TrimEnd', trim_end)
-    waapi_utils.set_object_property(new_source, 'LoopBegin', loop_begin)
-    return waapi_utils.set_object_property(new_source, 'LoopEnd', loop_end)
+    return set_source_edit_info(new_source, trim_begin, trim_end, fade_in, fade_out, loop_begin, loop_end)
 
 # 根据声音路径自动导入源文件
 def auto_import_by_path(sound: WwiseObject) -> WwiseObject:

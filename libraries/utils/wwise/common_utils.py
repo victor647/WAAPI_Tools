@@ -172,11 +172,25 @@ def set_light_color(obj: WwiseObject) -> bool:
         return set_object_color(obj, parent_color + 13)
     return False
 
-# 判断对象是否是启用的
+# 支持单独设置 Inclusion 的对象类型（可由 Wwise 直接启用/停用并纳入 SoundBank）
+INCLUSION_SETTABLE_TYPES = {
+    WwiseObjectType.Folder,
+    WwiseObjectType.WorkUnit,
+    WwiseObjectType.ActorMixer,
+    WwiseObjectType.Sound,
+    WwiseObjectType.RandomContainer,
+    WwiseObjectType.BlendContainer,
+    WwiseObjectType.SwitchContainer,
+    WwiseObjectType.MusicSwitchContainer,
+    WwiseObjectType.Event,
+}
+
+
+# 判断对象能否单独设置启用状态
 def can_set_object_inclusion(obj: WwiseObject) -> bool:
-    if not obj or 'Hierarchy' not in obj.path:
+    if not obj:
         return False
-    return obj.type != WwiseObjectType.AudioSource
+    return obj.type in INCLUSION_SETTABLE_TYPES
 
 
 def is_object_included(

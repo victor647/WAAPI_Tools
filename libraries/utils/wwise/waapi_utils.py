@@ -52,6 +52,10 @@ def get_object_references(obj: WwiseObject) -> list[WwiseObject]:
     return _dict_list_to_wobjs(WAAPIClient().get_object_references(obj.wwise_dict))
 
 
+def find_audio_sources_by_original_path(original_relative_path: str) -> list[WwiseObject]:
+    return _dict_list_to_wobjs(WAAPIClient().find_audio_sources_by_original_path(original_relative_path))
+
+
 def get_parent_object(obj: WwiseObject) -> WwiseObject:
     return _dict_to_wobj(WAAPIClient().get_parent_object(obj.wwise_dict))
 

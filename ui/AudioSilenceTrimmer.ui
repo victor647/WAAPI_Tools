@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>720</width>
+    <width>900</width>
     <height>480</height>
    </rect>
   </property>
@@ -27,6 +27,29 @@
       <widget class="QPushButton" name="btnImportFolder">
        <property name="text">
         <string>导入文件夹</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="lblCutThreshold">
+       <property name="text">
+        <string>静音判断阈值</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="spbCutThreshold">
+       <property name="suffix">
+        <string>dB</string>
+       </property>
+       <property name="minimum">
+        <number>-96</number>
+       </property>
+       <property name="maximum">
+        <number>0</number>
+       </property>
+       <property name="value">
+        <number>-48</number>
        </property>
       </widget>
      </item>
@@ -54,29 +77,6 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
-      <widget class="QLabel" name="lblCutThreshold">
-       <property name="text">
-        <string>静音判断阈值</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QSpinBox" name="spbCutThreshold">
-       <property name="suffix">
-        <string>dB</string>
-       </property>
-       <property name="minimum">
-        <number>-96</number>
-       </property>
-       <property name="maximum">
-        <number>0</number>
-       </property>
-       <property name="value">
-        <number>-48</number>
-       </property>
-      </widget>
-     </item>
-     <item>
       <widget class="QCheckBox" name="cbxTrimHead">
        <property name="text">
         <string>裁剪音头</string>
@@ -87,9 +87,32 @@
       </widget>
      </item>
      <item>
+      <widget class="QLabel" name="lblTrimHeadThreshold">
+       <property name="text">
+        <string>判定阈值</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="spbTrimHeadThreshold">
+       <property name="suffix">
+        <string>ms</string>
+       </property>
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>10000</number>
+       </property>
+       <property name="value">
+        <number>20</number>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QLabel" name="lblFadeInDuration">
        <property name="text">
-        <string>音头保留淡入</string>
+        <string>保留淡入</string>
        </property>
       </widget>
      </item>
@@ -105,10 +128,14 @@
         <number>1000</number>
        </property>
        <property name="value">
-        <number>20</number>
+        <number>10</number>
        </property>
       </widget>
      </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_3">
      <item>
       <widget class="QCheckBox" name="cbxTrimTail">
        <property name="text">
@@ -120,9 +147,32 @@
       </widget>
      </item>
      <item>
+      <widget class="QLabel" name="lblTrimTailThreshold">
+       <property name="text">
+        <string>判定阈值</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="spbTrimTailThreshold">
+       <property name="suffix">
+        <string>ms</string>
+       </property>
+       <property name="minimum">
+        <number>1</number>
+       </property>
+       <property name="maximum">
+        <number>10000</number>
+       </property>
+       <property name="value">
+        <number>100</number>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QLabel" name="lblFadeOutDuration">
        <property name="text">
-        <string>音尾保留淡出</string>
+        <string>保留淡出</string>
        </property>
       </widget>
      </item>
@@ -138,7 +188,7 @@
         <number>1000</number>
        </property>
        <property name="value">
-        <number>100</number>
+        <number>50</number>
        </property>
       </widget>
      </item>
@@ -154,7 +204,7 @@
      </property>
      <column>
       <property name="text">
-       <string>音频文件名</string>
+       <string>音频文件路径</string>
       </property>
      </column>
      <column>
@@ -170,6 +220,11 @@
      <column>
       <property name="text">
        <string>尾部静音时长</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>静音占比</string>
       </property>
      </column>
      <column>
