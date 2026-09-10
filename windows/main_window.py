@@ -5,7 +5,7 @@ import clipboard
 import webbrowser
 
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QAction, QTextCursor
 from qt_material import build_stylesheet
 
 import globals.global_variables as gv
@@ -59,12 +59,25 @@ class AiModelListWorker(QThread):
         self.models_loaded.emit(models)
 
 
+# AI 请求在主线程执行的 GUI 任务（工作线程等待结果）
+class AiGuiJob:
+    def __init__(self, runner):
+        self.runner = runner
+        self.event = threading.Event()
+        self.result = None
+        self.error = None
+
+
 # AI 对话工作线程：在后台请求 AI 代理并执行模型请求的工具调用，避免阻塞界面
 class AiChatWorker(QThread):
     log_signal = Signal(str)
     finished_signal = Signal(str)
     failed_signal = Signal(str)
     stopped_signal = Signal(str)
+    # AI 要求把对象发送到主窗口表格（参数二：是否追加，默认替换）
+    table_objects_signal = Signal(list, bool)
+    # AI 请求在主线程执行界面操作
+    gui_job_signal = Signal(object)
     # 参数一：仍有效的对象列表；参数二：发送时可见对象的原始 id 列表
     objects_refreshed_signal = Signal(list, list)
 
@@ -78,16 +91,34 @@ class AiChatWorker(QThread):
         # 请求中止：agent loop 会在每轮/每次网络请求等待期间响应
         self._stop_event.set()
 
+    def invoke_gui(self, runner, wait: bool = True):
+        # 把界面操作切到主线程执行；wait=False 用于"打开窗口给用户看"这类不等结果的操作
+        job = AiGuiJob(runner)
+        self.gui_job_signal.emit(job)
+        if not wait:
+            return None
+        if not job.event.wait(30):
+            raise TimeoutError("界面操作等待超时（可能被模态窗口阻塞）")
+        if job.error is not None:
+            raise job.error
+        return job.result
+
     def run(self):
         try:
-            from libraries.ai_assistant import AIAgentStopped, run_assistant
+            from libraries.ai_assistant import AIAgentStopped, run_assistant, set_gui_invoker, set_table_sink
 
-            result = run_assistant(
-                self._prompt,
-                self._objects,
-                on_log=self.log_signal.emit,
-                should_stop=self._stop_event.is_set,
-            )
+            set_table_sink(lambda ids, append: self.table_objects_signal.emit(list(ids), append))
+            set_gui_invoker(self.invoke_gui)
+            try:
+                result = run_assistant(
+                    self._prompt,
+                    self._objects,
+                    on_log=self.log_signal.emit,
+                    should_stop=self._stop_event.is_set,
+                )
+            finally:
+                set_table_sink(None)
+                set_gui_invoker(None)
             if result.mutated:
                 refreshed = self._resolve_objects_after_ai()
                 self.objects_refreshed_signal.emit(refreshed, [obj.id for obj in self._objects])
@@ -153,6 +184,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             index = self.cbbFindProperty.findText(saved_property)
             if index >= 0:
                 self.cbbFindProperty.setCurrentIndex(index)
+        # 恢复表格/日志分隔条位置
+        self._restore_splitter_settings()
         self.setup_triggers()
         self._setup_action_help()
         self._setup_ai_assistant()
@@ -278,6 +311,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         worker.finished_signal.connect(self._on_ai_finished)
         worker.failed_signal.connect(self._on_ai_failed)
         worker.stopped_signal.connect(self._on_ai_stopped)
+        worker.table_objects_signal.connect(self._on_ai_set_table_objects)
+        worker.gui_job_signal.connect(self._on_ai_gui_job)
         self._ai_worker = worker
         worker.start()
 
@@ -300,6 +335,93 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _on_ai_stopped(self, text: str):
         self._set_ai_busy(False)
         Logger().warning(text)
+
+    # 在主线程执行 AI 请求的界面操作
+    def _on_ai_gui_job(self, job):
+        try:
+            job.result = job.runner(self)
+        except Exception as e:
+            job.error = e
+        finally:
+            job.event.set()
+
+    # AI 打开软件功能窗口（键名见 gui_open_window 工具说明）
+    def ai_open_window(self, window_key: str) -> str:
+        openers = {
+            "property_query": ("属性查询", self.open_property_query_window),
+            "multi_editor": ("多项编辑器", self.open_in_multi_editor),
+            "batch_rename": ("批量重命名", self.open_in_batch_rename),
+            "table_rename": ("读表重命名", self.open_table_rename_window),
+            "audio_silence_trim": ("裁剪静音", self.open_audio_silence_trimmer_window),
+            "bank_matrix": ("Bank 分配矩阵", self.open_bank_assignment_matrix_window),
+            "project_validation": ("工程检查", self.open_project_validation_window),
+            "unity_asset": ("Unity Asset 管理", self.open_unity_asset_manager_window),
+            "settings": ("设置", self.open_project_settings_window),
+        }
+        entry = openers.get(window_key)
+        if entry is None:
+            raise ValueError(f"未知窗口「{window_key}」，可用值：{'/'.join(openers)}")
+        label, opener = entry
+        opener()
+        return f"已打开「{label}」窗口"
+
+    # AI 触发菜单 action（按 objectName 精确定位，等价于用户点该菜单项）
+    def ai_run_action(self, action_name: str) -> str:
+        action = self.findChild(QAction, action_name)
+        if action is None:
+            raise ValueError(f"未找到菜单动作：{action_name}")
+        action.trigger()
+        return action.text() or action_name
+
+    # AI 发现可用菜单动作：返回 objectName / 名称 / 是否可用 / 使用说明
+    def ai_list_actions(self, keyword: str = "") -> list:
+        actions = []
+        for action in self.findChildren(QAction):
+            name = action.objectName()
+            text = action.text().replace("&", "").strip()
+            if not name or not text or action.isSeparator():
+                continue
+            if keyword and keyword not in name.lower() and keyword not in text.lower():
+                continue
+            actions.append({
+                "action_name": name,
+                "text": text,
+                "enabled": action.isEnabled(),
+                "usage": ACTION_HELP.get(name, ""),
+            })
+            if len(actions) >= 200:
+                break
+        return actions
+
+    # AI 请求把对象发送到表格：默认替换表格内容，append=True 时追加
+    def _on_ai_set_table_objects(self, object_ids: list, append: bool):
+        resolved = []
+        seen: set[str] = set()
+        missing = 0
+        for object_id in object_ids:
+            if object_id in seen:
+                continue
+            seen.add(object_id)
+            info = waapi_utils.get_full_info_from_obj_id(object_id)
+            if info.is_valid:
+                resolved.append(info)
+            else:
+                missing += 1
+        if not resolved:
+            Logger().warning("AI 要发送到表格的对象都无法解析，已跳过")
+            return
+        if append:
+            existing = {obj.id for obj in gv.active_objects}
+            gv.active_objects.extend(obj for obj in resolved if obj.id not in existing)
+            action = "追加"
+        else:
+            gv.active_objects = resolved
+            action = "替换"
+        suffix = f"，{missing} 个对象无法解析" if missing else ""
+        Logger().info(f"AI 已把 {len(resolved)} 个对象{action}为表格内容{suffix}")
+        self.reset_filter(False)
+        self.show_obj_list()
+        self._object_history_reset_with_current()
 
     # AI 修改过对象后重建 gv.active_objects 并刷新表格
     def _on_ai_objects_refreshed(self, refreshed_objects: list, processed_ids: list[str]):
@@ -488,6 +610,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnApplyFilter.clicked.connect(self.apply_keyword_filter)
         self.btnAdvancedFilter.clicked.connect(self.open_advanced_filter_window)
         self.btnObjectHistoryBack.clicked.connect(self.object_history_back)
+        self.tblWwiseObjects.doubleClicked.connect(self.show_object_in_wwise)
         self.btnObjectHistoryForward.clicked.connect(self.object_history_forward)
         # 文件菜单
         self.actImportObjectList.triggered.connect(self.import_object_list)
@@ -1026,6 +1149,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         settings['find_property'] = text
         user_config.set_window_settings('main_window', settings)
 
+    # 恢复表格/日志分隔条位置：两侧都可拖动，窗口变高时按比例一起变高
+    def _restore_splitter_settings(self):
+        self.splitterTableLogs.setStretchFactor(0, 1)
+        self.splitterTableLogs.setStretchFactor(1, 1)
+        sizes = user_config.get_window_settings('main_window').get('table_log_sizes')
+        if isinstance(sizes, list) and len(sizes) == 2 and all(isinstance(value, int) and value > 0 for value in sizes):
+            self.splitterTableLogs.setSizes(sizes)
+        else:
+            self.splitterTableLogs.setSizes([600, 140])
+
+    # 保存表格/日志分隔条位置
+    def _save_splitter_settings(self):
+        settings = dict(user_config.get_window_settings('main_window'))
+        settings['table_log_sizes'] = self.splitterTableLogs.sizes()
+        user_config.set_window_settings('main_window', settings)
+
     # AudioFileSource 无法用 referencesTo 反查，改为按 originalRelativeFilePath 反查同源文件对象
     # 结果始终包含自身，保证未勾选「保留原始层级」时也能把当前对象搜出来
     def _get_audio_source_references(self, source: WwiseObject) -> list[WwiseObject]:
@@ -1086,13 +1225,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             item = self.tblWwiseObjects.item(item.row(), PATH_COL)
         clipboard.copy(self._path_text(item))
 
-    # 在Wwise中选中列表中双击的对象
-    def show_object_in_wwise(self, item: QTableWidgetItem):
-        if item.column() != PATH_COL:
-            item = self.tblWwiseObjects.item(item.row(), PATH_COL)
-        obj = waapi_utils.find_object_by_path(self._path_text(item))
-        if obj:
-            waapi_utils.select_objects_in_wwise([obj])
+    # 双击路径列在 Wwise 中选中对应对象
+    def show_object_in_wwise(self, index):
+        if not index.isValid() or index.column() != PATH_COL:
+            return
+        row_data = self.table.data[self.table.get_source_row(index)]
+        waapi_utils.select_objects_in_wwise([row_data.wwise_object])
 
     # 路径列可能显示简写，优先取 UserRole 中的完整路径
     @staticmethod
@@ -1282,6 +1420,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 窗口关闭事件处理
     def closeEvent(self, event):
         Logger().info("正在关闭应用程序...")
+        self._save_splitter_settings()
         # 等待 AI 对话线程结束（最多 3 秒）
         if self._ai_worker and self._ai_worker.isRunning():
             self._ai_worker.stop_requested()

@@ -32,6 +32,8 @@
 - `api_key`：代理要求鉴权时填写。
 - `max_context_objects`：一次最多放进提示词的对象数，超出部分会提示用户先用筛选缩小范围。
 - `max_turns`：允许的最大对话往返轮数，防止模型陷入工具循环。
+- `enable_script_tool`：是否允许 AI 执行临时脚本（`run_wwise_script`），默认 `false`
+  （IDE 调试器下可能不稳定）；在设置窗口的「AI 助手」页勾选开启。
 
 ---
 
@@ -50,6 +52,22 @@
 
 ### 工具复用架构（AI / MCP / 手动工具同源）
 
+**执行顺序（写在系统提示词里，模型每次都会读到）**：先判断需求能否用界面操作组合出来
+（`gui_*`：取选中 / 查找上下级 / 筛选 / 打开窗口 / 触发菜单动作），能则走 GUI；
+界面动作覆盖不了或需要数据结论时，才落到底层数据工具（`get_descendants_of_type` /
+`find_objects_by_property` / `aggregate_tool_chain` / `group_tool_items` …）；
+GUI 失败时明确说明并退回底层工具继续完成目标。不确定菜单功能时先 `gui_list_actions` 再用
+`gui_run_action` 触发。
+
+另外：模型上下文里的对象清单仍按 `max_context_objects` 截断（保护上下文），但**不限制可处理的对象数量**——
+工具参数支持 `object_ids: ["@table"]`（当前表格全部对象）与 `"@selection"`（Wwise 当前选中），
+聚合类工具（`find_objects_by_property` / `aggregate_tool_chain` / `count_tool_items` 等）在工具侧全量处理，
+只把紧凑结果回传模型。
+
+结果超过字符预算时，AI 助手会把**完整结果写入本次任务的临时目录**（`%TEMP%/waapi_ai_*/`），
+只回传 `result_file` 路径 + 摘要 + 预览；模型用 `read_result_file`（分页）或 `group_result_file`
+（分组统计）继续处理，任务结束（含异常/中止）时目录会被删除，异常残留的旧目录在下次任务开始时清理。
+
 工具本体只定义一份，各消费方生成自己的协议层：
 
 - `libraries/tool_registry.py`：中立注册表（不得 import fastmcp / PySide6 / Qt /
@@ -59,15 +77,14 @@
   随 `tool_registry` 一并注册；删除工具/改参数直接在注册表与其 schema 上维护。
 - AI 助手：`build_tool_schemas()` 先取注册表工具，再拼本地过渡工具；执行时优先走
   `tool_registry.execute_tool()`，结构化结果统一转文本回传模型。因此 **MCP 能用的工具
-  AI 助手全部能用**（注册表 104 个 + 少量 AI 专用批量封装）。
+  AI 助手全部能用**（注册表全部工具 + 少量 AI 专用封装与界面桥工具）。
 - MCP：`waapi_mcp/registry_mcp_tools.py` 按注册表批量生成 `@mcp.tool`（同源同名），
   在 `waapi_mcp/server.py` 中随服务启动注册。
 - 手动工具（GUI 菜单/表格操作）：仍直接调用 `*_utils`，注册表 handler 内部复用的就是
   同一批封装，无需改动。
 
-过渡期说明：旧的两份手写 `waapi_mcp/utils_mcp_tools.py` / `waapi_mcp_tools.py` 已删除并
-迁入注册表；AI 侧仅剩少量注册表未覆盖的批量封装（如 `rename_case`、`delete_objects`）保留在
-`libraries/ai_assistant.py` 本地，不参与 MCP。
+说明：旧的两份手写 MCP 工具文件已删除并迁入注册表；AI 侧只保留注册表未覆盖的少量封装
+（如 `rename_case`、`set_table_objects`、`read_result_file`）与界面桥工具（`gui_*`），不参与 MCP。
 
 下表面向开发者，列明每个工具最终复用了哪个 `waapi_utils` / `common_utils` /
 `event_utils` 函数：
@@ -82,7 +99,11 @@
 | 统计任意列表工具返回的条数 | `count_tool_items` | 调用目标工具后对结果列表计数（自动识别 items/objects/data 等） |
 | 按列表项字段分组计数 / 有多少分组超过 N 个 | `group_tool_items` | 调用目标工具 + 按字段分组计数，`min_count` 返回 matched_count |
 | 多步链式统计（先取 A，再统计每个 A 下 B 的数量） | `aggregate_tool_chain` | 顺序执行 `steps`，自动把上一步 id 注入下一步 `object_ids`，末步按 `group_by` 分组（`min_count` 返回 matched_count） |
-| 复杂组合逻辑（多级遍历 / 聚合统计 / 批量改） | `run_wwise_script` | 进程内 `exec` 受限脚本（注入 `waapi_utils` 等模块，白名单内建 + 行数/超时预算），需 `confirmed=true`，由 AI 层包撤销组 |
+| 复杂组合逻辑（多级遍历 / 聚合统计 / 批量改） | `run_wwise_script` | 进程内 `exec` 受限脚本（注入 `waapi_utils` 等模块 + `tools_api`/`help()` 清单，循环/超时预算用 AST 注入，不与 IDE 调试器冲突），需 `confirmed=true`，由 AI 层包撤销组 |
+| 把结果发送到主界面表格 | `set_table_objects` | AI 助手专用：通过 sink 回调**替换** `gv.active_objects`（`append=true` 时追加）并刷新表格（MCP 环境不可用） |
+| 用界面按钮/菜单完成操作 | `gui_*` 系列 | AI 助手专用：通过主线程 GUI 桥调用 `MainWindow` 上与按钮/菜单相同的方法（`get_selected_objects` / `find_children` / `find_parent` / `apply_table_filter` / `open_property_query_window` / 任意 QAction），不模拟鼠标点击 |
+| 发现并使用菜单功能 | `gui_list_actions` / `gui_run_action` | 遍历 `QAction` 返回 `objectName/名称/是否可用/使用说明`（说明取自 `data/action_help.py`），再用 `gui_run_action` 按 objectName 触发；无需为每个菜单项单独写工具 |
+| 按属性筛选子对象（如 Volume ≠ 0） | `find_objects_by_property` | `waapi_utils.get_child_objects(..., include_descendants=True)`（或 `get_descendants_of_type`）+ `waapi_utils.get_object_properties(obj, [属性])`，与 `windows/property_query_window.py` 同口径：某类型首次读不到该属性即跳过该类型，并在 `types_without_property` 中汇报 |
 | 查询哪些对象引用它 / 被谁使用 | `get_references` | `waapi_utils.get_object_references` |
 | 统计其中有多少被 Event 引用 | `check_event_references` | `event_utils.has_event_reference`（引用含 EventAction 即算） |
 | 全部改成小写 / 大写 / 首字母大写 | `rename_case` | `common_utils.rename_to_lower_case` / `rename_to_upper_case` / `rename_to_title_case`（内部走 `waapi_utils.rename_object`） |
@@ -112,11 +133,11 @@
    `name / description / parameters / mutating`。
 2. AI 与 MCP 会自动获得该工具，无需再写第二遍；如只希望 AI 内部临时使用（不走注册表），
    才按旧方式在 `libraries/ai_assistant.py` 本地追加。
-3. 在 `ai_assistant_prompt.md` 的「工具选择指南」表加一行“用户说法 → 工具”，并同步更新
+3. 在 `ai_assistant_prompt.md` 的「常用工具（意图 → 工具）」表加一行，并同步更新
    本文件对照表。
 4. 若会修改工程内容，把 `mutating=True` 传给 `register_tool`（AI 任务结束后据此刷新表格）。
 
-旧式本地工具仍在过渡期保留，新增功能请优先走注册表，避免再次出现三层重复定义。
+新增功能一律走注册表（AI 与 MCP 自动同源）；只有界面/表格相关能力才加在 `ai_assistant` 本地。
 
 ---
 
@@ -125,6 +146,6 @@
 - AI 只能操作**发送时表格里可见的对象**（`get_visible_objects()`）；隐藏行不会交给 AI。
 - `convert_type` / `delete_objects` 会改变或移除 GUID：任务结束后表格会自动刷新，
   被删除或转换的对象会从列表移除，必要时重新在 Wwise 中获取。
-- 当前只暴露了表格批量操作所需的一批工具；`waapi_utils` 中查询父级/子级/引用、
-  语言、SoundBank 等大量函数尚未对 AI 开放。若希望 AI 能回答“这个被谁引用 / 它的子级有哪些”
-  这类查询，需要先补充对应工具并登记到对照表。
+- 已开放：对象查询（子级/后代/引用/属性）、统计与分组、属性筛选、批量修改、结果落盘读写、
+  界面操作（`gui_*`）。尚未开放的主要是迁移类导入（FMOD / 截图）与全工程破坏性操作
+  （如删除多余 .akd），需要时可单独评估再加。

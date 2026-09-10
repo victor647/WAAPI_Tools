@@ -173,6 +173,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.iptAiBaseUrl.setText(ai.get("base_url", ""))
         self.iptAiApiKey.setText(ai.get("api_key", ""))
         self.iptAiModel.setText(ai.get("model", ""))
+        self.cbxAiEnableScript.setChecked(bool(ai.get("enable_script_tool", False)))
         self.spnAiMaxContext.setValue(int(ai.get("max_context_objects") or 300))
         self.spnAiMaxTurns.setValue(int(ai.get("max_turns") or 20))
         self.__update_ai_controls_state()
@@ -205,6 +206,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
             "base_url": self.iptAiBaseUrl.text().strip(),
             "api_key": self.iptAiApiKey.text(),
             "model": self.iptAiModel.text().strip(),
+            "enable_script_tool": bool(self.cbxAiEnableScript.isChecked()),
             "max_context_objects": int(self.spnAiMaxContext.value()),
             "max_turns": int(self.spnAiMaxTurns.value()),
         }

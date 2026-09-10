@@ -19,14 +19,14 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QSpacerItem, QStatusBar, QTableView,
-    QTextEdit, QVBoxLayout, QWidget)
+    QSizePolicy, QSpacerItem, QSplitter, QStatusBar,
+    QTableView, QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1200, 600)
+        MainWindow.resize(1280, 720)
         MainWindow.setMinimumSize(QSize(1200, 600))
         self.actionEnable = QAction(MainWindow)
         self.actionEnable.setObjectName(u"actionEnable")
@@ -501,16 +501,21 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_3.addLayout(self.horizontalLayout_5)
 
-        self.tblWwiseObjects = QTableView(self.centralwidget)
+        self.splitterTableLogs = QSplitter(self.centralwidget)
+        self.splitterTableLogs.setObjectName(u"splitterTableLogs")
+        self.splitterTableLogs.setOrientation(Qt.Vertical)
+        self.splitterTableLogs.setStyleSheet(u"QSplitter::handle { background: transparent; border: none; }")
+        self.splitterTableLogs.setHandleWidth(3)
+        self.splitterTableLogs.setChildrenCollapsible(False)
+        self.tblWwiseObjects = QTableView(self.splitterTableLogs)
         self.tblWwiseObjects.setObjectName(u"tblWwiseObjects")
-
-        self.verticalLayout_3.addWidget(self.tblWwiseObjects)
-
-        self.txeOutputLogs = QTextEdit(self.centralwidget)
+        self.splitterTableLogs.addWidget(self.tblWwiseObjects)
+        self.txeOutputLogs = QTextEdit(self.splitterTableLogs)
         self.txeOutputLogs.setObjectName(u"txeOutputLogs")
-        self.txeOutputLogs.setMaximumSize(QSize(16777215, 120))
+        self.txeOutputLogs.setMinimumSize(QSize(0, 100))
+        self.splitterTableLogs.addWidget(self.txeOutputLogs)
 
-        self.verticalLayout_3.addWidget(self.txeOutputLogs)
+        self.verticalLayout_3.addWidget(self.splitterTableLogs)
 
         self.horizontalLayout_ai = QHBoxLayout()
         self.horizontalLayout_ai.setObjectName(u"horizontalLayout_ai")

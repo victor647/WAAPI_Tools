@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -23,6 +26,11 @@ RESULT_CHAR_LIMIT = 6000
 # 工具结果按字符预算收缩：先减列表条数，再缩短超长字符串，保证回传的 JSON 始终完整可解析
 MODEL_LIST_ITEM_CAP = 30
 MODEL_STRING_LIMIT = 240
+
+# 大结果落盘目录（每次任务一个，任务结束自动删除）
+_RESULT_DIR_PREFIX = "waapi_ai_"
+_result_dir: str | None = None
+_result_counter = 0
 
 # 部分模型（如 MiniMax）会把内部推理写在 <think> 块里，展示给用户时去除
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
@@ -290,6 +298,151 @@ def _delete_objects(args: dict) -> str:
     return _summary(ok_count, len(ids), "删除对象 ", failures)
 
 
+# AI 助手专用：把对象发送到主窗口表格（默认替换表格内容；MCP/无界面环境不可用）
+_table_sink: Callable[[list[str], bool], None] | None = None
+# 本次任务的表格对象 id：支持在工具参数里用 "@table" 指代，避免模型罗列大量 id
+_table_object_ids: list[str] = []
+_SPECIAL_ID_TOKENS = ("@table", "@selection")
+
+
+def set_table_sink(sink: Callable[[list[str], bool], None] | None) -> None:
+    global _table_sink
+    _table_sink = sink
+
+
+def set_table_context(object_ids: list[str]) -> None:
+    global _table_object_ids
+    _table_object_ids = list(object_ids)
+
+
+# 主线程 GUI 调用桥：由主窗口注入（无界面环境为空）
+_gui_invoker: Callable[..., object] | None = None
+
+
+def set_gui_invoker(invoker: Callable[..., object] | None) -> None:
+    global _gui_invoker
+    _gui_invoker = invoker
+
+
+def _invoke_gui(runner, wait: bool = True):
+    # runner(window) 在主线程执行；wait=False 用于"打开窗口给用户看"这类不需要返回值的操作
+    if _gui_invoker is None:
+        raise AiToolError("当前环境不支持操作软件界面（仅软件内 AI 助手可用）")
+    return _gui_invoker(runner, wait)
+
+
+def _resolve_special_token(token: str) -> list[str] | None:
+    if token == "@table":
+        return list(_table_object_ids)
+    if token == "@selection":
+        return [obj.id for obj in waapi_utils.get_selected_objects()]
+    return None
+
+
+def _expand_special_ids(arguments: dict) -> tuple[dict, int]:
+    # 把参数里的 "@table" / "@selection" 展开为真实 id 列表
+    expanded = dict(arguments)
+    expanded_count = 0
+    for key, value in list(expanded.items()):
+        values = value if isinstance(value, list) else [value]
+        if not any(isinstance(item, str) and item in _SPECIAL_ID_TOKENS for item in values):
+            continue
+        resolved: list[str] = []
+        for item in values:
+            token_ids = _resolve_special_token(item) if isinstance(item, str) else None
+            if token_ids:
+                resolved.extend(token_ids)
+                expanded_count += len(token_ids)
+            elif isinstance(item, str):
+                resolved.append(item)
+        expanded[key] = resolved
+    return expanded, expanded_count
+
+
+def _set_table_objects(args: dict) -> str:
+    ids = _require_object_ids(args)
+    append = bool(args.get("append", False))
+    if _table_sink is None:
+        return "当前环境不支持“发送到表格”（该能力仅在软件界面的 AI 助手中可用）"
+    _table_sink(ids, append)
+    return f"已把 {len(ids)} 个对象{'追加到' if append else '替换为'}表格内容"
+
+
+# —— 软件界面操作（与手动点按钮/菜单等价，主线程执行）——
+
+
+def _gui_get_wwise_selection(args: dict) -> str:
+    _invoke_gui(lambda window: window.get_selected_objects())
+    return "已执行「获取Wwise选中对象」，表格已按 Wwise 当前选中刷新"
+
+
+def _gui_find_children(args: dict) -> str:
+    recursive = bool(args.get("recursive", True))
+    keep_self = bool(args.get("keep_self", False))
+
+    def runner(window):
+        window.cbxRecursiveFind.setChecked(recursive)
+        window.cbxKeepSelf.setChecked(keep_self)
+        window.find_children()
+
+    _invoke_gui(runner)
+    return f"已查找下级（递归={recursive}，保留自身={keep_self}）并更新表格"
+
+
+def _gui_find_parent(args: dict) -> str:
+    recursive = bool(args.get("recursive", True))
+    keep_self = bool(args.get("keep_self", False))
+
+    def runner(window):
+        window.cbxRecursiveFind.setChecked(recursive)
+        window.cbxKeepSelf.setChecked(keep_self)
+        window.find_parent()
+
+    _invoke_gui(runner)
+    return f"已查找上级（递归={recursive}，保留自身={keep_self}）并更新表格"
+
+
+def _gui_set_filter(args: dict) -> str:
+    keyword = str(args.get("keyword") or "")
+    object_type = str(args.get("object_type") or "")
+    only_included = bool(args.get("only_included", False))
+    case_sensitive = bool(args.get("case_sensitive", False))
+
+    def runner(window):
+        window.ledFilterKeyword.setText(keyword)
+        window.cbxCaseSensitive.setChecked(case_sensitive)
+        window.cbxOnlyIncludedEnabled.setChecked(only_included)
+        window.cbbFilterType.setCurrentText(object_type or "全部类型")
+        window.apply_table_filter(record_history=True)
+
+    _invoke_gui(runner)
+    return f"已应用筛选（关键字={keyword or '无'}，类型={object_type or '全部'}）"
+
+
+def _gui_open_window(args: dict) -> str:
+    window_key = str(args.get("window") or "").strip()
+    if not window_key:
+        raise AiToolError("缺少 window 参数")
+    name = _invoke_gui(lambda window: window.ai_open_window(window_key), wait=False)
+    return name or f"已请求打开窗口：{window_key}"
+
+
+def _gui_run_action(args: dict) -> str:
+    action_name = str(args.get("action_name") or "").strip()
+    if not action_name:
+        raise AiToolError("缺少 action_name 参数（菜单 action 的 objectName）")
+    if args.get("confirmed") is not True:
+        raise AiToolError("触发菜单动作可能修改工程：请在用户明确要求后传 confirmed=true")
+    _invoke_gui(lambda window: window.ai_run_action(action_name))
+    return f"已触发菜单动作：{action_name}"
+
+
+def _gui_list_actions(args: dict) -> dict:
+    keyword = str(args.get("keyword") or "").strip().lower()
+    actions = _invoke_gui(lambda window: window.ai_list_actions(keyword))
+    return {"count": len(actions), "actions": actions}
+
+
 def _select_in_wwise(args: dict) -> str:
     ids = _require_object_ids(args)
     objects = []
@@ -302,6 +455,86 @@ def _select_in_wwise(args: dict) -> str:
     if objects and waapi_utils.select_objects_in_wwise(objects):
         return f"已在 Wwise 中选中 {len(objects)} 个对象"
     return "在 Wwise 中选中对象失败"
+
+
+def _result_file_path(raw_path) -> str:
+    # 只允许读取本次任务落盘目录内的文件
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise AiToolError("缺少 result_file 参数（工具结果里返回的文件路径）")
+    if not _result_dir:
+        raise AiToolError("当前没有可读的结果文件目录")
+    base = os.path.realpath(_result_dir)
+    resolved = os.path.realpath(raw_path)
+    if os.path.commonpath([resolved, base]) != base:
+        raise AiToolError("result_file 只能指向本次任务生成的结果文件")
+    if not os.path.isfile(resolved):
+        raise AiToolError(f"结果文件不存在或已被清理：{raw_path}")
+    return resolved
+
+
+def _load_result_items(path: str) -> list:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("items", "objects", "data", "results", "matched_objects", "groups"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        for item in data.values():
+            if isinstance(item, list):
+                return item
+    return []
+
+
+def _read_result_file(args: dict) -> dict:
+    path = _result_file_path(args.get("result_file"))
+    items = _load_result_items(path)
+    try:
+        offset = max(int(args.get("offset") or 0), 0)
+        limit = int(args.get("limit") or 50)
+    except (TypeError, ValueError):
+        raise AiToolError("offset / limit 必须是整数")
+    limit = max(limit, 1)
+    page = items[offset : offset + limit]
+    return {
+        "total": len(items),
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < len(items),
+        "items": page,
+    }
+
+
+def _group_result_file(args: dict) -> dict:
+    path = _result_file_path(args.get("result_file"))
+    group_by = str(args.get("group_by") or "").strip()
+    if not group_by:
+        raise AiToolError("缺少 group_by 参数（按哪个字段分组，如 root_id / type）")
+    items = _load_result_items(path)
+    counts: dict = {}
+    for item in items:
+        key = item.get(group_by) if isinstance(item, dict) else None
+        key = str(key) if key not in (None, "") else "(未知)"
+        counts[key] = counts.get(key, 0) + 1
+    try:
+        min_count = int(args.get("min_count") or 0)
+    except (TypeError, ValueError):
+        min_count = 0
+    groups = [{"group": key, "count": count} for key, count in counts.items()]
+    matched = (
+        sorted((group for group in groups if group["count"] > min_count), key=lambda g: g["count"], reverse=True)
+        if min_count > 0
+        else []
+    )
+    return {
+        "matched_count": len(matched) if min_count > 0 else None,
+        "total_items": len(items),
+        "group_by": group_by,
+        "min_count": min_count,
+        "groups": groups,
+        "matched_groups": matched,
+    }
 
 
 TOOL_HANDLERS: dict[str, Callable[[dict], str]] = {
@@ -318,6 +551,16 @@ TOOL_HANDLERS: dict[str, Callable[[dict], str]] = {
     "update_notes_and_color": _update_notes_and_color,
     "create_play_event": _create_play_event,
     "delete_objects": _delete_objects,
+    "set_table_objects": _set_table_objects,
+    "read_result_file": _read_result_file,
+    "group_result_file": _group_result_file,
+    "gui_get_wwise_selection": _gui_get_wwise_selection,
+    "gui_find_children": _gui_find_children,
+    "gui_find_parent": _gui_find_parent,
+    "gui_set_filter": _gui_set_filter,
+    "gui_open_window": _gui_open_window,
+    "gui_list_actions": _gui_list_actions,
+    "gui_run_action": _gui_run_action,
     "select_objects_in_wwise": _select_in_wwise,
 }
 
@@ -343,7 +586,13 @@ def build_tool_schemas() -> list[dict]:
         return {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
 
     # 先注册表（libraries/tool_registry.py，AI/MCP/手动三方共用），再拼接仍在过渡期的本地工具
-    schemas = [spec.to_openai_schema() for spec in tool_registry.list_tools()]
+    # 脚本执行默认关闭（IDE 调试器下可能不稳定），开关在设置窗口的 AI 助手页
+    script_enabled = user_config.get_ai_enable_script_tool()
+    schemas = [
+        spec.to_openai_schema()
+        for spec in tool_registry.list_tools()
+        if spec.name != "run_wwise_script" or script_enabled
+    ]
     schemas.extend([
         function_schema(
             "rename_case",
@@ -484,6 +733,124 @@ def build_tool_schemas() -> list[dict]:
             "在 Wwise 工程浏览器中选中并查看对象",
             _object_ids_schema("要在 Wwise 中选中的对象 id"),
         ),
+        function_schema(
+            "set_table_objects",
+            "把对象发送到主窗口表格：默认**替换**表格当前内容，append=true 时改为追加。用户说“把结果发送到表格 / 放到表格里 / 替换表格”时用",
+            {
+                "type": "object",
+                "properties": {
+                    "object_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要发送到表格的对象 id",
+                    },
+                    "append": {
+                        "type": "boolean",
+                        "description": "默认 false=替换表格内容；true=追加到现有内容",
+                    },
+                },
+                "required": ["object_ids"],
+            },
+        ),
+        function_schema(
+            "read_result_file",
+            "分页读取工具结果落盘文件（当工具返回 result_file 时使用）。offset/limit 控制分页，返回 total/has_more/items",
+            {
+                "type": "object",
+                "properties": {
+                    "result_file": {"type": "string", "description": "工具结果里返回的 result_file 路径"},
+                    "offset": {"type": "integer", "description": "起始下标，默认 0"},
+                    "limit": {"type": "integer", "description": "本次读取条数，默认 50"},
+                },
+                "required": ["result_file"],
+            },
+        ),
+        function_schema(
+            "group_result_file",
+            "对工具结果落盘文件按字段分组统计（如按 root_id 统计每个对象下有多少条），min_count 可只保留数量大于该值的分组并返回 matched_count",
+            {
+                "type": "object",
+                "properties": {
+                    "result_file": {"type": "string", "description": "工具结果里返回的 result_file 路径"},
+                    "group_by": {"type": "string", "description": "分组字段，如 root_id / parent_id / type"},
+                    "min_count": {"type": "integer", "description": "可选：只保留数量大于该值的分组"},
+                },
+                "required": ["result_file", "group_by"],
+            },
+        ),
+        function_schema(
+            "gui_get_wwise_selection",
+            "软件界面操作：等同点击「获取Wwise选中对象」按钮，把 Wwise 当前选中的对象取到表格（无需参数）",
+            {"type": "object", "properties": {}},
+        ),
+        function_schema(
+            "gui_find_children",
+            "软件界面操作：等同点击「查找下级」按钮（可按递归/保留原始层级选项），用表格内对象的下级替换表格内容",
+            {
+                "type": "object",
+                "properties": {
+                    "recursive": {"type": "boolean", "default": True, "description": "是否递归查找全部下级"},
+                    "keep_self": {"type": "boolean", "default": False, "description": "是否保留原始对象"},
+                },
+            },
+        ),
+        function_schema(
+            "gui_find_parent",
+            "软件界面操作：等同点击「查找上级」按钮（可按递归/保留原始层级选项），用上级替换表格内容",
+            {
+                "type": "object",
+                "properties": {
+                    "recursive": {"type": "boolean", "default": True, "description": "是否递归查到最上层"},
+                    "keep_self": {"type": "boolean", "default": False, "description": "是否保留原始对象"},
+                },
+            },
+        ),
+        function_schema(
+            "gui_set_filter",
+            "软件界面操作：等同在表格筛选区输入关键字/选择类型/勾选选项并应用筛选",
+            {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "筛选关键字（支持 ; 多条件、-排除、=全字匹配）"},
+                    "object_type": {"type": "string", "description": "对象类型筛选，如 Sound / Event；留空为全部类型"},
+                    "only_included": {"type": "boolean", "default": False, "description": "仅显示启用对象"},
+                    "case_sensitive": {"type": "boolean", "default": False, "description": "区分大小写"},
+                },
+            },
+        ),
+        function_schema(
+            "gui_open_window",
+            "软件界面操作：打开软件里的功能窗口（等同点菜单/按钮）。可用值：property_query(属性查询) / multi_editor(多项编辑器) / batch_rename(批量重命名) / table_rename(读表重命名) / audio_silence_trim(裁剪静音) / bank_matrix(Bank分配矩阵) / project_validation(工程检查) / unity_asset(UnityAsset管理) / settings(设置)",
+            {
+                "type": "object",
+                "properties": {
+                    "window": {"type": "string", "description": "要打开的窗口标识（见工具说明）"},
+                },
+                "required": ["window"],
+            },
+        ),
+        function_schema(
+            "gui_run_action",
+            "软件界面操作：触发菜单里的某个 action（按 objectName，如 actTemplateReplace / actRenameByDataTable）。不确定有哪些动作时先用 gui_list_actions 查；仅当用户明确要求执行该菜单功能时使用，需 confirmed=true",
+            {
+                "type": "object",
+                "properties": {
+                    "action_name": {"type": "string", "description": "菜单 action 的 objectName"},
+                    "confirmed": {"type": "boolean", "description": "用户已明确要求执行时传 true"},
+                },
+                "required": ["action_name", "confirmed"],
+            },
+        ),
+        function_schema(
+            "gui_list_actions",
+            "软件界面操作：列出软件里的菜单动作（objectName / 名称 / 是否可用 / 使用说明），可用 keyword 过滤。用于在不确定时先发现能做什么，再用 gui_run_action 触发",
+            {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "可选关键字，按动作名称或 objectName 过滤"},
+                },
+            },
+        ),
     ])
     # 注册表已是唯一权威；本地遗留工具仅保留注册表未收录的名字，避免同名重复下发
     seen: set[str] = set()
@@ -524,7 +891,12 @@ def build_system_prompt(objects: list[WwiseObject], max_context_objects: int = 3
     prompt = load_prompt_template()
     prompt += f"\n\n## 当前表格对象\n本次表格中共有 {total} 个对象"
     if total > len(listed):
-        prompt += f"，出于上下文长度限制仅列出前 {len(listed)} 个（可先筛选缩小表格范围）"
+        prompt += (
+            f"，出于上下文长度限制仅列出前 {len(listed)} 个；"
+            "调用工具时可传 object_ids=[\"@table\"] 指代全部表格对象，无需罗列完整 id"
+        )
+    else:
+        prompt += "；调用工具时也可传 object_ids=[\"@table\"] 指代全部表格对象"
     prompt += "：\n" + json.dumps([json.loads(line) for line in object_lines], ensure_ascii=False)
     return prompt
 
@@ -570,13 +942,95 @@ def _shrink_for_model(value, item_cap: int):
     return value
 
 
+def set_result_dir(path: str | None) -> None:
+    # 指定本次任务的大结果落盘目录；None 时退回"就地收缩"模式（如 MCP 调用）
+    global _result_dir, _result_counter
+    _result_dir = path
+    _result_counter = 0
+
+
+def _cleanup_stale_result_dirs(max_age_seconds: int = 6 * 3600) -> None:
+    # 清理异常退出遗留的旧结果目录（正常结束时会在任务尾部删除）
+    base = tempfile.gettempdir()
+    cutoff = time.time() - max_age_seconds
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(_RESULT_DIR_PREFIX):
+            continue
+        path = os.path.join(base, name)
+        try:
+            if os.path.isdir(path) and os.path.getmtime(path) < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _next_result_path() -> str:
+    global _result_counter
+    _result_counter += 1
+    return os.path.join(_result_dir, f"result_{_result_counter}.json")
+
+
+def _offload_result(value) -> str | None:
+    # 完整结果写入临时文件，返回路径；失败返回 None（调用方退回就地收缩）
+    if not _result_dir:
+        return None
+    try:
+        os.makedirs(_result_dir, exist_ok=True)
+        path = _next_result_path()
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False)
+    except OSError as e:
+        Logger().warning(f"AI 结果落盘失败，将就地缩减：{e}")
+        return None
+    return path
+
+
+def _result_summary(value) -> dict:
+    summary = {}
+    if isinstance(value, dict):
+        for key in ("count", "total", "total_items", "matched_count", "scanned", "truncated"):
+            item = value.get(key)
+            if item is not None and not isinstance(item, (list, dict)):
+                summary[key] = item
+    return summary
+
+
+def _offload_envelope(value, path: str) -> dict:
+    items = value.get("items") if isinstance(value, dict) else value
+    preview = []
+    if isinstance(items, list):
+        preview = [_shrink_for_model(item, MODEL_LIST_ITEM_CAP) for item in items[:3]]
+    return {
+        "result_file": path,
+        "offloaded": True,
+        **_result_summary(value),
+        "preview": preview,
+        "hint": (
+            "结果较大，已完整写入 result_file：用 read_result_file 分页读取，"
+            "或用 group_result_file 分组统计；任务结束后文件会自动删除"
+        ),
+    }
+
+
 def _serialize_for_model(value) -> str:
-    # 逐级收缩直到落在字符预算内：先保留 30 条，再 10/3/0 条，字符串同步截短
-    for item_cap in (MODEL_LIST_ITEM_CAP, 10, 3, 0):
+    text = json.dumps(_shrink_for_model(value, MODEL_LIST_ITEM_CAP), ensure_ascii=False)
+    if len(text) <= RESULT_CHAR_LIMIT:
+        return text
+    path = _offload_result(value)
+    if path:
+        return json.dumps(_offload_envelope(value, path), ensure_ascii=False)
+    # 无法落盘时退回逐级收缩：10/3/0 条
+    for item_cap in (10, 3, 0):
         text = json.dumps(_shrink_for_model(value, item_cap), ensure_ascii=False)
         if len(text) <= RESULT_CHAR_LIMIT:
             return text
     return json.dumps(_shrink_for_model(value, 0), ensure_ascii=False)[: RESULT_CHAR_LIMIT - 20] + "…（已截断）"
+
+
 
 
 def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> str:
@@ -590,6 +1044,9 @@ def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> s
             arguments = {}
     except ValueError:
         arguments = {}
+    if name == "run_wwise_script" and not user_config.get_ai_enable_script_tool():
+        return "脚本执行已在「设置 → AI 助手」中关闭；请改用现成工具（如 find_objects_by_property / aggregate_tool_chain）"
+    arguments, _expanded_count = _expand_special_ids(arguments)
     try:
         if registry_spec is not None:
             # 注册表工具返回 JSON 兼容的结构化结果，统一转成文本回传给模型
@@ -598,12 +1055,16 @@ def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> s
         else:
             result_text = TOOL_HANDLERS[name](arguments)
             if not isinstance(result_text, str):
-                result_text = str(result_text)
+                result_text = _serialize_for_model(result_text)
     except tool_registry.ExecutionInterrupted as e:
         # 用户中止：向上抛出，由 agent loop 结束本次任务
         raise AIAgentStopped(str(e)) from e
     except Exception as e:
         result_text = f"工具执行失败：{e}"
+        if isinstance(e, TypeError) and registry_spec is not None:
+            required = registry_spec.parameters.get("required") or []
+            if required:
+                result_text += f"；该工具必填参数：{', '.join(required)}（请放在本次调用的参数对象里）"
     executed.append({"name": name, "arguments": arguments, "result": result_text[:200]})
     if len(result_text) > RESULT_CHAR_LIMIT:
         result_text = result_text[:RESULT_CHAR_LIMIT] + "…（结果过长，已截断）"
@@ -705,6 +1166,13 @@ def run_assistant(
     )
     # 脚本执行期间同样响应中止请求
     tool_registry.set_execution_guard(lambda: bool(should_stop and should_stop()))
+    set_table_context([obj.id for obj in objects])
+    _cleanup_stale_result_dirs()
+    try:
+        result_dir = tempfile.mkdtemp(prefix=_RESULT_DIR_PREFIX)
+    except OSError:
+        result_dir = None
+    set_result_dir(result_dir)
     try:
         for turn in range(1, max_turns + 1):
             raise_if_stopped()
@@ -737,7 +1205,10 @@ def run_assistant(
                     tool_result = _execute_tool_call(name, arguments, result.executed_tools)
                     if _is_mutating_tool(name):
                         result.mutated = True
-                    log(f"第 {turn} 轮调用工具 {name}（返回：{' '.join(tool_result.split())[:120]}）")
+                    log(
+                        f"第 {turn} 轮调用工具 {name}（参数：{' '.join(str(arguments).split())[:120]}"
+                        f"；返回：{' '.join(tool_result.split())[:120]}）"
+                    )
                     call_id = call.get("id") or f"tool_call_{turn}_{index}"
                     messages.append({
                         "role": "tool",
@@ -763,6 +1234,11 @@ def run_assistant(
 
     finally:
         tool_registry.set_execution_guard(None)
+        set_table_context([])
+        set_table_sink(None)
+        set_result_dir(None)
+        if result_dir:
+            shutil.rmtree(result_dir, ignore_errors=True)
         _close_undo_group()
     result.content = f"达到最大对话轮数（{max_turns}）仍未得到最终回复，已停止；可在 user_config.json 的 ai.max_turns 中调大。"
     log(result.content)

@@ -1,5 +1,6 @@
 # JSON/dict 层 WAAPI：入参出参均为 dict 或原生值；供 MCP 与 WAAPI 门面共用。
 import os.path
+import threading
 from waapi import WaapiClient
 from libraries.singleton import Singleton
 from libraries.utils.log_utils import Logger
@@ -13,13 +14,27 @@ class WAAPIClient(metaclass=Singleton):
     def __init__(self, port: int=8080):
         self.client: WaapiClient = None
         self.port = port
+        # 底层 websocket 客户端不支持并发调用；界面线程、批处理线程与 AI 线程共用同一连接
+        self._call_lock = threading.RLock()
         self.connect()
 
     # 获取Waapi客户端
     def connect(self) -> WaapiClient:
         if not self.client:
             self.client = WaapiClient(url=f'ws://127.0.0.1:{self.port}/waapi')
+            self._lock_client_calls()
         return self.client
+
+    # 串行化 WAAPI 调用，避免多线程并发使用同一 websocket 导致的原生崩溃
+    def _lock_client_calls(self) -> None:
+        original_call = self.client.call
+        lock = self._call_lock
+
+        def locked_call(*args, **kwargs):
+            with lock:
+                return original_call(*args, **kwargs)
+
+        self.client.call = locked_call
 
     # 关闭Waapi客户端连接
     def disconnect(self):

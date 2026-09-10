@@ -307,10 +307,15 @@ class Ui_ProjectSettings(object):
 
         self.aiForm.setWidget(5, QFormLayout.ItemRole.FieldRole, self.iptAiModel)
 
+        self.cbxAiEnableScript = QCheckBox(self.tabAi)
+        self.cbxAiEnableScript.setObjectName(u"cbxAiEnableScript")
+
+        self.aiForm.setWidget(6, QFormLayout.ItemRole.SpanningRole, self.cbxAiEnableScript)
+
         self.lblAiMaxContext = QLabel(self.tabAi)
         self.lblAiMaxContext.setObjectName(u"lblAiMaxContext")
 
-        self.aiForm.setWidget(6, QFormLayout.ItemRole.LabelRole, self.lblAiMaxContext)
+        self.aiForm.setWidget(7, QFormLayout.ItemRole.LabelRole, self.lblAiMaxContext)
 
         self.spnAiMaxContext = QSpinBox(self.tabAi)
         self.spnAiMaxContext.setObjectName(u"spnAiMaxContext")
@@ -318,12 +323,12 @@ class Ui_ProjectSettings(object):
         self.spnAiMaxContext.setMaximum(10000)
         self.spnAiMaxContext.setValue(500)
 
-        self.aiForm.setWidget(6, QFormLayout.ItemRole.FieldRole, self.spnAiMaxContext)
+        self.aiForm.setWidget(7, QFormLayout.ItemRole.FieldRole, self.spnAiMaxContext)
 
         self.lblAiMaxTurns = QLabel(self.tabAi)
         self.lblAiMaxTurns.setObjectName(u"lblAiMaxTurns")
 
-        self.aiForm.setWidget(7, QFormLayout.ItemRole.LabelRole, self.lblAiMaxTurns)
+        self.aiForm.setWidget(8, QFormLayout.ItemRole.LabelRole, self.lblAiMaxTurns)
 
         self.spnAiMaxTurns = QSpinBox(self.tabAi)
         self.spnAiMaxTurns.setObjectName(u"spnAiMaxTurns")
@@ -331,7 +336,7 @@ class Ui_ProjectSettings(object):
         self.spnAiMaxTurns.setMaximum(200)
         self.spnAiMaxTurns.setValue(10)
 
-        self.aiForm.setWidget(7, QFormLayout.ItemRole.FieldRole, self.spnAiMaxTurns)
+        self.aiForm.setWidget(8, QFormLayout.ItemRole.FieldRole, self.spnAiMaxTurns)
 
 
         self.tabAiLayout.addLayout(self.aiForm)
@@ -494,6 +499,7 @@ class Ui_ProjectSettings(object):
         self.lblAiApiKey.setText(QCoreApplication.translate("ProjectSettings", u"API Key", None))
         self.lblAiModel.setText(QCoreApplication.translate("ProjectSettings", u"\u6a21\u578b", None))
         self.iptAiModel.setPlaceholderText(QCoreApplication.translate("ProjectSettings", u"\u5b98\u65b9\u6a21\u5f0f\u5efa\u8bae\u586b\u5199\uff08Claude \u5fc5\u586b\uff09\uff1b\u4ee3\u7406\u6a21\u5f0f\u53ef\u7559\u7a7a", None))
+        self.cbxAiEnableScript.setText(QCoreApplication.translate("ProjectSettings", u"\u5141\u8bb8 AI \u6267\u884c\u4e34\u65f6\u811a\u672c\uff08run_wwise_script\uff1bIDE \u8c03\u8bd5\u5668\u4e0b\u53ef\u80fd\u4e0d\u7a33\u5b9a\uff0c\u9ed8\u8ba4\u5173\u95ed\uff09", None))
         self.lblAiMaxContext.setText(QCoreApplication.translate("ProjectSettings", u"\u5355\u6b21\u6700\u5927\u5bf9\u8c61\u6570", None))
         self.lblAiMaxTurns.setText(QCoreApplication.translate("ProjectSettings", u"\u6700\u5927\u5bf9\u8bdd\u8f6e\u6570", None))
         self.lblAiHint.setText(QCoreApplication.translate("ProjectSettings", u"\u8fde\u63a5\u6a21\u5f0f\uff1a\u4ee3\u7406\u6a21\u5f0f\u8d70\u672c\u5730/\u516c\u53f8\u4ee3\u7406\u5730\u5740\uff1b\u5b98\u65b9 API \u6a21\u5f0f\u6309\u201c\u670d\u52a1\u63d0\u4f9b\u65b9\u201d\u76f4\u8fde\uff08OpenAI / DeepSeek / \u901a\u4e49\u5343\u95ee / Kimi / \u667a\u8c31 GLM / Gemini / Claude / \u81ea\u5b9a\u4e49\uff09\u3002Claude \u4f7f\u7528 Anthropic \u539f\u751f\u534f\u8bae\uff0c\u5fc5\u987b\u586b\u5199\u6a21\u578b\u540d\uff1b\u5176\u4f59\u5382\u5546\u8d70 OpenAI \u517c\u5bb9\u534f\u8bae\u3002\u8bbe\u7f6e\u4fdd\u5b58\u5728 user_config.json \u7684 ai \u8282\uff0c\u4fee\u6539\u540e\u4e0b\u4e00\u6b21\u53d1\u9001\u6307\u4ee4\u751f\u6548\uff0c\u4e3b\u7a97\u53e3\u6a21\u578b\u4e0b\u62c9\u6846\u4f1a\u5728\u91cd\u542f\u540e\u540c\u6b65\u3002", None))

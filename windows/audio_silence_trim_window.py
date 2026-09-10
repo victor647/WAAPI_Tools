@@ -75,6 +75,19 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         self.tblFileList.setItemDelegate(SeverityTableDelegate(self.tblFileList))
         self.tblFileList.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tblFileList.customContextMenuRequested.connect(self.show_file_context_menu)
+        self.tblFileList.itemDoubleClicked.connect(self.select_source_in_wwise)
+
+    # 双击行（路径列）按源文件反查对象并在 Wwise 中选中
+    def select_source_in_wwise(self, item: QTableWidgetItem):
+        row = item.row()
+        if not 0 <= row < len(self.__filePaths):
+            return
+        relative_path = audio_source_utils.to_originals_relative_path(self.__filePaths[row])
+        sources = waapi_utils.find_audio_sources_by_original_path(relative_path)
+        if not sources:
+            Logger().warning(f'未在工程中找到使用源文件 [{relative_path}] 的对象')
+            return
+        waapi_utils.select_objects_in_wwise(sources)
 
     # 根据裁剪选项置灰对应的淡入淡出控件并隐藏未裁剪方向的静音列
     def sync_trim_options(self):

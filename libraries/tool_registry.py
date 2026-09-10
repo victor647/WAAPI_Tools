@@ -7,12 +7,12 @@
 from __future__ import annotations
 
 import os
+import ast
 import builtins
 import json
 import math
 import re
 import statistics
-import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -36,10 +36,12 @@ from libraries.wwise_object import WwiseObject, WwiseObjectType
 # 单次可列出的音频源上限 / 可统计的对象上限，防止一次请求拖垮上下文
 AUDIO_SOURCE_LIST_LIMIT = 300
 SIZE_STAT_OBJECT_LIMIT = 100
-INFO_OBJECT_LIMIT = 50
+INFO_OBJECT_LIMIT = 200
 CHILD_LIST_LIMIT = 500
 REF_LIST_LIMIT = 500
 DESCENDANT_LIST_LIMIT = 1000
+SCAN_LIMIT_DEFAULT = 20000
+_PROPERTY_OPS = ("==", "!=", ">", ">=", "<", "<=", "contains")
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,14 @@ def get_tool(name: str) -> ToolSpec | None:
 def execute_tool(name: str, arguments: dict) -> Any:
     # 按名称执行注册表工具，返回 JSON 兼容的结构化结果
     spec = _TOOLS[name]
+    arguments = arguments if isinstance(arguments, dict) else {}
+    missing = [param for param in spec.parameters.get("required", []) if param not in arguments]
+    if missing:
+        hints = ", ".join(
+            f"{param}（{spec.parameters['properties'].get(param, {}).get('description', '')}）"
+            for param in missing
+        )
+        raise ValueError(f"缺少必填参数：{hints}")
     return spec.handler(arguments)
 
 
@@ -475,9 +485,9 @@ def _handler_aggregate_tool_chain(args: dict) -> dict:
     }
 
 
-# 脚本执行：仅允许白名单内建与受限模块，带行数/时间预算，进程内 exec（打包环境无需外部 Python）
+# 脚本执行：仅允许白名单内建与受限模块，带循环/时间预算，进程内 exec（打包环境无需外部 Python）
 SCRIPT_TIMEOUT_DEFAULT = 30.0
-SCRIPT_LINE_BUDGET = 200000
+SCRIPT_TICK_BUDGET = 2000000
 SCRIPT_ALLOWED_MODULES = {"json": json, "re": re, "math": math, "statistics": statistics, "time": time}
 # 上层（AI 助手）可注入中止判断，脚本执行期间据此响应“停止”
 _execution_guard: Callable[[], bool] | None = None
@@ -496,8 +506,10 @@ _SAFE_BUILTIN_NAMES = (
     "abs", "all", "any", "bool", "dict", "divmod", "enumerate", "filter", "float", "format",
     "frozenset", "int", "isinstance", "issubclass", "iter", "len", "list", "map", "max", "min",
     "next", "range", "repr", "reversed", "round", "set", "slice", "sorted", "str", "sum",
-    "tuple", "zip", "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
-    "RuntimeError", "StopIteration", "ZeroDivisionError",
+    "tuple", "zip", "callable", "chr", "ord", "hash", "dir", "hasattr", "getattr", "type", "Exception",
+    "ValueError", "TypeError", "KeyError", "IndexError", "AttributeError", "NameError",
+    "ImportError", "RuntimeError", "StopIteration", "ZeroDivisionError", "ArithmeticError",
+    "OverflowError", "OSError", "PermissionError",
 )
 
 
@@ -508,17 +520,58 @@ def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
     return module
 
 
-def _script_namespace(output: list):
+def _script_modules() -> dict:
+    return {
+        "waapi_utils": waapi_utils,
+        "common_utils": common_utils,
+        "audio_source_utils": audio_source_utils,
+        "soundbank_utils": soundbank_utils,
+        "localization_utils": localization_utils,
+        "event_utils": event_utils,
+        "container_utils": container_utils,
+        "mixing_utils": mixing_utils,
+        "game_sync_utils": game_sync_utils,
+        "project_utils": project_utils,
+        "transport_utils": transport_utils,
+    }
+
+
+def _script_api_names() -> dict:
+    # 名称清单：供模型查看"有哪些函数"，而 tools_api 里放的是真实模块对象
+    names = {
+        name: [fn for fn in dir(module) if not fn.startswith("_")]
+        for name, module in _script_modules().items()
+    }
+    names["WwiseObject"] = ["from_id", "dict_from_id", "id", "name", "type", "path", "children", "parent", "is_valid"]
+    names["WwiseObjectType"] = [member.value for member in WwiseObjectType]
+    names["Logger"] = ["info", "warning", "error", "debug", "query"]
+    return names
+
+
+def _script_namespace(output: list, tick):
     safe_builtins = {name: getattr(builtins, name) for name in _SAFE_BUILTIN_NAMES}
     safe_builtins["__import__"] = _safe_import
 
     def _print(*values, sep=" ", end="\n"):
         output.append(sep.join(str(value) for value in values) + end)
 
+    api_names = _script_api_names()
+
+    def _help(name=None):
+        if name and name in api_names:
+            _print(f"{name}: {', '.join(api_names[name])}")
+            return
+        for module_name, functions in api_names.items():
+            _print(f"{module_name}: {', '.join(functions)}")
+
     return {
         "__builtins__": safe_builtins,
         "__name__": "__ai_script__",
+        "__budget_tick__": tick,
         "print": _print,
+        "help": _help,
+        "tools_api": _script_modules(),
+        "api_names": api_names,
         "Logger": Logger,
         "WwiseObject": WwiseObject,
         "WwiseObjectType": WwiseObjectType,
@@ -536,6 +589,27 @@ def _script_namespace(output: list):
     }
 
 
+def _instrument_loops(tree: ast.AST) -> ast.AST:
+    # 在每个循环体首部注入预算检查，避免死循环；不使用 sys.settrace（与 IDE 调试器冲突）
+    def _tick_statement() -> ast.stmt:
+        return ast.Expr(value=ast.Call(func=ast.Name(id="__budget_tick__", ctx=ast.Load()), args=[], keywords=[]))
+
+    class _LoopInstrumenter(ast.NodeTransformer):
+        def visit_While(self, node: ast.While):
+            self.generic_visit(node)
+            node.body.insert(0, _tick_statement())
+            node.orelse.insert(0, _tick_statement())
+            return node
+
+        def visit_For(self, node: ast.For):
+            self.generic_visit(node)
+            node.body.insert(0, _tick_statement())
+            node.orelse.insert(0, _tick_statement())
+            return node
+
+    return _LoopInstrumenter().visit(tree)
+
+
 def _handler_run_wwise_script(args: dict) -> dict:
     # 执行模型临时编写的 Wwise 脚本（已由 AI 层包在撤销组内）
     code = str(args.get("code") or "")
@@ -549,33 +623,32 @@ def _handler_run_wwise_script(args: dict) -> dict:
         timeout = SCRIPT_TIMEOUT_DEFAULT
 
     output: list[str] = []
-    namespace = _script_namespace(output)
     deadline = time.monotonic() + max(timeout, 1.0)
-    budget = {"lines": 0}
+    state = {"ticks": 0}
 
-    def _guard(frame, event, arg):
-        if event == "line":
-            budget["lines"] += 1
-            if _execution_guard is not None and _execution_guard():
-                raise ExecutionInterrupted("脚本执行已按用户要求中止")
-            if budget["lines"] > SCRIPT_LINE_BUDGET:
-                raise TimeoutError(f"脚本执行超过行数预算（{SCRIPT_LINE_BUDGET} 行）")
-            if time.monotonic() > deadline:
-                raise TimeoutError(f"脚本执行超过 {timeout:g} 秒")
-        return _guard
+    def _tick():
+        state["ticks"] += 1
+        if _execution_guard is not None and _execution_guard():
+            raise ExecutionInterrupted("脚本执行已按用户要求中止")
+        if state["ticks"] > SCRIPT_TICK_BUDGET:
+            raise TimeoutError(f"脚本执行超过循环次数预算（{SCRIPT_TICK_BUDGET}）")
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"脚本执行超过 {timeout:g} 秒")
 
+    namespace = _script_namespace(output, _tick)
     error = ""
-    sys.settrace(_guard)
     try:
-        exec(compile(code, "<ai_script>", "exec"), namespace)
+        tree = _instrument_loops(ast.parse(code, mode="exec"))
+        ast.fix_missing_locations(tree)
+        exec(compile(tree, "<ai_script>", "exec"), namespace)
+    except SyntaxError as e:
+        error = f"脚本语法错误：第 {e.lineno} 行 {e.msg}"
     except ExecutionInterrupted:
         raise
     except TimeoutError as e:
         error = f"{e}"
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
-    finally:
-        sys.settrace(None)
 
     result = namespace.get("result")
     text = "".join(output)
@@ -620,6 +693,103 @@ def _handler_get_references(args: dict) -> dict:
         "count": total,
         "truncated": limit is not None and total >= limit,
         "objects": objects,
+        "errors": errors,
+    }
+
+
+def _compare_property(value, op: str, expected) -> bool:
+    if op == "contains":
+        return str(expected).lower() in str(value).lower()
+    if op in ("==", "!="):
+        equal = value == expected or str(value) == str(expected)
+        return equal if op == "==" else not equal
+    try:
+        left, right = float(value), float(expected)
+    except (TypeError, ValueError):
+        return False
+    if op == ">":
+        return left > right
+    if op == ">=":
+        return left >= right
+    if op == "<":
+        return left < right
+    return left <= right
+
+
+def _handler_find_objects_by_property(args: dict) -> dict:
+    # 通用属性筛选：在对象子树里按某个属性值过滤（如 Volume != 0），只回传命中的对象
+    roots = _require_object_ids(args)
+    property_name = str(args.get("property_name") or "").strip()
+    if not property_name:
+        return {"error": "缺少 property_name 参数（要筛选的属性名，如 Volume / Pitch）"}
+    op = str(args.get("op") or "!=").strip()
+    if op not in _PROPERTY_OPS:
+        return {"error": f"op 仅支持 {' / '.join(_PROPERTY_OPS)}"}
+    expected = args.get("value")
+    child_type_name = str(args.get("child_type") or "").strip()
+    child_type = _resolve_object_type(child_type_name) if child_type_name else None
+    if child_type_name and child_type is None:
+        valid = ", ".join(member.value for member in WwiseObjectType)
+        return {"items": [], "errors": [f"未知类型「{child_type_name}」，可用值：{valid}"]}
+    include_path = bool(args.get("include_path", False))
+    limit = _resolve_limit(args, DESCENDANT_LIST_LIMIT)
+    scan_limit = _resolve_limit(args, SCAN_LIMIT_DEFAULT)
+    items = []
+    errors = []
+    scanned = 0
+    # 与属性查询窗口一致：某类型读不到该属性即视为"该类型不含有此属性"，同类型后续对象直接跳过
+    missing_types: dict[str, str] = {}
+    for root_id in roots:
+        try:
+            root = WwiseObject.from_id(root_id)
+            candidates = (
+                waapi_utils.get_descendants_of_type(root, child_type)
+                if child_type
+                else waapi_utils.get_child_objects(root, include_descendants=True)
+            )
+            if scan_limit is not None:
+                remaining = scan_limit - scanned
+                if remaining <= 0:
+                    break
+                candidates = candidates[:remaining]
+            scanned += len(candidates)
+            for candidate in candidates:
+                type_name = candidate.type.name
+                if missing_types.get(type_name) == property_name:
+                    continue
+                values = waapi_utils.get_object_properties(candidate, [property_name])
+                value = values.get(property_name)
+                if value is None:
+                    missing_types[type_name] = property_name
+                    continue
+                if not _compare_property(value, op, expected):
+                    continue
+                item = {
+                    "root": root.name,
+                    "root_id": root.id,
+                    "id": candidate.id,
+                    "name": candidate.name,
+                    "type": candidate.type.value,
+                    "value": value,
+                }
+                if include_path:
+                    item["path"] = candidate.path
+                items.append(item)
+                if limit is not None and len(items) >= limit:
+                    break
+            if limit is not None and len(items) >= limit:
+                break
+        except Exception as e:
+            errors.append(f"{root_id}: {e}")
+    detail = f"，不含有 {property_name} 的类型：{'/'.join(sorted(missing_types))}" if missing_types else ""
+    Logger().info(
+        f"属性筛选 {property_name} {op} {expected}：扫描 {scanned} 个对象，匹配 {len(items)} 个{detail}")
+    return {
+        "count": len(items),
+        "scanned": scanned,
+        "truncated": scan_limit is not None and scanned > scan_limit,
+        "types_without_property": sorted(missing_types),
+        "items": items,
         "errors": errors,
     }
 
@@ -793,6 +963,35 @@ register_tool(
         "required": ["steps"],
     },
     _handler_aggregate_tool_chain,
+)
+
+register_tool(
+    "find_objects_by_property",
+    "通用属性筛选（与「属性查询」窗口同口径）：逐对象用 waapi_utils.get_object_properties 读取属性，某类型首次读不到该属性即视为该类型不含有它并跳过后续同类型对象，结果里用 types_without_property 汇报。用户说「找出 Volume/Pitch/… 不为 0 的子对象」时用；建议传 child_type 收窄扫描范围，scan_limit 可用 0 取消上限。返回 count 与 items，可直接把 items 里的 id 交给 set_table_objects",
+    {
+        "type": "object",
+        "properties": {
+            "object_ids": {
+                "type": "array",
+                "items": {"type": "string", "description": "Wwise 对象 GUID"},
+                "description": "要扫描的根对象 id（表格对象）",
+            },
+            "property_name": {"type": "string", "description": "要筛选的属性名，如 Volume / Pitch / Lowpass"},
+            "op": {
+                "type": "string",
+                "enum": list(_PROPERTY_OPS),
+                "default": "!=",
+                "description": "比较方式，默认 !=（如找出 Volume != 0）",
+            },
+            "value": {"type": ["number", "string", "boolean"], "description": "比较值，如 0"},
+            "child_type": {"type": "string", "description": "可选：只在某类型后代中筛选（如 Sound），留空扫描全部后代"},
+            "include_path": {"type": "boolean", "default": False, "description": "是否返回完整 path"},
+            "limit": {"type": "integer", "description": "命中数量上限，默认 1000；0 表示不限量"},
+            "scan_limit": {"type": "integer", "description": "扫描对象数量上限，默认 5000；0 表示不限量"},
+        },
+        "required": ["object_ids", "property_name", "value"],
+    },
+    _handler_find_objects_by_property,
 )
 
 register_tool(

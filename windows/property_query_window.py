@@ -6,14 +6,11 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QDialog, QMessageBox, QTableWidgetItem
 
 from libraries.multi_thread import batch_processor
-from libraries.utils import user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import waapi_utils
 from libraries.wwise_object import WwiseObject
 from table.wwise_table_row_data import WwiseTableRowData
 from ui.PropertyQuery_ui import Ui_PropertyQuery
-
-WINDOW_KEY = 'property_query'
 
 # Wwise 对象属性说明文档（官方 wobjects 索引页）
 PROPERTY_DOC_URL = 'https://www.audiokinetic.com/zh/library/2025.1.10_9233/?source=SDK&id=wobjects_index.html'
@@ -55,7 +52,6 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         self.__pressed_common_state = None
         self.lblObjectCount.setText(f'表格内共 {len(self.__objects)} 个对象')
         self.tblPropertyResults.setColumnCount(0)
-        self.load_user_settings()
 
     def setup_triggers(self):
         self.btnQuery.clicked.connect(self.start_query)
@@ -137,7 +133,6 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         if not self.__objects:
             Logger().warning('没有可查询的对象')
             return
-        self.save_user_settings()
         self.__results = [None] * len(self.__objects)
         self.__row_types = [''] * len(self.__objects)
         self.__type_missing_props = {}
@@ -238,17 +233,3 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         target = next((obj for obj in self.__objects if obj.id == obj_id), None)
         if target is not None:
             waapi_utils.select_objects_in_wwise([target])
-
-    # 打开窗口时回填上次保存的属性名
-    def load_user_settings(self):
-        saved = user_config.get_window_settings(WINDOW_KEY)
-        if saved.get('property_names'):
-            self.iptPropertyNames.setText(saved['property_names'])
-
-    # 保存属性名输入，供下次打开窗口复用
-    def save_user_settings(self):
-        user_config.set_window_settings(WINDOW_KEY, {'property_names': self.iptPropertyNames.text().strip()})
-
-    def closeEvent(self, event):
-        self.save_user_settings()
-        super().closeEvent(event)

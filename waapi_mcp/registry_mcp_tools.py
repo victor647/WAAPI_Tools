@@ -6,6 +6,7 @@ from typing import Any
 
 from libraries import tool_registry
 from libraries.waapi_client import WAAPIClient
+from libraries.utils import user_config
 from waapi_mcp.mcp_instance import mcp
 
 # JSON schema 类型 -> python 注解（FastMCP 依据真实函数签名生成自己的 JSON schema）
@@ -21,9 +22,17 @@ _ANNOTATION_BY_TYPE = {
 
 def _annotation_for(prop: dict) -> str:
     type_name = prop.get("type")
+    # 支持 JSON Schema 的联合类型（如 ["number", "string", "boolean"]）
+    if isinstance(type_name, list):
+        parts = []
+        for item in type_name:
+            annotation = _ANNOTATION_BY_TYPE.get(item)
+            if annotation and annotation not in parts:
+                parts.append(annotation)
+        return " | ".join(parts) if parts else "object"
     if type_name == "array":
         items = prop.get("items") or {}
-        inner = _ANNOTATION_BY_TYPE.get(items.get("type"), "object")
+        inner = _annotation_for(items) if items else "object"
         return f"list[{inner}]"
     return _ANNOTATION_BY_TYPE.get(type_name, "object")
 
@@ -32,14 +41,16 @@ def _build_mcp_function(spec: tool_registry.ToolSpec):
     # 按注册表的 parameters 动态生成带类型注解的真实函数，供 FastMCP 推导工具 schema
     properties = spec.parameters.get("properties", {})
     required = set(spec.parameters.get("required") or [])
-    param_defs = []
+    # Python 要求必填参数在前、带默认值的在后
+    required_defs = []
+    optional_defs = []
     for name, prop in properties.items():
         annotation = _annotation_for(prop)
         if name in required:
-            param_defs.append(f"{name}: {annotation}")
+            required_defs.append(f"{name}: {annotation}")
         else:
-            param_defs.append(f"{name}: {annotation} = None")
-    signature = ", ".join(param_defs)
+            optional_defs.append(f"{name}: {annotation} | None = None")
+    signature = ", ".join(required_defs + optional_defs)
     namespace: dict[str, Any] = {
         "_handler": spec.handler,
         "WAAPIClient": WAAPIClient,
@@ -57,5 +68,8 @@ def _build_mcp_function(spec: tool_registry.ToolSpec):
     return fn
 
 
+# 脚本工具默认关闭（与设置窗口的 ai.enable_script_tool 保持一致）
 for _spec in tool_registry.list_tools():
+    if _spec.name == "run_wwise_script" and not user_config.get_ai_enable_script_tool():
+        continue
     mcp.tool(name=_spec.name, description=_spec.description)(_build_mcp_function(_spec))

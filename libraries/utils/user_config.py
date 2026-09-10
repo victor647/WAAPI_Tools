@@ -32,6 +32,8 @@ DEFAULT_CONFIG = {
         "max_context_objects": 300,
         # 单次对话允许的最大往返轮数（防止模型陷入工具循环）
         "max_turns": 20,
+        # 是否允许 AI 执行临时脚本（run_wwise_script）。默认关闭：IDE 调试器下可能不稳定
+        "enable_script_tool": False,
     },
     "advanced_filter": {
         # 高级筛选窗口各选项的持久化状态
@@ -250,6 +252,10 @@ def get_ai_max_context_objects() -> int:
 
 def get_ai_max_turns() -> int:
     return load_config()["ai"].get("max_turns", DEFAULT_CONFIG["ai"]["max_turns"])
+
+
+def get_ai_enable_script_tool() -> bool:
+    return bool(load_config()["ai"].get("enable_script_tool", DEFAULT_CONFIG["ai"]["enable_script_tool"]))
 
 
 def get_appearance_theme() -> str:
