@@ -7,6 +7,7 @@ from libraries.utils import audio_utils, user_config
 from libraries.utils.wwise import audio_source_utils, waapi_utils
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
+from table.wwise_table_row_data import WwiseTableRowData
 from libraries.utils.log_utils import Logger
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QDragEnterEvent
@@ -169,7 +170,7 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
     # 递归收集源文件路径
     def collect_source_paths(self, obj):
         if obj.type == WwiseObjectType.AudioSource:
-            file_path = audio_source_utils.get_source_file_path(obj)
+            file_path = audio_source_utils.get_source_absolute_path(obj)
             if file_path:
                 self.__resolvedFilePaths.append(file_path)
             return
@@ -272,7 +273,7 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         check_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
         check_item.setCheckState(Qt.CheckState.Checked)
         self.tblFileList.setItem(row, COL_CHECK, check_item)
-        self.tblFileList.setItem(row, COL_PATH, QTableWidgetItem(display_path))
+        self.tblFileList.setItem(row, COL_PATH, QTableWidgetItem(WwiseTableRowData.get_path_text(display_path)))
 
     # 返回所有勾选行的 (行号, 文件路径)
     def get_selected_entries(self):

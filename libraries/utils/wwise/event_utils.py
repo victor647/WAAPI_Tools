@@ -67,7 +67,7 @@ def clear_event_actions(event: WwiseObject) -> bool:
 def get_event_name(obj: WwiseObject) -> str:
     obj_name = obj.name
     if obj.type == WwiseObjectType.Sound and project_conventions.use_full_name_in_sound():
-        if '_' in obj_name and audio_source_utils.get_source_file_path(obj):
+        if '_' in obj_name and audio_source_utils.get_source_absolute_path(obj):
             event_name = obj_name
         else:
             event_name = common_utils.get_full_name_with_acronym(obj)
@@ -89,14 +89,14 @@ def get_event_targets(event: WwiseObject) -> list:
         return []
     targets = []
     for action in actions:
-        target = waapi_utils.get_object_property(action, 'Target')
+        target = waapi_utils.get_referenced_object(action, 'Target')
         if not target:
             print(f"Event [{event.name}] has an action with no target!")
             continue
-        if 'name' not in target:
+        if not target.name:
             print(f"Event [{event.name}] has an action with missing target!")
             continue
-        target = waapi_utils.get_full_info_from_obj_id(target['id'])
+        target = waapi_utils.get_full_info_from_obj_id(target.id)
         if target and target.is_valid:
             targets.append(target)
     return targets
@@ -146,13 +146,13 @@ def get_all_wave_paths(event_obj: WwiseObject, relative_path: bool) -> list:
     paths = []
     for target in targets:
         if target.type == WwiseObjectType.Sound:
-            paths.append(audio_source_utils.get_source_file_path(target))
+            paths.append(audio_source_utils.get_source_absolute_path(target))
         else:
             # 递归查找子级
             def find_sounds_recursively(obj):
                 for child in waapi_utils.get_child_objects(obj):
                     if child.type == WwiseObjectType.Sound:
-                        path = audio_source_utils.get_source_file_path(child)
+                        path = audio_source_utils.get_source_absolute_path(child)
                         if relative_path:
                             path = path_utils.trim_after(path, "Originals\\")
                         paths.append(path)

@@ -11,17 +11,13 @@ from libraries.wwise_object import WwiseObjectType, WwiseObject
 from ui.WorkUnitImporter_ui import Ui_WorkUnitImporter
 
 
-def _ref_to_wobj(ref) -> WwiseObject:
-    """object.get 返回的引用可能是 dict，转为 WwiseObject。"""
-    if ref is None:
+def _ref_to_wobj(ref: WwiseObject) -> WwiseObject:
+    """属性引用返回的 WwiseObject 可能缺少 type，必要时回读完整信息。"""
+    if ref is None or not ref.id:
         return WwiseObject()
-    if isinstance(ref, WwiseObject):
-        if ref.wwise_dict and ref.wwise_dict.get('type'):
-            return ref
-        return waapi_utils.get_full_info_from_obj_id(ref.id) if ref.id else WwiseObject()
-    if isinstance(ref, dict) and ref.get('id'):
-        return waapi_utils.get_full_info_from_obj_id(ref['id'])
-    return WwiseObject()
+    if ref.wwise_dict and ref.wwise_dict.get('type'):
+        return ref
+    return waapi_utils.get_full_info_from_obj_id(ref.id)
 
 
 # 导入WorkUnit到另一个Wwise工程
@@ -162,7 +158,7 @@ class WorkUnitImporter(QDialog, Ui_WorkUnitImporter):
                         logging.error(f'Original file [{old_wav_path}] not found!')
                         continue
                 else:
-                    existing_wav_path = audio_source_utils.get_source_file_path(sound)
+                    existing_wav_path = audio_source_utils.get_source_absolute_path(sound)
                     if existing_wav_path is None or not os.path.samefile(new_wav_path, existing_wav_path):
                         waapi_utils.import_audio_file(new_wav_path, sound, language)
 
@@ -186,7 +182,7 @@ def import_property(node: ElementTree, obj: WwiseObject):
 
 # 导入组策略（如Switch分配）
 def import_grouping_list(node: ElementTree, obj: WwiseObject):
-    switch_group = _ref_to_wobj(waapi_utils.get_object_property(obj, 'SwitchGroupOrStateGroup'))
+    switch_group = _ref_to_wobj(waapi_utils.get_referenced_object(obj, 'SwitchGroupOrStateGroup'))
     if not switch_group:
         return
     children = waapi_utils.get_child_objects(obj)
@@ -203,7 +199,7 @@ def import_grouping_list(node: ElementTree, obj: WwiseObject):
 
 # 导入默认的Switch或State值
 def import_default_switch(node: ElementTree, obj: WwiseObject):
-    switch_group = _ref_to_wobj(waapi_utils.get_object_property(obj, 'SwitchGroupOrStateGroup'))
+    switch_group = _ref_to_wobj(waapi_utils.get_referenced_object(obj, 'SwitchGroupOrStateGroup'))
     if not switch_group:
         return
     switch_name = node.find('ObjectRef').attrib.name

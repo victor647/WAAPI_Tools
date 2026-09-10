@@ -14,14 +14,14 @@ def get_sound_language(source: WwiseObject):
                 break
         else:
             return 'SFX'
-    language = waapi_utils.get_object_property(source, 'audioSource:language')
+    language = waapi_utils.get_referenced_object(source, 'audioSource:language')
     if language is None:
         return 'SFX'
     return language.name
 
 # 获取默认语言
 def get_default_language():
-    return waapi_utils.get_project_property('DefaultLanguage')
+    return waapi_utils.get_referenced_object('DefaultLanguage')
 
 # 获取当前语言
 def get_current_language():
@@ -78,14 +78,14 @@ def get_wave_path_for_language(sound: WwiseObject, language:str):
         if source.type == WwiseObjectType.AudioSource:
             source_langauge = get_sound_language(source)
             if source_langauge == language:
-                return audio_source_utils.get_source_file_path(source)
+                return audio_source_utils.get_source_absolute_path(source)
     return None
 
 # 获取已有语言的源文件路径
 def get_wave_path_for_any_existing_language(sound: WwiseObject):
     sources = waapi_utils.get_child_objects(sound)
     for source in sources:
-        source_path = audio_source_utils.get_source_file_path(source)
+        source_path = audio_source_utils.get_source_absolute_path(source)
         if source_path:
             language = get_sound_language(source)
             return source_path, language

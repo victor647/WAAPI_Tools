@@ -3,6 +3,7 @@ import os.path
 from waapi import WaapiClient
 from libraries.singleton import Singleton
 from libraries.utils.log_utils import Logger
+from libraries.utils import user_config
 from libraries.utils.wwise import project_utils
 
 RETURN_FIELDS = {'return': ['id', 'name', 'type', 'path']}
@@ -65,23 +66,20 @@ class WAAPIClient(metaclass=Singleton):
     # 获取工程全局属性
     def get_project_property(self, property_name: str):
         if not self.client:
-            return None
+            return ""
         try:
             get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args['waql'] = 'from type Project'
-            else:
-                get_args['from'] = {'ofType': ['Project']}
+            get_args['waql'] = 'from type Project'
             get_args['options'] = {'return': [property_name]}
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if result:
                 return result['return'][0][property_name]
 
             Logger().error(f'WAAPI - Cannot find property named [{property_name}] in project!')
-            return None
+            return ""
         except Exception as e:
             Logger().error(str(e))
-            return None
+            return ""
 
     # 获取对象的属性
     def get_object_property(self, obj: dict, property_name: str):
@@ -89,17 +87,10 @@ class WAAPIClient(metaclass=Singleton):
             return None
         try:
             get_args = {}
-            project_ver = project_utils.get_project_version()
-            if project_ver > 2020:
-                get_args ['waql'] = f'from object \"{obj["id"]}\"'
-            else:
-                 get_args['from'] = {'id': [obj["id"]]}
+            get_args ['waql'] = f'from object \"{obj["id"]}\"'
             get_args['options'] = {'return': [property_name]}
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if not result or result['return'][0] == {}:
-                # 2020之前的版本，引用类对象需要添加@
-                if project_ver < 2020 and property_name[0] != '@':
-                    return self.get_object_property(obj, f'@{property_name}')
                 Logger().error(f"WAAPI - Cannot find property named [{property_name}] in {obj.get('type')} [{obj.get('path')}]!")
                 return None
             return_obj = result['return'][0]
@@ -114,10 +105,7 @@ class WAAPIClient(metaclass=Singleton):
             return {}
         try:
             get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args['waql'] = f'from object \"{obj["id"]}\"'
-            else:
-                get_args['from'] = {'id': [obj["id"]]}
+            get_args['waql'] = f'from object \"{obj["id"]}\"'
             get_args['options'] = {'return': property_names}
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if not result or not result.get('return'):
@@ -180,11 +168,7 @@ class WAAPIClient(metaclass=Singleton):
             return {}
         try:
             get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from object \"{path}\"'
-            else:
-                get_args['from'] = {'path': [path]}
-                get_args['transform'] = [{'select': ['referencesTo']}]
+            get_args ['waql'] = f'from object \"{path}\"'
             get_args['options'] = RETURN_FIELDS
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if not result or not result.get('return'):
@@ -204,11 +188,7 @@ class WAAPIClient(metaclass=Singleton):
         try:
             get_args = {}
             obj_id = obj["id"]
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from object \"{obj_id}\" select referencesTo'
-            else:
-                get_args['from'] = {'id': [obj_id]}
-                get_args['transform'] = [{'select': ['referencesTo']}]
+            get_args ['waql'] = f'from object \"{obj_id}\" select referencesTo'
             get_args['options'] = RETURN_FIELDS
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if not result or not result.get('return'):
@@ -224,11 +204,7 @@ class WAAPIClient(metaclass=Singleton):
             return []
         try:
             get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args['waql'] = f'from type AudioFileSource where originalRelativeFilePath = "{original_relative_path}"'
-            else:
-                get_args['from'] = {'ofType': ['AudioFileSource']}
-                get_args['transform'] = [{'where': ['originalRelativeFilePath:matches', original_relative_path]}]
+            get_args['waql'] = f'from type AudioFileSource where originalRelativeFilePath = "{original_relative_path}"'
             get_args['options'] = RETURN_FIELDS
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if not result or not result.get('return'):
@@ -245,11 +221,7 @@ class WAAPIClient(metaclass=Singleton):
         try:
             get_args = {}
             obj_id = obj["id"]
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from object \"{obj_id}\" select parent'
-            else:
-                get_args['from'] = {'id': [obj_id]}
-                get_args['transform'] = [{'select': ['parent']}]
+            get_args ['waql'] = f'from object \"{obj_id}\" select parent'
             get_args['options'] = RETURN_FIELDS
             result = self.client.call('ak.wwise.core.object.get', get_args)
             parents = result['return']
@@ -263,16 +235,8 @@ class WAAPIClient(metaclass=Singleton):
         if not self.client or not obj:
             return []
         try:
-            get_args = {}
             obj_id = obj["id"]
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from object \"{obj_id}\" select ancestors'
-            else:
-                get_args['from'] = {'id': [obj_id]}
-                get_args['transform'] = [{'select': ['ancestors']}]
-            get_args['options'] = RETURN_FIELDS
-            result = self.client.call('ak.wwise.core.object.get', get_args)
-            return list(result['return']) if result else []
+            return self._paged_object_query({'waql': f'from object \"{obj_id}\" select ancestors'})
         except Exception as e:
             Logger().error(str(e))
             return []
@@ -284,7 +248,7 @@ class WAAPIClient(metaclass=Singleton):
         try:
             children = []
             index = 0
-            interval = 500
+            interval = user_config.get_tool_page_size()
             while True:
                 get_args = {
                     'from': {'id': [obj["id"]]},
@@ -305,29 +269,44 @@ class WAAPIClient(metaclass=Singleton):
             Logger().error(str(e))
             return []
 
-    # 获取特定类型的全部子对象（child_type 为 Wwise API 类型字符串，如 Sound、GameParameter）
-    def get_descendants_of_type(self, obj: dict, child_type: str) -> list[dict]:
+    # 获取指定类型的全部子对象（child_type 可为类型的字符串或字符串列表）
+    def get_descendants_of_type(self, obj: dict, child_type) -> list[dict]:
         if not self.client or not obj:
             return []
+        types = [child_type] if isinstance(child_type, str) else [t for t in child_type if t]
+        if not types:
+            return []
+        obj_id = obj["id"]
         try:
-            get_args = {}
-            obj_id = obj["id"]
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from object \"{obj_id}\" select descendants where type = \"{child_type}\"'
-            else:
-                get_args['from'] = {'id': [obj_id]}
-                get_args['transform'] = [
-                        {'select': ['descendants']},
-                        {'where': [f'type:{child_type}']}
-                    ]
-            get_args['options'] = RETURN_FIELDS
-            result = self.client.call('ak.wwise.core.object.get', get_args)
-            if not result or not result.get('return'):
-                return []
-            return list(result['return'])
+            condition = ' or '.join(f'type = "{child_type_name}"' for child_type_name in types)
+            waql = f'from object \"{obj_id}\" select descendants where {condition}'
+            return self._paged_object_query({'waql': waql})
         except Exception as e:
             Logger().error(str(e))
             return []
+
+    # 按配置的分页大小执行 object.get，直到取完（range 被忽略时靠去重保护退出）
+    # 分页范围必须放在 transform 步骤里：部分 Wwise 版本（如 2023.1）不接受顶层 range，会直接报错
+    def _paged_object_query(self, base_args: dict) -> list[dict]:
+        objects: list[dict] = []
+        seen_ids: set = set()
+        interval = user_config.get_tool_page_size()
+        index = 0
+        while True:
+            get_args = dict(base_args)
+            get_args['options'] = RETURN_FIELDS
+            # 已有 transform 步骤的查询（如后代回退查询）在其后追加分页范围，不要覆盖
+            get_args['transform'] = list(base_args.get('transform') or []) + [{'range': [index * interval, interval]}]
+            result = self.client.call('ak.wwise.core.object.get', get_args)
+            page = list(result['return']) if result and result.get('return') else []
+            new_items = [item for item in page if item.get('id') not in seen_ids]
+            for item in new_items:
+                seen_ids.add(item.get('id'))
+            objects += new_items
+            if len(page) < interval or not new_items:
+                break
+            index += 1
+        return objects
 
     # 获取整个Wwise工程所有对象
     def get_global_objects(self) -> list[dict]:
@@ -354,10 +333,7 @@ class WAAPIClient(metaclass=Singleton):
             return {}
         try:
             get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from object \"{obj_id}\"'
-            else:
-                 get_args['from'] = {'id': [obj_id]}
+            get_args ['waql'] = f'from object \"{obj_id}\"'
             get_args['options'] = RETURN_FIELDS
             return_obj = self.client.call('ak.wwise.core.object.get', get_args)
             if not return_obj or len(return_obj['return']) == 0:
@@ -373,10 +349,7 @@ class WAAPIClient(metaclass=Singleton):
             return {}
         try:
             get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from object \"{path}\"'
-            else:
-                 get_args['from'] = {'path': [path]}
+            get_args ['waql'] = f'from object \"{path}\"'
             get_args['options'] = RETURN_FIELDS
             return_obj = self.client.call('ak.wwise.core.object.get', get_args)
             if not return_obj or len(return_obj['return']) == 0:
@@ -392,11 +365,7 @@ class WAAPIClient(metaclass=Singleton):
             return {}
         try:
             get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from type {obj_type} where name: \"*{obj_name}\"'
-            else:
-                get_args['from'] = {'ofType': [obj_type]}
-                get_args['transform'] = [{'where': ['name:matches', obj_name]}]
+            get_args ['waql'] = f'from type {obj_type} where name: \"*{obj_name}\"'
             get_args['options'] = RETURN_FIELDS
             return_obj = self.client.call('ak.wwise.core.object.get', get_args)
             if return_obj is None or len(return_obj['return']) == 0:
@@ -418,19 +387,13 @@ class WAAPIClient(metaclass=Singleton):
         if not self.client:
             return []
         try:
-            get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from search \"{obj_name}\"'
-            else:
-                 get_args['from'] = {'search': [obj_name]}
-            get_args['options'] = RETURN_FIELDS
-            result = self.client.call('ak.wwise.core.object.get', get_args)
-            if result is None or len(result['return']) == 0:
+            found = self._paged_object_query({'waql': f'from search \"{obj_name}\"'})
+            if not found:
                 return []
             if not exact_match:
-                return list(result['return'])
+                return found
             matching_objects = []
-            for raw in result['return']:
+            for raw in found:
                 if raw.get('name') == obj_name:
                     matching_objects.append(raw)
             return matching_objects
@@ -443,16 +406,7 @@ class WAAPIClient(metaclass=Singleton):
         if not self.client:
             return []
         try:
-            get_args = {}
-            if project_utils.get_project_version() > 2020:
-                get_args ['waql'] = f'from type {obj_type}'
-            else:
-                 get_args['from'] = {'ofType': [obj_type]}
-            get_args['options'] = RETURN_FIELDS
-            result = self.client.call('ak.wwise.core.object.get', get_args)
-            if not result or not result.get('return'):
-                return []
-            return list(result['return'])
+            return self._paged_object_query({'waql': f'from type {obj_type}'})
         except Exception as e:
             Logger().error(str(e))
             return []
@@ -526,30 +480,22 @@ class WAAPIClient(metaclass=Singleton):
         try:
             parent_path = os.path.dirname(obj_path)
             obj_name = os.path.basename(obj_path)
-            # 新版Wwise可以直接通过Set创建
-            if project_utils.get_project_version() > 2020:
-                create_args = {
-                    'objects': [
-                        {
-                            'object': f'\\{parent_path}',
-                            'children': [
-                                {
-                                    'type': obj_type,
-                                    'name': obj_name,
-                                }
-                            ]
-                        }
-                    ],
-                    'onNameConflict': on_name_conflict
-                }
-                result_obj = self.client.call('ak.wwise.core.object.set', create_args)
-            else:
-                create_args = {
-                    'parent': parent_path,
-                    'type': obj_type,
-                    'name': obj_name
-                }
-                result_obj = self.client.call('ak.wwise.core.object.create', create_args)
+            # Wwise 2021+ 通过 object.set 创建
+            create_args = {
+                'objects': [
+                    {
+                        'object': f'\\{parent_path}',
+                        'children': [
+                            {
+                                'type': obj_type,
+                                'name': obj_name,
+                            }
+                        ]
+                    }
+                ],
+                'onNameConflict': on_name_conflict
+            }
+            result_obj = self.client.call('ak.wwise.core.object.set', create_args)
             if result_obj:
                 result_obj = self.get_full_info_from_obj_id(result_obj['objects'][0]['children'][0]['id'])
                 Logger().debug(f"WAAPI - {obj_type} [{obj_path}] created")

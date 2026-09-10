@@ -5,66 +5,86 @@
       "2P": "_2P",
       "3P": "_3P"
     },
-    "SwitchGroup": "Net_Role",
+    "BusSuffix": {
+      "1P": "_1P",
+      "2P": "_2P",
+      "3P": "_3P"
+    },
+    "SwitchGroup": "SW_Player",
     "SwitchValues": {
-      "1P": "Self_1P",
-      "2P": "Teammate_2P",
-      "3P": "Enemy_3P"
+      "1P": "Player_1P",
+      "2P": "Player_2P",
+      "3P": "Player_3P"
     }
   },
-  "ImplementedLanguages": [
-    "CHS",
-    "EN",
-    "JA"
-  ],
-  "FullNameInSound": false,
-  "PlayPrefixInEvent": false,
+  "PlayPrefixInEvent": true,
+  "EventRefNotes": false,
   "ContainerSuffix": {
     "Random": "_\\d{2}$",
     "Sequence": "_[A-Z]$"
   },
-  "AcronymMap": {
-    "Ability": "ABL",
-    "Action": "ACT",
-    "Ambience": "AMB",
-    "Character": "CHR",
-    "Cutscene": "CTS",
-    "Enemy": "ENM",
-    "Foley": "FLY",
-    "Interface": "UI",
-    "Music": "BGM",
-    "Object": "OBJ",
-    "Player": "PLR",
-    "Plugin": "DSP",
-    "Scene": "SCE",
-    "Setting": "SET",
-    "Skill": "SKL",
-    "Spatial": "SPL",
-    "Timeline": "TML",
-    "Vehicle": "VCL",
-    "Voice": "VO",
-    "Weapon": "WPN"
+  "AcronymConvention": {
+    "Enabled": false,
+    "AcronymMap": {
+      "Ability": "ABL",
+      "Action": "ACT",
+      "Ambience": "AMB",
+      "Character": "CHR",
+      "Cutscene": "CTS",
+      "Enemy": "ENM",
+      "Foley": "FLY",
+      "Interface": "UI",
+      "Music": "BGM",
+      "Object": "OBJ",
+      "Player": "PLR",
+      "Plugin": "DSP",
+      "Scene": "SCE",
+      "Setting": "SET",
+      "Skill": "SKL",
+      "Spatial": "SPL",
+      "Timeline": "TML",
+      "Vehicle": "VCL",
+      "Voice": "VO",
+      "Weapon": "WPN"
+    }
   },
-  "ColorMap": {
-    "Ability": 24,
-    "Action": 21,
-    "Ambience": 17,
-    "Character": 20,
-    "Cutscene": 16,
-    "Enemy": 23,
-    "Foley": 21,
-    "Interface": 15,
-    "Music": 26,
-    "Object": 18,
-    "Player": 20,
-    "Plugin": 14,
-    "Scene": 17,
-    "Setting": 14,
-    "Skill": 24,
-    "Spatial": 14,
-    "Timeline": 16,
-    "Vehicle": 25,
-    "Voice": 19,
-    "Weapon": 22
+  "ColorConvention": {
+    "Enabled": false,
+    "ColorMap": {
+      "Ability": 24,
+      "Action": 21,
+      "Ambience": 17,
+      "Character": 20,
+      "Cutscene": 16,
+      "Enemy": 23,
+      "Foley": 21,
+      "Interface": 15,
+      "Music": 26,
+      "Object": 18,
+      "Player": 20,
+      "Plugin": 14,
+      "Scene": 17,
+      "Setting": 14,
+      "Skill": 24,
+      "Spatial": 14,
+      "Timeline": 16,
+      "Vehicle": 25,
+      "Voice": 19,
+      "Weapon": 22
+    },
+    "EventRefDarkColor": true
+  },
+  "NameCaseConvention": {
+    "Enabled": true,
+    "Mode": "title"
+  },
+  "PathLengthConvention": {
+    "Enabled": false,
+    "FullNameInSound": false
+  },
+  "UnimplementedLanguages": [],
+  "BankConvention": {
+    "UseAutoDefinedBank": true,
+    "SplitEventMedia": false
   }
 }

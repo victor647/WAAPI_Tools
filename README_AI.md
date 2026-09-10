@@ -18,7 +18,14 @@
 }
 ```
 
-- `proxy`：OpenAI 兼容代理根地址，代码会拼接 `/v1/chat/completions`。
+- `mode`：连接模式，`proxy`（代理模式）或 `official`（官方 API 模式），在设置窗口的
+  “AI 助手”Tab 里二选一。
+- `proxy`：代理模式下的 API 地址（如 `http://127.0.0.1:15721`，可带 `/v1`，也可直接粘贴
+  完整 `…/v1/chat/completions`）；留空时回退 `https://api.openai.com`。
+- `provider`：官方 API 模式下的服务提供方，内置 OpenAI / DeepSeek / 通义千问（兼容模式）/
+  Kimi / 智谱 GLM / Google Gemini（兼容端点）/ **Anthropic Claude（原生协议）** / 自定义。
+  除 Claude 走 Anthropic `/v1/messages`（`x-api-key`，模型名必填）外，其余均为 OpenAI 兼容协议。
+- `base_url`：官方模式选择“自定义”时填写的 OpenAI 兼容地址。
 - `model`：界面 AI 输入栏左侧有模型下拉框：启动时会请求代理的 `/v1/models` 填充列表，
   选择后自动写回本配置（下次启动沿用）。也可手动输入模型名。留空时下拉框会默认选中
   列表第一个模型。
@@ -71,7 +78,11 @@
 | 查看对象下有哪些音频源 / 源文件路径 | `get_audio_sources` | `waapi_utils.get_descendants_of_type(..., AudioSource)`（Event 用 `event_utils.get_event_targets` 展开）+ `audio_source_utils.get_source_file_path` |
 | 统计这些对象的音频资源总大小 | `calculate_audio_source_size` | `waapi_utils.get_descendants_of_type(..., AudioSource)`（Event 展开播放目标）+ `audio_source_utils.get_source_file_path` + `os.path.getsize`（按路径去重） |
 | 列出对象下有哪些子级 / 后代 | `get_children` | `waapi_utils.get_child_objects(..., include_descendants)` |
-| 一次性递归查找对象下全部后代（可按类型过滤） | `list_descendants` | `waapi_utils.get_child_objects(..., include_descendants=True)` + 本地按 type 过滤 |
+| 查找对象下某类型的全部后代（如所有 Sound / Event） | `get_descendants_of_type` | `waapi_utils.get_descendants_of_type`（Wwise 侧 WAQL 按类型过滤） |
+| 统计任意列表工具返回的条数 | `count_tool_items` | 调用目标工具后对结果列表计数（自动识别 items/objects/data 等） |
+| 按列表项字段分组计数 / 有多少分组超过 N 个 | `group_tool_items` | 调用目标工具 + 按字段分组计数，`min_count` 返回 matched_count |
+| 多步链式统计（先取 A，再统计每个 A 下 B 的数量） | `aggregate_tool_chain` | 顺序执行 `steps`，自动把上一步 id 注入下一步 `object_ids`，末步按 `group_by` 分组（`min_count` 返回 matched_count） |
+| 复杂组合逻辑（多级遍历 / 聚合统计 / 批量改） | `run_wwise_script` | 进程内 `exec` 受限脚本（注入 `waapi_utils` 等模块，白名单内建 + 行数/超时预算），需 `confirmed=true`，由 AI 层包撤销组 |
 | 查询哪些对象引用它 / 被谁使用 | `get_references` | `waapi_utils.get_object_references` |
 | 统计其中有多少被 Event 引用 | `check_event_references` | `event_utils.has_event_reference`（引用含 EventAction 即算） |
 | 全部改成小写 / 大写 / 首字母大写 | `rename_case` | `common_utils.rename_to_lower_case` / `rename_to_upper_case` / `rename_to_title_case`（内部走 `waapi_utils.rename_object`） |

@@ -5,13 +5,14 @@
 """
 import globals.global_variables as gv
 from enum import Enum
+from data import project_conventions
 from PySide6.QtWidgets import QTableView
 from PySide6.QtCore import Qt, Signal
 from libraries.table_view.table_facade import TableFacade
 from libraries.table_view.table_item_model import TableItemModel
 from libraries.table_view.table_cell_data import TableCellData
 from libraries.wwise_object import WwiseObject, WwiseObjectType
-from libraries.utils.wwise import common_utils, waapi_utils
+from libraries.utils.wwise import common_utils, soundbank_utils, waapi_utils
 from table.wwise_table_headers import *
 from table.wwise_table_row_data import WwiseTableRowData
 from libraries.utils.log_utils import Logger
@@ -112,6 +113,8 @@ class WwiseObjectTable(TableFacade):
         self.model.row_metadata_changed.connect(self._on_row_wwise_object_updated)
         self.wwise_transport_id: int = -1
         self._inclusion_cache: dict[str, bool] = {}
+        # 集成视图「所属SoundBank」列的 Event -> Bank 对应关系，整表读取期间共用
+        self._event_bank_map: dict | None = None
 
     def _run_batch(
         self,
@@ -145,12 +148,23 @@ class WwiseObjectTable(TableFacade):
                 hidden_columns.update(range(VOLUME_COL, ORIGINAL_PATH_COL + 1))
             elif self.display_mode == WwiseTableDisplayMode.Integration:
                 hidden_columns.update(range(ACTION_COL, SOUNDBANK_COL + 1))
+        # 使用自动定义的 Bank 时不展示「所属SoundBank」列
+        elif self.display_mode == WwiseTableDisplayMode.Integration and project_conventions.use_auto_defined_bank():
+            hidden_columns.add(SOUNDBANK_COL)
         for column in range(self.model.columnCount()):
             self.table_view.setColumnHidden(column, column in hidden_columns)
 
     def refresh_table(self, refresh_data: bool = True):
+        self._event_bank_map = None
         super().refresh_table(refresh_data)
         self.apply_column_visibility()
+
+    # 集成视图需要时一次性算出 Event 对应的 Bank，后续行直接复用
+    @property
+    def event_bank_map(self) -> dict:
+        if self._event_bank_map is None:
+            self._event_bank_map = soundbank_utils.build_event_bank_map()
+        return self._event_bank_map
 
     def get_common_headers(self):
         return COMMON_HEADERS.copy()
@@ -170,6 +184,7 @@ class WwiseObjectTable(TableFacade):
         if not self.light_mode:
             Logger().info("开始读取音频对象信息...")
         self._inclusion_cache = {}
+        self._event_bank_map = None
         self._run_batch(
             gv.active_objects,
             self.add_row_data,
@@ -223,7 +238,7 @@ class WwiseObjectTable(TableFacade):
             if self.display_mode == WwiseTableDisplayMode.Design:
                 row_data.read_design_info()
             elif self.display_mode == WwiseTableDisplayMode.Integration:
-                row_data.read_integration_info()
+                row_data.read_integration_info(self.event_bank_map)
         except Exception as e:
             Logger().error(f"读取 {row_data.type} [{row_data.name}] 附加属性失败：{e}")
 

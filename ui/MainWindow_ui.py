@@ -19,15 +19,15 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QStatusBar, QTableView, QTextEdit,
-    QVBoxLayout, QWidget)
+    QSizePolicy, QSpacerItem, QStatusBar, QTableView,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(1160, 600)
-        MainWindow.setMinimumSize(QSize(1160, 600))
+        MainWindow.resize(1200, 600)
+        MainWindow.setMinimumSize(QSize(1200, 600))
         self.actionEnable = QAction(MainWindow)
         self.actionEnable.setObjectName(u"actionEnable")
         self.actionDisable = QAction(MainWindow)
@@ -166,8 +166,10 @@ class Ui_MainWindow(object):
         self.actImportFMODEvent.setObjectName(u"actImportFMODEvent")
         self.actImportFMODPreset = QAction(MainWindow)
         self.actImportFMODPreset.setObjectName(u"actImportFMODPreset")
-        self.actUpdateNoteAndColor = QAction(MainWindow)
-        self.actUpdateNoteAndColor.setObjectName(u"actUpdateNoteAndColor")
+        self.actAutoSetColor = QAction(MainWindow)
+        self.actAutoSetColor.setObjectName(u"actAutoSetColor")
+        self.actAutoAddNotes = QAction(MainWindow)
+        self.actAutoAddNotes.setObjectName(u"actAutoAddNotes")
         self.actRenameEventByTarget = QAction(MainWindow)
         self.actRenameEventByTarget.setObjectName(u"actRenameEventByTarget")
         self.actUseFullName = QAction(MainWindow)
@@ -244,8 +246,11 @@ class Ui_MainWindow(object):
         self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
         self.grpTableAction = QGroupBox(self.centralwidget)
         self.grpTableAction.setObjectName(u"grpTableAction")
-        self.grpTableAction.setMinimumSize(QSize(420, 0))
-        self.grpTableAction.setMaximumSize(QSize(500, 16777215))
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        sizePolicy.setHorizontalStretch(1)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.grpTableAction.sizePolicy().hasHeightForWidth())
+        self.grpTableAction.setSizePolicy(sizePolicy)
         self.verticalLayout_2 = QVBoxLayout(self.grpTableAction)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.horizontalLayout_3 = QHBoxLayout()
@@ -257,18 +262,18 @@ class Ui_MainWindow(object):
 
         self.btnGetSelectedObjects = QPushButton(self.grpTableAction)
         self.btnGetSelectedObjects.setObjectName(u"btnGetSelectedObjects")
-        sizePolicy = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Fixed)
-        sizePolicy.setHorizontalStretch(1)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.btnGetSelectedObjects.sizePolicy().hasHeightForWidth())
-        self.btnGetSelectedObjects.setSizePolicy(sizePolicy)
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Fixed)
+        sizePolicy1.setHorizontalStretch(1)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.btnGetSelectedObjects.sizePolicy().hasHeightForWidth())
+        self.btnGetSelectedObjects.setSizePolicy(sizePolicy1)
 
         self.horizontalLayout_3.addWidget(self.btnGetSelectedObjects)
 
         self.btnSelectInWwise = QPushButton(self.grpTableAction)
         self.btnSelectInWwise.setObjectName(u"btnSelectInWwise")
-        sizePolicy.setHeightForWidth(self.btnSelectInWwise.sizePolicy().hasHeightForWidth())
-        self.btnSelectInWwise.setSizePolicy(sizePolicy)
+        sizePolicy1.setHeightForWidth(self.btnSelectInWwise.sizePolicy().hasHeightForWidth())
+        self.btnSelectInWwise.setSizePolicy(sizePolicy1)
 
         self.horizontalLayout_3.addWidget(self.btnSelectInWwise)
 
@@ -284,8 +289,8 @@ class Ui_MainWindow(object):
 
         self.cbbTableDisplayMode = QComboBox(self.grpTableAction)
         self.cbbTableDisplayMode.setObjectName(u"cbbTableDisplayMode")
-        sizePolicy.setHeightForWidth(self.cbbTableDisplayMode.sizePolicy().hasHeightForWidth())
-        self.cbbTableDisplayMode.setSizePolicy(sizePolicy)
+        sizePolicy1.setHeightForWidth(self.cbbTableDisplayMode.sizePolicy().hasHeightForWidth())
+        self.cbbTableDisplayMode.setSizePolicy(sizePolicy1)
         self.cbbTableDisplayMode.setMinimumSize(QSize(100, 0))
 
         self.horizontalLayout_6.addWidget(self.cbbTableDisplayMode)
@@ -306,32 +311,32 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_5.addWidget(self.grpTableAction)
 
-        self.grpFindFilter = QGroupBox(self.centralwidget)
-        self.grpFindFilter.setObjectName(u"grpFindFilter")
-        self.verticalLayout = QVBoxLayout(self.grpFindFilter)
+        self.grpFind = QGroupBox(self.centralwidget)
+        self.grpFind.setObjectName(u"grpFind")
+        sizePolicy.setHeightForWidth(self.grpFind.sizePolicy().hasHeightForWidth())
+        self.grpFind.setSizePolicy(sizePolicy)
+        self.verticalLayout = QVBoxLayout(self.grpFind)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.horizontalLayout_4 = QHBoxLayout()
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
-        self.cbxRecursiveFind = QCheckBox(self.grpFindFilter)
+        self.cbxRecursiveFind = QCheckBox(self.grpFind)
         self.cbxRecursiveFind.setObjectName(u"cbxRecursiveFind")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
         sizePolicy1.setHeightForWidth(self.cbxRecursiveFind.sizePolicy().hasHeightForWidth())
         self.cbxRecursiveFind.setSizePolicy(sizePolicy1)
+        self.cbxRecursiveFind.setVisible(False)
         self.cbxRecursiveFind.setChecked(True)
 
         self.horizontalLayout_4.addWidget(self.cbxRecursiveFind)
 
-        self.cbxKeepSelf = QCheckBox(self.grpFindFilter)
+        self.cbxKeepSelf = QCheckBox(self.grpFind)
         self.cbxKeepSelf.setObjectName(u"cbxKeepSelf")
-        sizePolicy.setHeightForWidth(self.cbxKeepSelf.sizePolicy().hasHeightForWidth())
-        self.cbxKeepSelf.setSizePolicy(sizePolicy)
-        self.cbxKeepSelf.setMinimumSize(QSize(140, 0))
+        sizePolicy1.setHeightForWidth(self.cbxKeepSelf.sizePolicy().hasHeightForWidth())
+        self.cbxKeepSelf.setSizePolicy(sizePolicy1)
+        self.cbxKeepSelf.setVisible(False)
 
         self.horizontalLayout_4.addWidget(self.cbxKeepSelf)
 
-        self.cbxTurboMode = QCheckBox(self.grpFindFilter)
+        self.cbxTurboMode = QCheckBox(self.grpFind)
         self.cbxTurboMode.setObjectName(u"cbxTurboMode")
         sizePolicy1.setHeightForWidth(self.cbxTurboMode.sizePolicy().hasHeightForWidth())
         self.cbxTurboMode.setSizePolicy(sizePolicy1)
@@ -339,111 +344,159 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addWidget(self.cbxTurboMode)
 
-        self.btnFindParent = QPushButton(self.grpFindFilter)
-        self.btnFindParent.setObjectName(u"btnFindParent")
-        sizePolicy1.setHeightForWidth(self.btnFindParent.sizePolicy().hasHeightForWidth())
-        self.btnFindParent.setSizePolicy(sizePolicy1)
-        self.btnFindParent.setMaximumSize(QSize(78, 16777215))
+        self.btnAdvancedFind = QPushButton(self.grpFind)
+        self.btnAdvancedFind.setObjectName(u"btnAdvancedFind")
 
-        self.horizontalLayout_4.addWidget(self.btnFindParent)
+        self.horizontalLayout_4.addWidget(self.btnAdvancedFind)
 
-        self.btnFindChildren = QPushButton(self.grpFindFilter)
-        self.btnFindChildren.setObjectName(u"btnFindChildren")
-        sizePolicy1.setHeightForWidth(self.btnFindChildren.sizePolicy().hasHeightForWidth())
-        self.btnFindChildren.setSizePolicy(sizePolicy1)
-        self.btnFindChildren.setMaximumSize(QSize(78, 16777215))
+        self.btnClearTable = QPushButton(self.grpFind)
+        self.btnClearTable.setObjectName(u"btnClearTable")
 
-        self.horizontalLayout_4.addWidget(self.btnFindChildren)
+        self.horizontalLayout_4.addWidget(self.btnClearTable)
 
-        self.btnFindReferences = QPushButton(self.grpFindFilter)
-        self.btnFindReferences.setObjectName(u"btnFindReferences")
-        sizePolicy1.setHeightForWidth(self.btnFindReferences.sizePolicy().hasHeightForWidth())
-        self.btnFindReferences.setSizePolicy(sizePolicy1)
-        self.btnFindReferences.setMaximumSize(QSize(78, 16777215))
-
-        self.horizontalLayout_4.addWidget(self.btnFindReferences)
-
-        self.btnObjectHistoryBack = QPushButton(self.grpFindFilter)
+        self.btnObjectHistoryBack = QPushButton(self.grpFind)
         self.btnObjectHistoryBack.setObjectName(u"btnObjectHistoryBack")
         self.btnObjectHistoryBack.setMaximumSize(QSize(48, 16777215))
 
         self.horizontalLayout_4.addWidget(self.btnObjectHistoryBack)
 
-        self.btnObjectHistoryForward = QPushButton(self.grpFindFilter)
+        self.btnObjectHistoryForward = QPushButton(self.grpFind)
         self.btnObjectHistoryForward.setObjectName(u"btnObjectHistoryForward")
         self.btnObjectHistoryForward.setMaximumSize(QSize(48, 16777215))
 
         self.horizontalLayout_4.addWidget(self.btnObjectHistoryForward)
 
-        self.btnClearTable = QPushButton(self.grpFindFilter)
-        self.btnClearTable.setObjectName(u"btnClearTable")
-
-        self.horizontalLayout_4.addWidget(self.btnClearTable)
-
 
         self.verticalLayout.addLayout(self.horizontalLayout_4)
 
-        self.horizontalLayout_2 = QHBoxLayout()
-        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.cbxTableSelectAll = QCheckBox(self.grpFindFilter)
-        self.cbxTableSelectAll.setObjectName(u"cbxTableSelectAll")
-        self.cbxTableSelectAll.setMaximumSize(QSize(60, 16777215))
-        self.cbxTableSelectAll.setChecked(True)
-
-        self.horizontalLayout_2.addWidget(self.cbxTableSelectAll)
-
-        self.cbbFilterType = QComboBox(self.grpFindFilter)
-        self.cbbFilterType.setObjectName(u"cbbFilterType")
-        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.horizontalLayout_findActions = QHBoxLayout()
+        self.horizontalLayout_findActions.setObjectName(u"horizontalLayout_findActions")
+        self.btnFindParent = QPushButton(self.grpFind)
+        self.btnFindParent.setObjectName(u"btnFindParent")
+        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         sizePolicy2.setHorizontalStretch(0)
         sizePolicy2.setVerticalStretch(0)
-        sizePolicy2.setHeightForWidth(self.cbbFilterType.sizePolicy().hasHeightForWidth())
-        self.cbbFilterType.setSizePolicy(sizePolicy2)
-        self.cbbFilterType.setMaximumSize(QSize(180, 16777215))
+        sizePolicy2.setHeightForWidth(self.btnFindParent.sizePolicy().hasHeightForWidth())
+        self.btnFindParent.setSizePolicy(sizePolicy2)
 
-        self.horizontalLayout_2.addWidget(self.cbbFilterType)
+        self.horizontalLayout_findActions.addWidget(self.btnFindParent)
 
-        self.ledFilterKeyword = QLineEdit(self.grpFindFilter)
+        self.btnFindChildren = QPushButton(self.grpFind)
+        self.btnFindChildren.setObjectName(u"btnFindChildren")
+        sizePolicy2.setHeightForWidth(self.btnFindChildren.sizePolicy().hasHeightForWidth())
+        self.btnFindChildren.setSizePolicy(sizePolicy2)
+
+        self.horizontalLayout_findActions.addWidget(self.btnFindChildren)
+
+        self.btnFindReferences = QPushButton(self.grpFind)
+        self.btnFindReferences.setObjectName(u"btnFindReferences")
+        sizePolicy2.setHeightForWidth(self.btnFindReferences.sizePolicy().hasHeightForWidth())
+        self.btnFindReferences.setSizePolicy(sizePolicy2)
+
+        self.horizontalLayout_findActions.addWidget(self.btnFindReferences)
+
+        self.cbbFindProperty = QComboBox(self.grpFind)
+        self.cbbFindProperty.addItem("")
+        self.cbbFindProperty.addItem("")
+        self.cbbFindProperty.addItem("")
+        self.cbbFindProperty.addItem("")
+        self.cbbFindProperty.addItem("")
+        self.cbbFindProperty.addItem("")
+        self.cbbFindProperty.addItem("")
+        self.cbbFindProperty.setObjectName(u"cbbFindProperty")
+        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        sizePolicy3.setHorizontalStretch(0)
+        sizePolicy3.setVerticalStretch(0)
+        sizePolicy3.setHeightForWidth(self.cbbFindProperty.sizePolicy().hasHeightForWidth())
+        self.cbbFindProperty.setSizePolicy(sizePolicy3)
+        self.cbbFindProperty.setMinimumSize(QSize(120, 0))
+
+        self.horizontalLayout_findActions.addWidget(self.cbbFindProperty)
+
+        self.btnFindProperty = QPushButton(self.grpFind)
+        self.btnFindProperty.setObjectName(u"btnFindProperty")
+
+        self.horizontalLayout_findActions.addWidget(self.btnFindProperty)
+
+        self.findActionsSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_findActions.addItem(self.findActionsSpacer)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_findActions)
+
+
+        self.horizontalLayout_5.addWidget(self.grpFind)
+
+        self.grpFilter = QGroupBox(self.centralwidget)
+        self.grpFilter.setObjectName(u"grpFilter")
+        sizePolicy.setHeightForWidth(self.grpFilter.sizePolicy().hasHeightForWidth())
+        self.grpFilter.setSizePolicy(sizePolicy)
+        self.verticalLayout_filter = QVBoxLayout(self.grpFilter)
+        self.verticalLayout_filter.setObjectName(u"verticalLayout_filter")
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.ledFilterKeyword = QLineEdit(self.grpFilter)
         self.ledFilterKeyword.setObjectName(u"ledFilterKeyword")
-        sizePolicy2.setHeightForWidth(self.ledFilterKeyword.sizePolicy().hasHeightForWidth())
-        self.ledFilterKeyword.setSizePolicy(sizePolicy2)
+        sizePolicy3.setHeightForWidth(self.ledFilterKeyword.sizePolicy().hasHeightForWidth())
+        self.ledFilterKeyword.setSizePolicy(sizePolicy3)
         self.ledFilterKeyword.setMinimumSize(QSize(220, 0))
 
         self.horizontalLayout_2.addWidget(self.ledFilterKeyword)
 
-        self.btnApplyFilter = QPushButton(self.grpFindFilter)
+        self.btnApplyFilter = QPushButton(self.grpFilter)
         self.btnApplyFilter.setObjectName(u"btnApplyFilter")
         self.btnApplyFilter.setMaximumSize(QSize(52, 16777215))
 
         self.horizontalLayout_2.addWidget(self.btnApplyFilter)
 
-        self.btnAdvancedFilter = QPushButton(self.grpFindFilter)
+
+        self.verticalLayout_filter.addLayout(self.horizontalLayout_2)
+
+        self.horizontalLayout_filterActions = QHBoxLayout()
+        self.horizontalLayout_filterActions.setObjectName(u"horizontalLayout_filterActions")
+        self.cbxTableSelectAll = QCheckBox(self.grpFilter)
+        self.cbxTableSelectAll.setObjectName(u"cbxTableSelectAll")
+        self.cbxTableSelectAll.setMaximumSize(QSize(60, 16777215))
+        self.cbxTableSelectAll.setChecked(True)
+
+        self.horizontalLayout_filterActions.addWidget(self.cbxTableSelectAll)
+
+        self.cbbFilterType = QComboBox(self.grpFilter)
+        self.cbbFilterType.setObjectName(u"cbbFilterType")
+        sizePolicy3.setHeightForWidth(self.cbbFilterType.sizePolicy().hasHeightForWidth())
+        self.cbbFilterType.setSizePolicy(sizePolicy3)
+        self.cbbFilterType.setMaximumSize(QSize(180, 16777215))
+
+        self.horizontalLayout_filterActions.addWidget(self.cbbFilterType)
+
+        self.btnAdvancedFilter = QPushButton(self.grpFilter)
         self.btnAdvancedFilter.setObjectName(u"btnAdvancedFilter")
         self.btnAdvancedFilter.setMaximumSize(QSize(90, 16777215))
 
-        self.horizontalLayout_2.addWidget(self.btnAdvancedFilter)
+        self.horizontalLayout_filterActions.addWidget(self.btnAdvancedFilter)
 
-        self.cbxCaseSensitive = QCheckBox(self.grpFindFilter)
+        self.cbxCaseSensitive = QCheckBox(self.grpFilter)
         self.cbxCaseSensitive.setObjectName(u"cbxCaseSensitive")
-        sizePolicy1.setHeightForWidth(self.cbxCaseSensitive.sizePolicy().hasHeightForWidth())
-        self.cbxCaseSensitive.setSizePolicy(sizePolicy1)
+        sizePolicy2.setHeightForWidth(self.cbxCaseSensitive.sizePolicy().hasHeightForWidth())
+        self.cbxCaseSensitive.setSizePolicy(sizePolicy2)
         self.cbxCaseSensitive.setVisible(False)
 
-        self.horizontalLayout_2.addWidget(self.cbxCaseSensitive)
+        self.horizontalLayout_filterActions.addWidget(self.cbxCaseSensitive)
 
-        self.cbxOnlyIncludedEnabled = QCheckBox(self.grpFindFilter)
+        self.cbxOnlyIncludedEnabled = QCheckBox(self.grpFilter)
         self.cbxOnlyIncludedEnabled.setObjectName(u"cbxOnlyIncludedEnabled")
-        sizePolicy1.setHeightForWidth(self.cbxOnlyIncludedEnabled.sizePolicy().hasHeightForWidth())
-        self.cbxOnlyIncludedEnabled.setSizePolicy(sizePolicy1)
+        sizePolicy2.setHeightForWidth(self.cbxOnlyIncludedEnabled.sizePolicy().hasHeightForWidth())
+        self.cbxOnlyIncludedEnabled.setSizePolicy(sizePolicy2)
         self.cbxOnlyIncludedEnabled.setVisible(False)
 
-        self.horizontalLayout_2.addWidget(self.cbxOnlyIncludedEnabled)
+        self.horizontalLayout_filterActions.addWidget(self.cbxOnlyIncludedEnabled)
 
 
-        self.verticalLayout.addLayout(self.horizontalLayout_2)
+        self.verticalLayout_filter.addLayout(self.horizontalLayout_filterActions)
 
 
-        self.horizontalLayout_5.addWidget(self.grpFindFilter)
+        self.horizontalLayout_5.addWidget(self.grpFilter)
 
 
         self.verticalLayout_3.addLayout(self.horizontalLayout_5)
@@ -617,7 +670,8 @@ class Ui_MainWindow(object):
         self.mnuStatistics.addAction(self.actPropertyQuery)
         self.mnuCommon.addAction(self.mnuOptimizeName.menuAction())
         self.mnuCommon.addAction(self.mnuSetNameCase.menuAction())
-        self.mnuCommon.addAction(self.actUpdateNoteAndColor)
+        self.mnuCommon.addAction(self.actAutoSetColor)
+        self.mnuCommon.addAction(self.actAutoAddNotes)
         self.mnuCommon.addSeparator()
         self.mnuCommon.addAction(self.mnuCreateParent.menuAction())
         self.mnuCommon.addAction(self.actSplitUnderScore)
@@ -654,8 +708,6 @@ class Ui_MainWindow(object):
         self.mnuFile.addSeparator()
         self.mnuFile.addAction(self.actImportWorkUnit)
         self.mnuFile.addAction(self.mnuImportFmod.menuAction())
-        self.mnuFile.addSeparator()
-        self.mnuFile.addAction(self.actProjectSettings)
         self.mnuImportFmod.addAction(self.actImportFMODEvent)
         self.mnuImportFmod.addAction(self.actImportFMODPreset)
         self.mnuEdit.addAction(self.actUndo)
@@ -663,10 +715,8 @@ class Ui_MainWindow(object):
         self.mnuEdit.addSeparator()
         self.mnuEdit.addAction(self.actDeleteObjects)
         self.mnuOther.addAction(self.actHelpDoc)
-        self.mnuOther.addSeparator()
         self.mnuOther.addAction(self.actProjectValidation)
-        self.mnuOther.addSeparator()
-        self.mnuOther.addSeparator()
+        self.mnuOther.addAction(self.actProjectSettings)
         self.mnuGameSync.addAction(self.actCopyRtpcFromSelection)
         self.mnuMixing.addAction(self.actDownMixFader)
         self.mnuMixing.addAction(self.actVolumeToGain)
@@ -760,7 +810,8 @@ class Ui_MainWindow(object):
         self.actExportObjectList.setText(QCoreApplication.translate("MainWindow", u"\u5bfc\u51fa\u5bf9\u8c61\u5217\u8868", None))
         self.actImportFMODEvent.setText(QCoreApplication.translate("MainWindow", u"Event", None))
         self.actImportFMODPreset.setText(QCoreApplication.translate("MainWindow", u"Preset", None))
-        self.actUpdateNoteAndColor.setText(QCoreApplication.translate("MainWindow", u"\u66f4\u65b0\u5907\u6ce8\u4e0e\u989c\u8272", None))
+        self.actAutoSetColor.setText(QCoreApplication.translate("MainWindow", u"\u81ea\u52a8\u8bbe\u7f6e\u989c\u8272", None))
+        self.actAutoAddNotes.setText(QCoreApplication.translate("MainWindow", u"\u81ea\u52a8\u6dfb\u52a0\u5907\u6ce8", None))
         self.actRenameEventByTarget.setText(QCoreApplication.translate("MainWindow", u"\u6839\u636e\u64ad\u653e\u5bf9\u8c61\u91cd\u547d\u540d", None))
         self.actUseFullName.setText(QCoreApplication.translate("MainWindow", u"\u6539\u4e3a\u5b8c\u6574\u547d\u540d", None))
         self.actSplitUnderScore.setText(QCoreApplication.translate("MainWindow", u"\u62c6\u5206\u547d\u540d\u5230\u5b50\u6587\u4ef6\u5939", None))
@@ -802,20 +853,30 @@ class Ui_MainWindow(object):
         self.lblTableDisplayMode.setText(QCoreApplication.translate("MainWindow", u"\u8868\u683c\u89c6\u56fe", None))
         self.btnBatchRename.setText(QCoreApplication.translate("MainWindow", u"\u6279\u91cf\u91cd\u547d\u540d", None))
         self.btnMultiEditor.setText(QCoreApplication.translate("MainWindow", u"\u591a\u9879\u7f16\u8f91\u5668", None))
-        self.grpFindFilter.setTitle(QCoreApplication.translate("MainWindow", u"\u67e5\u627e\u4e0e\u7b5b\u9009", None))
+        self.grpFind.setTitle(QCoreApplication.translate("MainWindow", u"\u67e5\u627e", None))
         self.cbxRecursiveFind.setText(QCoreApplication.translate("MainWindow", u"\u9012\u5f52\u67e5\u627e", None))
         self.cbxKeepSelf.setText(QCoreApplication.translate("MainWindow", u"\u4fdd\u7559\u539f\u59cb\u5c42\u7ea7", None))
 #if QT_CONFIG(tooltip)
         self.cbxTurboMode.setToolTip(QCoreApplication.translate("MainWindow", u"\u6781\u901f\u6a21\u5f0f\uff1a\u53ea\u8bfb\u53d6\u57fa\u7840\u4fe1\u606f\u4e0e\u542f\u7528\u72b6\u6001\uff1b\u53d6\u6d88\u52fe\u9009\u540e\u5bf9\u5f53\u524d\u53ef\u89c1\u5bf9\u8c61\u8bfb\u53d6\u5907\u6ce8\u3001\u5f15\u7528\u8ba1\u6570\u7b49\u5b8c\u6574\u5c5e\u6027\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.cbxTurboMode.setText(QCoreApplication.translate("MainWindow", u"\u6781\u901f\u6a21\u5f0f", None))
-        self.btnFindParent.setText(QCoreApplication.translate("MainWindow", u"\u67e5\u627e\u4e0a\u7ea7", None))
-        self.btnFindChildren.setText(QCoreApplication.translate("MainWindow", u"\u67e5\u627e\u4e0b\u7ea7", None))
-        self.btnFindReferences.setText(QCoreApplication.translate("MainWindow", u"\u67e5\u627e\u5f15\u7528", None))
+        self.btnAdvancedFind.setText(QCoreApplication.translate("MainWindow", u"\u9ad8\u7ea7\u67e5\u627e", None))
+        self.btnClearTable.setText(QCoreApplication.translate("MainWindow", u"\u6e05\u7a7a", None))
         self.btnObjectHistoryBack.setText(QCoreApplication.translate("MainWindow", u"\u540e\u9000", None))
         self.btnObjectHistoryForward.setText(QCoreApplication.translate("MainWindow", u"\u524d\u8fdb", None))
-        self.btnClearTable.setText(QCoreApplication.translate("MainWindow", u"\u6e05\u7a7a", None))
-        self.cbxTableSelectAll.setText(QCoreApplication.translate("MainWindow", u"\u5168\u9009", None))
+        self.btnFindParent.setText(QCoreApplication.translate("MainWindow", u"\u627e\u7236\u7ea7", None))
+        self.btnFindChildren.setText(QCoreApplication.translate("MainWindow", u"\u627e\u5b50\u7ea7", None))
+        self.btnFindReferences.setText(QCoreApplication.translate("MainWindow", u"\u627e\u5f15\u7528", None))
+        self.cbbFindProperty.setItemText(0, QCoreApplication.translate("MainWindow", u"Attenuation", None))
+        self.cbbFindProperty.setItemText(1, QCoreApplication.translate("MainWindow", u"Conversion", None))
+        self.cbbFindProperty.setItemText(2, QCoreApplication.translate("MainWindow", u"OutputBus", None))
+        self.cbbFindProperty.setItemText(3, QCoreApplication.translate("MainWindow", u"SwitchGroupOrStateGroup", None))
+        self.cbbFindProperty.setItemText(4, QCoreApplication.translate("MainWindow", u"DefaultSwitchOrState", None))
+        self.cbbFindProperty.setItemText(5, QCoreApplication.translate("MainWindow", u"UserAuxSend0", None))
+        self.cbbFindProperty.setItemText(6, QCoreApplication.translate("MainWindow", u"ReflectionsAuxSend", None))
+
+        self.btnFindProperty.setText(QCoreApplication.translate("MainWindow", u"\u627e\u5c5e\u6027", None))
+        self.grpFilter.setTitle(QCoreApplication.translate("MainWindow", u"\u7b5b\u9009", None))
 #if QT_CONFIG(tooltip)
         self.ledFilterKeyword.setToolTip(QCoreApplication.translate("MainWindow", u"\u7b5b\u9009\u4f1a\u5339\u914d\u540d\u79f0\u4e0e\u8def\u5f84\u3002\n"
 "\u591a\u4e2a\u6761\u4ef6\u7528 ; \u5206\u9694\uff0c\u6240\u6709\u5305\u542b\u6761\u4ef6\u90fd\u5fc5\u987b\u547d\u4e2d\u3002\n"
@@ -827,6 +888,7 @@ class Ui_MainWindow(object):
         self.ledFilterKeyword.setInputMask("")
         self.ledFilterKeyword.setText("")
         self.btnApplyFilter.setText(QCoreApplication.translate("MainWindow", u"\u7b5b\u9009", None))
+        self.cbxTableSelectAll.setText(QCoreApplication.translate("MainWindow", u"\u5168\u9009", None))
         self.btnAdvancedFilter.setText(QCoreApplication.translate("MainWindow", u"\u9ad8\u7ea7\u7b5b\u9009\u2026", None))
         self.cbxCaseSensitive.setText(QCoreApplication.translate("MainWindow", u"\u533a\u5206\u5927\u5c0f\u5199", None))
         self.cbxOnlyIncludedEnabled.setText(QCoreApplication.translate("MainWindow", u"\u4ec5\u663e\u793a\u542f\u7528\u5bf9\u8c61", None))
@@ -853,7 +915,7 @@ class Ui_MainWindow(object):
         self.mnuOptimizeName.setTitle(QCoreApplication.translate("MainWindow", u"\u91cd\u547d\u540d", None))
         self.mnuEvent.setTitle(QCoreApplication.translate("MainWindow", u"Event", None))
         self.mnuFile.setTitle(QCoreApplication.translate("MainWindow", u"\u6587\u4ef6", None))
-        self.mnuImportFmod.setTitle(QCoreApplication.translate("MainWindow", u"FMOD\u5de5\u7a0b", None))
+        self.mnuImportFmod.setTitle(QCoreApplication.translate("MainWindow", u"\u4eceFMOD\u5de5\u7a0b\u5bfc\u5165", None))
         self.mnuEdit.setTitle(QCoreApplication.translate("MainWindow", u"\u7f16\u8f91", None))
         self.mnuOther.setTitle(QCoreApplication.translate("MainWindow", u"\u5176\u4ed6", None))
         self.mnuGameSync.setTitle(QCoreApplication.translate("MainWindow", u"Game Sync", None))

@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTableWidget, Q
 
 from libraries.multi_thread import batch_processor
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import soundbank_utils
+from libraries.utils.wwise import soundbank_utils, waapi_utils
 from libraries.wwise_object import WwiseObject
 
 
@@ -38,9 +38,12 @@ class MediaSizeWindow(QDialog):
     def __init__(self, objects: list[WwiseObject], parent: QWidget = None):
         super().__init__(parent)
         self.setWindowTitle('媒体资源大小')
-        self.resize(820, 560)
+        self.resize(1100, 430)
         self.__objects = list(objects)
-        self.__results = [None] * len(self.__objects)
+        # 每个根对象一个累加器；批处理按展开后的所有节点推进（进度条总数=节点数）
+        self.__stats = [soundbank_utils.MediaSizeNodeStatistics() for _ in self.__objects]
+        self.__nodes: list[WwiseObject] = []
+        self.__node_root: list[int] = []
         self.__table = QTableWidget(0, len(HEADERS))
         self.__table.setHorizontalHeaderLabels(HEADERS)
         self.__table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -61,17 +64,25 @@ class MediaSizeWindow(QDialog):
         for index, obj in enumerate(self.__objects):
             self.__table.setItem(index, 0, QTableWidgetItem(obj.name))
             self.__table.setItem(index, 1, QTableWidgetItem(obj.type.name))
+        seen_ids: set[str] = set()
+        for root_index, obj in enumerate(self.__objects):
+            for node in [obj] + waapi_utils.get_child_objects(obj, True):
+                if not node.id or node.id in seen_ids:
+                    continue
+                seen_ids.add(node.id)
+                self.__nodes.append(node)
+                self.__node_root.append(root_index)
         batch_processor.create_async(
-            self.__objects,
-            lambda index, obj: self.__measure_object(index, obj),
+            self.__nodes,
+            lambda index, obj: self.__measure_node(index, obj),
             '统计媒体资源大小',
             'name',
             on_finished=self.__on_measuring_finished,
         )
 
-    # 工作线程内统计单个对象
-    def __measure_object(self, index: int, obj: WwiseObject):
-        self.__results[index] = soundbank_utils.get_object_media_size(obj)
+    # 工作线程内累加单个节点到所属根对象
+    def __measure_node(self, index: int, obj: WwiseObject):
+        self.__stats[self.__node_root[index]].accumulate(obj)
         return True
 
     # 主线程写入结果并追加合计行
@@ -82,9 +93,8 @@ class MediaSizeWindow(QDialog):
         total_stream_files = 0
         total_memory_files = 0
         total_files = 0
-        for index, result in enumerate(self.__results):
-            if result is None:
-                continue
+        for index, stats in enumerate(self.__stats):
+            result = stats.finish()
             wav_kb, mem_kb, stream_kb, used_files, stream_files, memory_files = result
             total_wav += wav_kb
             total_mem += mem_kb

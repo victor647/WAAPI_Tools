@@ -92,26 +92,34 @@ def has_wrong_color(obj: WwiseObject) -> bool:
 def get_object_notes(obj: WwiseObject) -> str:
     return waapi_utils.get_object_property(obj, 'Notes')
 
-# 更新带引用对象的备注和颜色
-def update_notes_and_color(obj: WwiseObject) -> bool:
-    if not project_conventions.has_color_convention():
+# 处理对象与 Event / SoundBank 的引用关系：want_notes / want_color 决定处理哪一部分，
+# clear_stale_notes 决定没有引用时是否清空已有备注
+def update_event_reference_links(obj: WwiseObject, want_notes: bool, want_color: bool,
+                                 clear_stale_notes: bool = True) -> bool:
+    use_notes = want_notes and project_conventions.use_event_ref_notes()
+    use_color = want_color and project_conventions.has_color_convention()
+    # 两项都不需要处理时无事可做
+    if not use_notes and not use_color:
         return False
-    set_object_color_by_category(obj, False)
+    if use_color:
+        set_object_color_by_category(obj, False)
     # 对象是Event
     if obj.type == WwiseObjectType.Event:
         actions = waapi_utils.get_child_objects(obj)
         for action in actions:
             action_type = waapi_utils.get_object_property(action, 'ActionType')
             if action_type == 1:
-                target = waapi_utils.get_object_property(action, 'Target')
+                target = waapi_utils.get_referenced_object(action, 'Target')
                 event_name = obj.name
                 if target:
-                    target = waapi_utils.get_full_info_from_obj_id(target['id'])
-                    waapi_utils.set_object_notes(target, f'Played by Event [{event_name}]')
-                    waapi_utils.set_object_notes(obj, target.path)
-                    set_object_color_by_category(target, False)
-                    set_dark_color(target)
-                    set_light_color(obj)
+                    target = waapi_utils.get_full_info_from_obj_id(target.id)
+                    if use_notes:
+                        waapi_utils.set_object_notes(target, f'Played by Event [{event_name}]')
+                        waapi_utils.set_object_notes(obj, target.path)
+                    if use_color:
+                        set_object_color_by_category(target, False)
+                        set_dark_color(target)
+                        set_light_color(obj)
                     return True
     # 对象是Event播放目标
     else:
@@ -123,20 +131,42 @@ def update_notes_and_color(obj: WwiseObject) -> bool:
                 if action_type == 1:
                     event = waapi_utils.get_parent_object(reference)
                     event_name = event.name
-                    waapi_utils.set_object_notes(obj, f'Played by Event [{event_name}]')
                     target_path = obj.path
-                    waapi_utils.set_object_notes(event, target_path)
-                    set_dark_color(obj)
-                    set_object_color_by_category(event, False)
+                    if use_notes:
+                        waapi_utils.set_object_notes(obj, f'Played by Event [{event_name}]')
+                        waapi_utils.set_object_notes(event, target_path)
+                    if use_color:
+                        set_dark_color(obj)
+                        set_object_color_by_category(event, False)
                     return True
             elif ref_type == WwiseObjectType.SoundBank:
-                waapi_utils.set_object_notes(obj, f"Included by SoundBank [{reference.name}]")
-                set_object_color_by_category(reference, False)
-                set_dark_color(obj)
+                if use_notes:
+                    waapi_utils.set_object_notes(obj, f"Included by SoundBank [{reference.name}]")
+                if use_color:
+                    set_object_color_by_category(reference, False)
+                    set_dark_color(obj)
                 return True
-        waapi_utils.set_object_notes(obj, '')
-        set_object_color_by_category(obj, False)
+        if use_notes and clear_stale_notes:
+            waapi_utils.set_object_notes(obj, '')
+        if use_color:
+            set_object_color_by_category(obj, False)
     return False
+
+
+# 更新带引用对象的备注和颜色
+def update_notes_and_color(obj: WwiseObject) -> bool:
+    return update_event_reference_links(obj, want_notes=True, want_color=True)
+
+
+# 只更新 Event / SoundBank 引用相关的备注；没有引用时保留原有备注
+def update_reference_notes(obj: WwiseObject) -> bool:
+    return update_event_reference_links(obj, want_notes=True, want_color=False, clear_stale_notes=False)
+
+
+# 只按分类设置对象及其引用对象的颜色
+def update_object_colors(obj: WwiseObject) -> bool:
+    return update_event_reference_links(obj, want_notes=False, want_color=True)
+
 
 # 是否因为引用需要使用深色标记
 def should_use_dark_color(obj: WwiseObject) -> bool:
@@ -153,6 +183,9 @@ def should_use_dark_color(obj: WwiseObject) -> bool:
 
 # 将对象的颜色设为深色
 def set_dark_color(obj: WwiseObject) -> bool:
+    # 设置里关闭「Event 引用使用深色」时，自动调色不再区分深浅
+    if not project_conventions.use_dark_color_for_event_ref():
+        return False
     light_color = get_object_color(obj)
     # 已经是深色了，不需要设置
     if light_color <= 13:
@@ -166,6 +199,8 @@ def set_dark_color(obj: WwiseObject) -> bool:
 
 # 将对象的颜色设为浅色
 def set_light_color(obj: WwiseObject) -> bool:
+    if not project_conventions.use_dark_color_for_event_ref():
+        return False
     parent = waapi_utils.get_parent_object(obj)
     parent_color = get_object_color(parent)
     if 0 < parent_color <= 13:
@@ -248,7 +283,7 @@ def set_object_color_by_category(obj: WwiseObject, check_dark: bool) -> bool:
         return False
     color = project_conventions.get_color_by_category(category)
     result = set_object_color(obj, color)
-    if check_dark and should_use_dark_color(obj):
+    if check_dark and project_conventions.use_dark_color_for_event_ref() and should_use_dark_color(obj):
         return set_dark_color(obj)
     return result
 

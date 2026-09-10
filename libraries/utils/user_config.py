@@ -11,11 +11,20 @@ DEFAULT_CONFIG = {
     "tools": {
         # 工具执行前是否自动展开可见对象的子级来筛选目标类型
         "auto_fetch_children": True,
+        # WAAPI 查询分页大小（子对象/后代/批量查询每次拉取的数量）
+        "page_size": 500,
+        # 表格「路径」列是否使用简写显示；关闭时显示完整路径
+        "path_display_compact": True,
     },
     "window_settings": {},
     "ai": {
         # AI 对话使用的 OpenAI 兼容代理地址（软件内 AI 助手功能）
         "proxy": "http://127.0.0.1:15721",
+        # proxy=代理模式；official=官方 API 模式（provider 决定具体厂商）
+        "mode": "proxy",
+        "provider": "openai",
+        # 官方模式下选择“自定义”时的 OpenAI 兼容地址
+        "base_url": "",
         "api_key": "",
         # 留空表示不传 model 字段，由代理自行选择
         "model": "",
@@ -32,6 +41,17 @@ DEFAULT_CONFIG = {
         "event_filter": "all",
         # 语言筛选：all / active
         "language_filter": "all",
+    },
+    "advanced_find": {
+        # 高级查找窗口各选项的持久化状态
+        "recursive_find": True,
+        "keep_self": False,
+        # 查找特定类型子对象时选择的类型
+        "find_child_type": "全部类型",
+    },
+    "appearance": {
+        # qt_material 主题（themes/*.xml 文件名）
+        "theme": "dark_cyan.xml",
     },
 }
 
@@ -126,9 +146,34 @@ def get_tool_auto_fetch_children() -> bool:
     return bool(load_config()["tools"].get("auto_fetch_children", True))
 
 
+def get_tool_page_size() -> int:
+    # 分页大小：限制在 50~5000，避免过小拖慢、过大被服务端截断
+    try:
+        value = int(load_config()["tools"].get("page_size", 500))
+    except (TypeError, ValueError):
+        value = 500
+    return max(50, min(5000, value))
+
+
+def set_tool_page_size(page_size: int) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["page_size"] = max(50, min(5000, int(page_size)))
+    _write_config(config)
+
+
 def set_tool_auto_fetch_children(enabled: bool) -> None:
     config = load_config()
     config.setdefault("tools", {})["auto_fetch_children"] = bool(enabled)
+    _write_config(config)
+
+
+def get_tool_path_display_compact() -> bool:
+    return bool(load_config()["tools"].get("path_display_compact", True))
+
+
+def set_tool_path_display_compact(enabled: bool) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["path_display_compact"] = bool(enabled)
     _write_config(config)
 
 
@@ -154,6 +199,19 @@ def _write_config(config: dict) -> None:
 
 def get_ai_proxy_url() -> str:
     return load_config()["ai"].get("proxy", DEFAULT_CONFIG["ai"]["proxy"])
+
+
+def get_ai_mode() -> str:
+    mode = str(load_config()["ai"].get("mode", DEFAULT_CONFIG["ai"]["mode"])).strip().lower()
+    return mode if mode in ("proxy", "official") else DEFAULT_CONFIG["ai"]["mode"]
+
+
+def get_ai_provider() -> str:
+    return str(load_config()["ai"].get("provider", DEFAULT_CONFIG["ai"]["provider"])).strip()
+
+
+def get_ai_base_url() -> str:
+    return str(load_config()["ai"].get("base_url", DEFAULT_CONFIG["ai"]["base_url"])).strip()
 
 
 def get_ai_api_key() -> str:
@@ -194,6 +252,16 @@ def get_ai_max_turns() -> int:
     return load_config()["ai"].get("max_turns", DEFAULT_CONFIG["ai"]["max_turns"])
 
 
+def get_appearance_theme() -> str:
+    return load_config()["appearance"].get("theme", DEFAULT_CONFIG["appearance"]["theme"])
+
+
+def save_appearance_theme(theme: str) -> None:
+    config = load_config()
+    config.setdefault("appearance", {})["theme"] = theme
+    _write_config(config)
+
+
 # 帮助文档链接：统一维护在 user_config.json 顶层 Documentation（兼容小写拼写），未配置返回空串
 def get_documentation_url() -> str:
     config = load_config()
@@ -207,6 +275,28 @@ def get_advanced_filter_settings() -> dict:
     if not isinstance(stored, dict):
         stored = {}
     return {key: stored.get(key, defaults[key]) for key in defaults}
+
+
+def get_advanced_find_settings() -> dict:
+    defaults = DEFAULT_CONFIG["advanced_find"]
+    stored = load_config().get("advanced_find")
+    if not isinstance(stored, dict):
+        stored = {}
+    return {key: stored.get(key, defaults[key]) for key in defaults}
+
+
+# 把高级查找窗口的选项写回 user_config.json（下次打开窗口时沿用）
+def save_advanced_find_settings(settings: dict) -> None:
+    config = load_config()
+    section = config.setdefault("advanced_find", {})
+    allowed = set(DEFAULT_CONFIG["advanced_find"])
+    section.update({key: value for key, value in settings.items() if key in allowed})
+    path = get_config_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        Logger().error(f"写入高级查找配置失败：{path} ({e})")
 
 
 # 把高级筛选窗口的选项写回 user_config.json（下次打开窗口时沿用）

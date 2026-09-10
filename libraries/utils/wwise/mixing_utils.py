@@ -49,7 +49,7 @@ def has_fader_edits(obj: WwiseObject) -> bool:
     pitch = waapi_utils.get_object_property(obj, 'Pitch')
     lowpass = waapi_utils.get_object_property(obj, 'Lowpass')
     highpass = waapi_utils.get_object_property(obj, 'Highpass')
-    if WwiseObjectType.Bus not in obj.type:
+    if 'Bus' not in obj.type.value:
         gain = waapi_utils.get_object_property(obj, 'MakeUpGain')
     else:
         gain = 0
@@ -62,7 +62,7 @@ def down_mix_fader(obj: WwiseObject):
     down_mix_fader_param(obj, 'Lowpass')
     down_mix_fader_param(obj, 'Highpass')
     # Bus类对象不包含MakeUpGain属性
-    if WwiseObjectType.Bus not in obj.type:
+    if 'Bus' not in obj.type.value:
         down_mix_fader_param(obj, 'MakeUpGain')
 
 # 向下传递特定的混音参数
@@ -91,5 +91,5 @@ def set_effect_slot_property(obj: WwiseObject, property_name: str, value: bool) 
     if effect_slots is None:
         return False
     for effect_slot in effect_slots:
-        waapi_utils.set_object_property(effect_slot, property_name, value)
+        waapi_utils.set_object_property(WwiseObject(effect_slot), property_name, value)
     return True

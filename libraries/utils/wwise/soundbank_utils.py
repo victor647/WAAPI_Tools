@@ -5,6 +5,19 @@ from libraries.utils.wwise import common_utils, audio_source_utils, event_utils,
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 
+# Bank 名称上的 Event / Media 拆分后缀
+EVENT_BANK_SUFFIX = '_Event'
+MEDIA_BANK_SUFFIX = '_Media'
+
+
+# 去掉拆分后缀后的 Bank 显示名（拆分 Event/Media 的工程在表格中不显示后缀）
+def get_bank_display_name(bank_name: str) -> str:
+    for suffix in (EVENT_BANK_SUFFIX, MEDIA_BANK_SUFFIX):
+        if bank_name.endswith(suffix):
+            return bank_name[: -len(suffix)]
+    return bank_name
+
+
 # 为每个选中的对象创建一个SoundBank
 def create_bank_for_object(obj: WwiseObject) -> bool:
     bank_name = common_utils.get_full_name_with_acronym(obj)
@@ -89,6 +102,36 @@ def get_object_media_size(obj: WwiseObject) -> tuple:
             used_files, stream_files, memory_files)
 
 
+# 按“逐个对象节点累加”的方式统计某个根对象的媒体大小：
+# 只有 AudioSource / SoundBank / Event 这几类会贡献媒体，容器等节点不重复计入子节点内容，
+# 因此把一棵树展开成节点逐个 accumulate 的结果与递归统计一致
+class MediaSizeNodeStatistics:
+    def __init__(self):
+        self.stream_file_paths: list = []
+        self.memory_file_paths: list = []
+        self.used_files: list = []
+        self._totals = [0.0, 0.0, 0.0]
+        self.seen_sources: set = set()
+        self.seen_walked: set = set()
+        self.seen_wems: set = set()
+
+    # 累加单个节点的媒体（容器类节点忽略，其子节点会各自贡献）
+    def accumulate(self, obj) -> None:
+        if not obj or obj.type not in (WwiseObjectType.AudioSource, WwiseObjectType.SoundBank, WwiseObjectType.Event):
+            return
+        wav, memory, stream, used_files = _accumulate_media_size(
+            obj, self._totals[0], self._totals[1], self._totals[2], self.used_files,
+            self.seen_sources, self.seen_walked, None, self.seen_wems,
+            self.stream_file_paths, self.memory_file_paths)
+        self._totals = [wav, memory, stream]
+        self.used_files = used_files
+
+    # 与 get_object_media_size 相同的返回结构
+    def finish(self) -> tuple:
+        return (self._totals[0], self._totals[1], self._totals[2],
+                self.used_files, self.stream_file_paths, self.memory_file_paths)
+
+
 # 传统方式获取Bank大小（KB 累加，供工程检查等按单个 Bank 调用）
 def get_bank_size(bank: WwiseObject, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float, used_files: list) -> tuple:
     if bank.type != WwiseObjectType.SoundBank:
@@ -110,7 +153,7 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
         if obj.id in seen_sources:
             return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
         seen_sources.add(obj.id)
-        wav_path = audio_source_utils.get_source_file_path(obj)
+        wav_path = audio_source_utils.get_source_absolute_path(obj)
         # 部分层级（如 Music Track 下的源）读不到 sound: 前缀属性时退回原始属性
         if not wav_path:
             wav_path = waapi_utils.get_object_property(obj, 'originalWavFilePath')
@@ -266,3 +309,26 @@ def generate_event_bank_map():
                 for event in descendants:
                     event_bank_map[event.name] = bank.name
     io_utils.export_to_json(event_bank_map, 'EventBankMap')
+
+
+# 生成 Event 与包含它的 SoundBank 的对应关系（Event id -> Bank 名称列表，按 Bank 顺序去重）
+def build_event_bank_map() -> dict:
+    event_bank_map = {}
+    all_banks = waapi_utils.find_all_objects_by_type(WwiseObjectType.SoundBank)
+    for bank in all_banks:
+        for inclusion in waapi_utils.get_bank_inclusions(bank):
+            obj = waapi_utils.get_full_info_from_obj_id(inclusion.get('object'))
+            if not obj or not obj.is_valid:
+                continue
+            # 直接包含 Event，或包含 Event 上级的 Folder/WorkUnit 时都要算出其中的 Event
+            if obj.type == WwiseObjectType.Event:
+                events = [obj]
+            elif obj.path.startswith('\\Events'):
+                events = waapi_utils.get_descendants_of_type(obj, WwiseObjectType.Event)
+            else:
+                continue
+            for event in events:
+                bank_names = event_bank_map.setdefault(event.id, [])
+                if bank.name not in bank_names:
+                    bank_names.append(bank.name)
+    return event_bank_map

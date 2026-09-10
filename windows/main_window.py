@@ -4,8 +4,9 @@ import threading
 import clipboard
 import webbrowser
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QTextCursor
+from qt_material import build_stylesheet
 
 import globals.global_variables as gv
 from data import project_conventions
@@ -14,7 +15,7 @@ from globals.version import get_software_version
 from globals.constants import DOCUMENTATION_URL
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_item_model import INCLUSION_COL
-from libraries.utils.log_utils import Logger
+from libraries.utils.log_utils import Logger, set_log_theme
 from libraries.waapi_client import WAAPIClient
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_object_table_gui import WwiseTableImpl
@@ -22,6 +23,7 @@ from table.wwise_object_table import WwiseTableDisplayMode
 from table.wwise_table_headers import CHECK_BOX_COL, COMMON_HEADERS, ENABLE_COL, TABLE_DISPLAY_MODE_LABELS, PATH_COL
 from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSilenceTrimWindow
 from windows.advanced_filter_window import AdvancedFilterWindow as AdvancedFilterWindow
+from windows.advanced_find_window import AdvancedFindWindow as AdvancedFindWindow
 from windows.sync_trim_window import SyncTrimWindow as SyncTrimWindow
 from windows.table_rename_window import TableRenamer as TableRenamer
 from windows.template_replace_window import TemplateReplacer as TemplateReplacer
@@ -32,26 +34,26 @@ from windows.project_settings_window import ProjectSettingsWindow as ProjectSett
 from windows.media_size_window import MediaSizeWindow as MediaSizeWindow
 from windows.property_query_window import PropertyQueryWindow as PropertyQueryWindow
 from waapi import CannotConnectToWaapiException
-from PySide6.QtWidgets import QDialog, QMainWindow, QMenu, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QDialog, QMainWindow, QMenu, QTableWidgetItem
 from ui.MainWindow_ui import Ui_MainWindow
 from windows.export_object_list_window import ExportObjectListWindow as ExportObjectListWindow
 from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_utils, soundbank_utils, \
     localization_utils, project_utils, event_utils, container_utils, migration_utils, waapi_utils, mixing_utils
-from libraries.utils import ai_utils, io_utils, user_config
+from libraries.utils import ai_utils, io_utils, path_utils, user_config
 
 
 # AI 模型列表后台拉取线程：避免启动时在界面线程发 HTTP 请求
 class AiModelListWorker(QThread):
     models_loaded = Signal(list)
 
-    def __init__(self, proxy_url: str, api_key: str, parent=None):
+    def __init__(self, connection: dict, api_key: str, parent=None):
         super().__init__(parent)
-        self._proxy_url = proxy_url
+        self._connection = connection
         self._api_key = api_key
 
     def run(self):
         try:
-            models = ai_utils.list_models(self._proxy_url, self._api_key)
+            models = ai_utils.list_models(self._connection, self._api_key)
         except Exception:
             models = []
         self.models_loaded.emit(models)
@@ -140,10 +142,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         advanced_settings = user_config.get_advanced_filter_settings()
         self.cbxCaseSensitive.setChecked(advanced_settings["case_sensitive"])
         self.cbxOnlyIncludedEnabled.setChecked(advanced_settings["only_included"])
+        # 恢复高级查找设置（递归查找 / 保留原始层级）
+        advanced_find_settings = user_config.get_advanced_find_settings()
+        self.cbxRecursiveFind.setChecked(advanced_find_settings["recursive_find"])
+        self.cbxKeepSelf.setChecked(advanced_find_settings["keep_self"])
+        # 恢复「按属性」下拉框上次选择
+        main_window_settings = user_config.get_window_settings('main_window')
+        saved_property = main_window_settings.get('find_property')
+        if saved_property:
+            index = self.cbbFindProperty.findText(saved_property)
+            if index >= 0:
+                self.cbbFindProperty.setCurrentIndex(index)
         self.setup_triggers()
         self._setup_action_help()
         self._setup_ai_assistant()
         self.check_wwise_connection()
+        self.update_convention_action_states()
         self._update_history_buttons()
 
     # 给菜单项写入使用说明：悬停显示气泡（tooltip），同时状态栏显示（statusTip）
@@ -170,8 +184,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.cbbAiModel.addItem(saved_model)
             self.cbbAiModel.setCurrentText(saved_model)
         # 后台拉取代理支持的模型列表（失败时仍可手动输入）
+        connection = ai_utils.resolve_connection(
+            user_config.get_ai_mode(),
+            user_config.get_ai_proxy_url(),
+            user_config.get_ai_provider(),
+            user_config.get_ai_base_url(),
+        )
         self._ai_model_worker = AiModelListWorker(
-            user_config.get_ai_proxy_url(), user_config.get_ai_api_key(), self
+            connection, user_config.get_ai_api_key(), self
         )
         self._ai_model_worker.models_loaded.connect(self._on_ai_models_loaded)
         self._ai_model_worker.start()
@@ -312,13 +332,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.cbbTableDisplayMode.blockSignals(False)
         self.cbbTableDisplayMode.currentIndexChanged.connect(self.on_table_display_mode_changed)
 
+    # 类型下拉框的可选项：全部类型 + 动态取自 WwiseObjectType 的所有值（筛选与高级查找共用）
+    def get_filter_type_options(self) -> list[str]:
+        return ['全部类型'] + [member.value for member in sorted(WwiseObjectType, key=lambda item: item.value)]
+
     # 类型筛选下拉框：全部类型 + 动态取自 WwiseObjectType 的所有值
     def _setup_type_filter_combo(self):
         self.cbbFilterType.blockSignals(True)
         self.cbbFilterType.clear()
-        self.cbbFilterType.addItem('全部类型')
-        for member in sorted(WwiseObjectType, key=lambda item: item.value):
-            self.cbbFilterType.addItem(member.value)
+        self.cbbFilterType.addItems(self.get_filter_type_options())
         self.cbbFilterType.blockSignals(False)
 
     # 绑定「极速模式」开关：默认勾选，只加载基础属性与启用状态
@@ -328,8 +350,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开工程规范设置窗口
     def open_project_settings_window(self):
-        settings_window = ProjectSettingsWindow(on_ai_saved=self._reload_ai_model_from_settings)
+        settings_window = ProjectSettingsWindow(
+            on_ai_saved=self._reload_ai_model_from_settings,
+            on_theme_applied=self.apply_app_theme,
+        )
         settings_window.exec()
+        self.update_convention_action_states()
+
+    # 按工程规范开关刷新菜单项可用状态
+    def update_convention_action_states(self):
+        # 使用类型缩写依赖缩写规范；自动设置颜色依赖颜色规范；自动添加备注依赖互为备注开关
+        self.actUseAcronym.setEnabled(project_conventions.is_acronym_enabled())
+        self.actAutoSetColor.setEnabled(project_conventions.is_color_enabled())
+        self.actAutoAddNotes.setEnabled(project_conventions.use_event_ref_notes())
+
+    # 应用 qt_material 主题：重建样式表并立即刷新到整个应用
+    def apply_app_theme(self, theme: str):
+        set_log_theme(theme)
+        stylesheet = build_stylesheet(theme=theme, template=path_utils.get_resource_path("material.css"))
+        self.style_sheet = stylesheet
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(stylesheet)
+        self.set_widget_style(self.lblWwiseConnection, self.lblWwiseConnection.property("class") or "warning")
 
     # 设置窗口保存 AI 模型后，同步主窗口下拉框为配置值
     def _reload_ai_model_from_settings(self):
@@ -436,6 +479,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnFindParent.clicked.connect(self.find_parent)
         self.btnFindChildren.clicked.connect(self.find_children)
         self.btnFindReferences.clicked.connect(self.find_references)
+        self.btnAdvancedFind.clicked.connect(self.open_advanced_find_window)
+        self.btnFindProperty.clicked.connect(self.find_by_property)
+        self.cbbFindProperty.currentTextChanged.connect(self._on_find_property_changed)
         self.cbxCaseSensitive.toggled.connect(self._on_case_sensitive_changed)
         self.cbxOnlyIncludedEnabled.toggled.connect(self._on_only_included_toggled)
         self.cbbFilterType.currentIndexChanged.connect(self._on_filter_type_changed)
@@ -451,17 +497,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actUndo.triggered.connect(waapi_utils.undo)
         self.actRedo.triggered.connect(waapi_utils.redo)
 
-        self.setup_batch_processor(self.actDeleteObjects, lambda index, obj: waapi_utils.delete_object(obj))
+        self.setup_batch_processor(self.actDeleteObjects, lambda index, obj: waapi_utils.delete_object(obj), expand=False)
         # 通用菜单（改变类型为仅表格类型列右键）
-        self.setup_batch_processor(self.actCreateWorkUnit, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.WorkUnit))
-        self.setup_batch_processor(self.actCreateActorMixer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.ActorMixer))
-        self.setup_batch_processor(self.actCreateVirtualFolder, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.Folder))
-        self.setup_batch_processor(self.actCreateBlendContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.BlendContainer))
-        self.setup_batch_processor(self.actCreateRandomSequenceContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.RandomContainer))
-        self.setup_batch_processor(self.actCreateSwitchContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.SwitchContainer))
+        self.setup_batch_processor(self.actCreateWorkUnit, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.WorkUnit), expand=False)
+        self.setup_batch_processor(self.actCreateActorMixer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.ActorMixer), expand=False)
+        self.setup_batch_processor(self.actCreateVirtualFolder, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.Folder), expand=False)
+        self.setup_batch_processor(self.actCreateBlendContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.BlendContainer), expand=False)
+        self.setup_batch_processor(self.actCreateRandomSequenceContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.RandomContainer), expand=False)
+        self.setup_batch_processor(self.actCreateSwitchContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.SwitchContainer), expand=False)
 
-        self.setup_batch_processor(self.actMoveToSelection, lambda index, obj: common_utils.move_to_selection(obj))
-        self.setup_batch_processor(self.actCopyFromSelection, lambda index, obj: common_utils.copy_from_selection(obj))
+        self.setup_batch_processor(self.actMoveToSelection, lambda index, obj: common_utils.move_to_selection(obj), expand=False)
+        self.setup_batch_processor(self.actCopyFromSelection, lambda index, obj: common_utils.copy_from_selection(obj), expand=False)
 
         self.setup_batch_processor(self.actChangeToLowerCase, lambda index, obj: common_utils.rename_to_lower_case(obj))
         self.setup_batch_processor(self.actChangeToTitleCase, lambda index, obj: common_utils.rename_to_title_case(obj))
@@ -471,7 +517,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_batch_processor(self.actRemovePrefix, lambda index, obj: common_utils.remove_name_prefix(obj))
         self.setup_batch_processor(self.actRemoveSuffix, lambda index, obj: common_utils.remove_name_suffix(obj))
         self.setup_batch_processor(self.actUseAcronym, lambda index, obj: common_utils.rename_with_acronym(obj))
-        self.setup_batch_processor(self.actUpdateNoteAndColor, lambda index, obj: common_utils.update_notes_and_color(obj))
+        self.setup_batch_processor(self.actAutoSetColor, lambda index, obj: common_utils.update_object_colors(obj))
+        self.setup_batch_processor(self.actAutoAddNotes, lambda index, obj: common_utils.update_reference_notes(obj))
         self.setup_batch_processor(self.actSplitUnderScore, lambda index, obj: common_utils.split_underscore_to_folder(obj))
 
         self.actReplaceByTemplate.triggered.connect(self.open_template_replace_window)
@@ -479,16 +526,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 源文件菜单
         self.actTrimAudioSilence.triggered.connect(self.open_audio_silence_trimmer_window)
         self.actSyncTrim.triggered.connect(self.open_sync_trim_window)
-        self.setup_batch_processor(self.actApplyEditsToOriginal, lambda index, obj: audio_source_utils.apply_source_edits(obj))
-        self.setup_batch_processor(self.actResetSourceEdits, lambda index, obj: audio_source_utils.reset_source_editor(obj))
-        self.setup_batch_processor(self.actRenameOriginalToWwise, lambda index, obj: audio_source_utils.rename_original_to_wwise(obj))
-        self.setup_batch_processor(self.actAutoImport, lambda index, obj: audio_source_utils.auto_import_by_path(obj))
-        self.setup_batch_processor(self.actTidyOriginalFolders, lambda index, obj: audio_source_utils.tidy_original_folders(obj))
+        self.setup_batch_processor(self.actApplyEditsToOriginal, lambda index, obj: audio_source_utils.apply_source_edits(obj), WwiseObjectType.AudioSource)
+        self.setup_batch_processor(self.actResetSourceEdits, lambda index, obj: audio_source_utils.reset_source_editor(obj), WwiseObjectType.AudioSource)
+        self.setup_batch_processor(self.actRenameOriginalToWwise, lambda index, obj: audio_source_utils.rename_original_to_wwise(obj), WwiseObjectType.Sound)
+        self.setup_batch_processor(self.actAutoImport, lambda index, obj: audio_source_utils.auto_import_by_path(obj), WwiseObjectType.Sound)
+        self.setup_batch_processor(self.actTidyOriginalFolders, lambda index, obj: audio_source_utils.tidy_original_folders(obj), WwiseObjectType.Sound)
         self.actDeleteUnusedAKDFiles.triggered.connect(audio_source_utils.delete_unused_akd_files)
         # 本地化菜单
-        self.setup_batch_processor(self.actLocalizeLanguages, lambda index, obj: localization_utils.localize_languages(obj))
-        self.setup_batch_processor(self.actFillSilenceForRefLanguage, lambda index, obj: localization_utils.import_silence_for_ref_language(obj))
-        self.setup_batch_processor(self.actFillSilenceForAllLanguages, lambda index, obj: localization_utils.import_silence_for_all_languages(obj))
+        self.setup_batch_processor(self.actLocalizeLanguages, lambda index, obj: localization_utils.localize_languages(obj), WwiseObjectType.Sound)
+        self.setup_batch_processor(self.actFillSilenceForRefLanguage, lambda index, obj: localization_utils.import_silence_for_ref_language(obj), WwiseObjectType.Sound)
+        self.setup_batch_processor(self.actFillSilenceForAllLanguages, lambda index, obj: localization_utils.import_silence_for_all_languages(obj), WwiseObjectType.Sound)
         self.actFilterByLanguage.triggered.connect(self.filter_by_active_language)
         # 混音菜单
         self.setup_batch_processor(self.actDownMixFader, lambda index, obj: mixing_utils.down_mix_fader(obj))
@@ -498,26 +545,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_batch_processor(self.actEnableEffectBypass, lambda index, obj: mixing_utils.set_effect_slot_property(obj, 'Bypass', True))
         self.setup_batch_processor(self.actDisableEffectBypass, lambda index, obj: mixing_utils.set_effect_slot_property(obj, 'Bypass', False))
         # Container菜单
-        self.setup_batch_processor(self.actBreakContainer, lambda index, obj: container_utils.break_container(obj))
-        self.setup_batch_processor(self.actReplaceParent, lambda index, obj: container_utils.replace_parent(obj))
-        self.setup_batch_processor(self.actAssignSwitchMappings, lambda index, obj: container_utils.auto_assign_switch_mappings(obj))
-        self.setup_batch_processor(self.actRemoveSwitchMappings, lambda index, obj: waapi_utils.remove_switch_mappings(obj))
-        self.setup_batch_processor(self.actAssignToGenericPath, lambda index, obj: container_utils.assign_to_generic_path(obj))
-        self.setup_batch_processor(self.actSplitTo1P3P, lambda index, obj: container_utils.split_by_net_role(obj, False, True))
-        self.setup_batch_processor(self.actSplitTo1P2P3P, lambda index, obj: container_utils.split_by_net_role(obj, True, True))
-        self.setup_batch_processor(self.actSplitTo1P2P, lambda index, obj: container_utils.split_by_net_role(obj, True, False))
-        self.setup_batch_processor(self.actGroupAsRandom, lambda index, obj: container_utils.group_as_random(obj))
-        self.setup_batch_processor(self.actRenameRandomChildren, lambda index, obj: container_utils.rename_random_children(obj))
+        self.setup_batch_processor(self.actBreakContainer, lambda index, obj: container_utils.break_container(obj), expand=False)
+        self.setup_batch_processor(self.actReplaceParent, lambda index, obj: container_utils.replace_parent(obj), expand=False)
+        self.setup_batch_processor(self.actAssignSwitchMappings, lambda index, obj: container_utils.auto_assign_switch_mappings(obj), WwiseObjectType.SwitchContainer)
+        self.setup_batch_processor(self.actRemoveSwitchMappings, lambda index, obj: waapi_utils.remove_switch_mappings(obj), WwiseObjectType.SwitchContainer)
+        self.setup_batch_processor(self.actAssignToGenericPath, lambda index, obj: container_utils.assign_to_generic_path(obj), WwiseObjectType.SwitchContainer)
+        self.setup_batch_processor(self.actSplitTo1P3P, lambda index, obj: container_utils.split_by_net_role(obj, False, True), expand=False)
+        self.setup_batch_processor(self.actSplitTo1P2P3P, lambda index, obj: container_utils.split_by_net_role(obj, True, True), expand=False)
+        self.setup_batch_processor(self.actSplitTo1P2P, lambda index, obj: container_utils.split_by_net_role(obj, True, False), expand=False)
+        self.setup_batch_processor(self.actGroupAsRandom, lambda index, obj: container_utils.group_as_random(obj), WwiseObjectType.Sound)
+        self.setup_batch_processor(self.actRenameRandomChildren, lambda index, obj: container_utils.rename_random_children(obj), WwiseObjectType.RandomContainer)
         # Event菜单
-        self.setup_batch_processor(self.actCreatePlayEvent, lambda index, obj: event_utils.create_play_event(obj))
-        self.setup_batch_processor(self.actRenameEventByTarget, lambda index, obj: event_utils.rename_event_by_target(obj))
+        self.setup_batch_processor(self.actCreatePlayEvent, lambda index, obj: event_utils.create_play_event(obj), (
+            WwiseObjectType.Sound, WwiseObjectType.RandomContainer, WwiseObjectType.BlendContainer,
+            WwiseObjectType.SwitchContainer, WwiseObjectType.MusicPlaylistContainer,
+            WwiseObjectType.MusicSwitchContainer, WwiseObjectType.MusicSegment,
+        ))
+        self.setup_batch_processor(self.actRenameEventByTarget, lambda index, obj: event_utils.rename_event_by_target(obj), WwiseObjectType.Event)
         self.actExportAllEvents.triggered.connect(event_utils.export_all_events)
         # SoundBank菜单
-        self.setup_batch_processor(self.actCreateSoundBank, lambda index, obj: soundbank_utils.create_bank_for_object(obj))
-        self.setup_batch_processor(self.actClearInclusions, lambda index, obj: waapi_utils.clear_bank_inclusions(obj))
-        self.setup_batch_processor(self.actIncludeMediaOnly, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['media']))
-        self.setup_batch_processor(self.actIncludeEventsAndStructures, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['events', 'structures']))
-        self.setup_batch_processor(self.actIncludeAll, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['events', 'structures', 'media']))
+        self.setup_batch_processor(self.actCreateSoundBank, lambda index, obj: soundbank_utils.create_bank_for_object(obj), expand=False)
+        self.setup_batch_processor(self.actClearInclusions, lambda index, obj: waapi_utils.clear_bank_inclusions(obj), WwiseObjectType.SoundBank)
+        self.setup_batch_processor(self.actIncludeMediaOnly, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['media']), WwiseObjectType.SoundBank)
+        self.setup_batch_processor(self.actIncludeEventsAndStructures, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['events', 'structures']), WwiseObjectType.SoundBank)
+        self.setup_batch_processor(self.actIncludeAll, lambda index, obj: soundbank_utils.set_inclusion_type(obj, ['events', 'structures', 'media']), WwiseObjectType.SoundBank)
         self.actAddToSelectedBank.triggered.connect(self.add_to_selected_bank)
 
         self.actBankAssignmentMatrix.triggered.connect(self.open_bank_assignment_matrix_window)
@@ -547,14 +598,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             line_edit.editingFinished.connect(self._persist_ai_model)
 
     # 连接批处理器到操作（processor 签名为 (index, obj)，与 batch_processor.create_async 一致）
-    def setup_batch_processor(self, action, obj_func: Callable):
+    def setup_batch_processor(self, action, obj_func: Callable, target_types=None, expand: bool = None):
         def proc(index, obj):
             obj_func(index, obj)
             return True
 
         action.triggered.connect(
             lambda: batch_processor.create_async(
-                [row_data.wwise_object for row_data in self.table.active_data],
+                self.collect_tool_targets(target_types, expand),
                 proc,
                 action.text(),
                 "name",
@@ -591,7 +642,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if project_path:
                     version = project_utils.get_project_version()
                     self.lblWwiseConnection.setText(f'已连接到Wwise{version}')
-                Logger().debug(f"Wwise已成功连接到{project_path}")
+                    if version and version < 2021:
+                        Logger().warning(f'Wwise {version} 低于本工具最低支持版本 2021，部分功能可能不可用')
+                    Logger().debug(f"Wwise已成功连接到{project_path}")
+                else:
+                    Logger().error(f"Wwise未连接，请打开Wwise工程后重试")
                 project_conventions.init()
         except CannotConnectToWaapiException:
             Logger().warning("无法连接到Wwise，请确认Wwise工程已打开！")
@@ -798,10 +853,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 获取目标类型对象：按「自动获取子对象」设置决定只取可见行还是先展开子级再筛选
     def get_tool_target_objects(self, target_types) -> list[WwiseObject]:
-        if isinstance(target_types, WwiseObjectType):
+        return self.collect_tool_targets(target_types)
+
+    # 统一的工具执行前对象采集：按「工具执行前自动获取子对象」决定是否展开子级，
+    # 可按目标类型筛选（target_types 为 None 表示不筛类型），并遵循高级筛选的语言设置
+    def collect_tool_targets(self, target_types=None, expand: bool = None) -> list[WwiseObject]:
+        if target_types is not None and isinstance(target_types, WwiseObjectType):
             target_types = {target_types}
-        else:
+        elif target_types is not None:
             target_types = set(target_types)
+        if expand is None:
+            expand = user_config.get_tool_auto_fetch_children()
         # 高级筛选中开启「按当前语言筛选」时，只收集当前语言的音频源
         language_filter_active = (
             user_config.get_advanced_filter_settings().get("language_filter") == "active"
@@ -814,23 +876,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         seen_ids: set[str] = set()
 
         def add_object(obj: WwiseObject):
-            if obj.type in target_types and obj.id not in seen_ids:
+            if target_types is not None and obj.type not in target_types:
+                return
+            if obj.id not in seen_ids:
                 if (
                     language_filter_active
+                    and obj.type in (WwiseObjectType.Sound, WwiseObjectType.AudioSource)
                     and localization_utils.get_sound_language(obj) != active_language
                 ):
                     return
                 seen_ids.add(obj.id)
                 collected.append(obj)
 
-        if not user_config.get_tool_auto_fetch_children():
+        if not expand:
             for obj in visible_objects:
                 add_object(obj)
             return collected
         for obj in visible_objects:
             add_object(obj)
-            for child in waapi_utils.get_child_objects(obj, True):
-                add_object(child)
+            if target_types is None:
+                # 不筛类型：只能拉全部后代
+                for child in waapi_utils.get_child_objects(obj, True):
+                    add_object(child)
+            else:
+                # 有目标类型：用按类型查询后代的接口（单次 WAQL，比全量分页更快）
+                for child in waapi_utils.get_descendants_of_type(obj, target_types):
+                    add_object(child)
         return collected
 
     # 查找父级对象
@@ -861,6 +932,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.apply_table_filter()
         self._history_append_current_if_changed()
 
+    # 查找指定类型的子对象（高级查找窗口调用；遵循「递归查找」与「保留原始层级」设置）
+    def find_children_by_type(self, type_text: str):
+        target_type = None if not type_text or type_text == '全部类型' else WwiseObjectType(type_text)
+        visible_objects = self.get_visible_objects()
+        if not visible_objects:
+            Logger().warning('表格中没有可查找的对象')
+            return
+        recursive = self.cbxRecursiveFind.isChecked()
+        found_objects = list(visible_objects) if self.cbxKeepSelf.isChecked() else []
+        seen_ids = {obj.id for obj in found_objects}
+        for obj in visible_objects:
+            # 递归 + 指定类型时用按类型查后代的接口（单次 WAQL，比全量分页更快）
+            if target_type is not None and recursive:
+                children = waapi_utils.get_descendants_of_type(obj, target_type)
+            else:
+                children = waapi_utils.get_child_objects(obj, recursive)
+            for child in children:
+                if target_type is not None and child.type != target_type:
+                    continue
+                if child.id in seen_ids:
+                    continue
+                seen_ids.add(child.id)
+                found_objects.append(child)
+        if not found_objects:
+            Logger().warning('没有查找到符合条件的子对象')
+            return
+        gv.active_objects = found_objects
+        self.table.refresh_table(True)
+        self.apply_table_filter()
+        self._history_append_current_if_changed()
+        Logger().info(f'共查找到 {len(found_objects)} 个对象')
+
     # 查找引用当前表格对象的所有对象，逐一查询并去重后加入表格
     def find_references(self):
         visible_objects = self.get_visible_objects()
@@ -879,6 +982,49 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.table.refresh_table(True)
         self.apply_table_filter()
         self._history_append_current_if_changed()
+
+    # 打开高级查找窗口
+    def open_advanced_find_window(self):
+        AdvancedFindWindow(self).exec()
+
+    # 按属性查找：对表格内每个对象读取指定属性，属性返回对象引用的对象作为新的表格内容
+    def find_by_property(self):
+        property_name = self.cbbFindProperty.currentText().strip()
+        if not property_name:
+            Logger().warning('请输入要查找的属性名称')
+            return
+        objects = self.get_visible_objects()
+        if not objects:
+            Logger().warning('表格中没有可查找的对象')
+            return
+        found_objects: list[WwiseObject] = []
+        seen_ids: set[str] = set()
+
+        def process(index, obj):
+            target = waapi_utils.get_referenced_object(obj, property_name)
+            if target and target.is_valid and target.id not in seen_ids:
+                seen_ids.add(target.id)
+                found_objects.append(target)
+            return True
+
+        def finished():
+            if not found_objects:
+                Logger().warning(f'没有对象在属性「{property_name}」上返回有效对象')
+                return
+            gv.active_objects = found_objects
+            self.show_obj_list()
+            self._history_append_current_if_changed()
+            Logger().info(f'属性「{property_name}」查找到 {len(found_objects)} 个对象')
+
+        batch_processor.create_async(
+            objects, process, f'查找属性 {property_name}', 'name', on_finished=finished
+        )
+
+    # 「按属性」下拉框选择变化时写入 user_config（主窗口设置节点）
+    def _on_find_property_changed(self, text: str):
+        settings = dict(user_config.get_window_settings('main_window'))
+        settings['find_property'] = text
+        user_config.set_window_settings('main_window', settings)
 
     # AudioFileSource 无法用 referencesTo 反查，改为按 originalRelativeFilePath 反查同源文件对象
     # 结果始终包含自身，保证未勾选「保留原始层级」时也能把当前对象搜出来
@@ -938,15 +1084,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def copy_object_path(self, item: QTableWidgetItem):
         if item.column() != PATH_COL:
             item = self.tblWwiseObjects.item(item.row(), PATH_COL)
-        clipboard.copy(item.text())
+        clipboard.copy(self._path_text(item))
 
     # 在Wwise中选中列表中双击的对象
     def show_object_in_wwise(self, item: QTableWidgetItem):
         if item.column() != PATH_COL:
             item = self.tblWwiseObjects.item(item.row(), PATH_COL)
-        obj = waapi_utils.find_object_by_path(item.text())
+        obj = waapi_utils.find_object_by_path(self._path_text(item))
         if obj:
             waapi_utils.select_objects_in_wwise([obj])
+
+    # 路径列可能显示简写，优先取 UserRole 中的完整路径
+    @staticmethod
+    def _path_text(item) -> str:
+        if item is None:
+            return ''
+        return item.data(Qt.ItemDataRole.UserRole) or item.text()
 
     # 在Wwise中同时选中表格里的所有对象
     def select_table_objects_in_wwise(self):
@@ -1083,7 +1236,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开属性查询窗口，对表格可见对象批量读取指定属性
     def open_property_query_window(self):
-        objects = [row_data.wwise_object for row_data in self.table.active_data]
+        objects = self.collect_tool_targets()
         if not objects:
             Logger().warning('表格中没有可查询的对象')
             return

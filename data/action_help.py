@@ -20,7 +20,8 @@ ACTION_HELP = {
     "actChangeToTitleCase": "把对象名改为首字母大写（Title Case）。",
     "actChangeToLowerCase": "把对象名改为全小写。",
     "actChangeToUpperCase": "把对象名改为全大写。",
-    "actUpdateNoteAndColor": "按工程约定更新对象备注与颜色（Event/被引用对象/声音等）。",
+    "actAutoSetColor": "按工程约定的分类颜色表给对象设置颜色；被 Event 播放或被 SoundBank 包含的对象会同时处理（含深色标记）。",
+    "actAutoAddNotes": "按 Event / SoundBank 引用关系自动写备注（Played by Event [...]、Included by SoundBank [...]）；只新增/覆盖，不删除已有备注。",
     # 通用-创建父级/结构
     "actCreateActorMixer": "在对象上方插入一层 ActorMixer 父级并移入。",
     "actCreateBlendContainer": "在对象上方插入一层 Blend Container 父级并移入。",
@@ -80,7 +81,7 @@ ACTION_HELP = {
     "actClearInclusions": "清空 Bank 的全部包含项。",
     "actGenerateEventBankMap": "生成事件与 Bank 的对应关系表。",
     # 统计
-    "actCalculateMediaSize": "统计可见对象的媒体资源大小：SoundBank 按包含展开，其余递归子对象中的 AudioFileSource，汇总 wav/内存 wem/流式 wem。",
+    "actCalculateMediaSize": "打开“媒体资源大小”统计窗口：对表格当前对象逐个统计 wav/内存 wem/流式 wem、源文件数与压缩比，并显示合计。",
     "actPropertyQuery": "打开属性查询窗口：对表格当前可见对象批量读取指定属性（多个属性用分号分隔），结果以表格展示。",
     # GameSync
     "actCopyRtpcFromSelection": "把 Wwise 当前选中对象的 RTPC 复制（替换）到表格对象。",
@@ -90,5 +91,5 @@ ACTION_HELP = {
     "actImportFMODPreset": "从 FMOD 工程导入 Preset。",
     # 其他
     "actHelpDoc": "打开帮助文档（链接在 user_config.json 的 Documentation 中维护）。",
-    "actProjectValidation": "打开“工程检查”窗口，对工程/对象做批量校验。",
+    "actProjectValidation": "打开“工程规范检查”窗口：按规则批量校验工程/列表/选中对象，逐条列出问题并支持一键修复。",
 }

@@ -75,7 +75,7 @@ def convert_to_type(object_id: str, target_type: str) -> bool:
     return common_utils.convert_to_type(WwiseObject.from_id(object_id), WwiseObjectType(target_type))
 
 def get_source_file_path(object_id: str) -> str:
-    return audio_source_utils.get_source_file_path(WwiseObject.from_id(object_id))
+    return audio_source_utils.get_source_absolute_path(WwiseObject.from_id(object_id))
 
 def apply_source_edits(object_id: str, confirmed: bool) -> bool:
     require_confirmation(confirmed)

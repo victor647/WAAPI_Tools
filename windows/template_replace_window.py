@@ -27,22 +27,23 @@ class TemplateReplacer(QDialog, Ui_TemplateReplacer):
         self.__newName = self.iptReplaceName.text()
         replace_type = self.cbxObjectType.currentData()
         waapi_utils.begin_undo_group(f'{replace_type}模板批量替换')
-        if hasattr(self.__mainWindow, "get_visible_objects"):
-            target_objects = self.__mainWindow.get_visible_objects()
+        # 统一入口：按「工具执行前自动获取子对象」展开，模板替换对全部类型生效
+        if hasattr(self.__mainWindow, "collect_tool_targets"):
+            target_objects = self.__mainWindow.collect_tool_targets()
         else:
             target_objects = self.__mainWindow.activeObjects
         for obj in target_objects:
-            if self.__oldName in obj.name:
-                new_object_name = obj.name.replace(self.__oldName, self.__newName).replace('_01', '')
-                waapi_utils.rename_object(obj, new_object_name)
-            self.iterate_child_objects(obj, replace_type)
+            self.process_object(obj, replace_type)
         waapi_utils.end_undo_group(f'{replace_type}模板批量替换')
 
-    # 遍历子对象
-    def iterate_child_objects(self, obj: WwiseObject, replace_type: WwiseObjectType):
+    # 处理单个对象（列表已统一展开子对象，不再递归）
+    def process_object(self, obj: WwiseObject, replace_type: WwiseObjectType):
         if replace_type == WwiseObjectType.AudioSource and obj.type == WwiseObjectType.Sound:
             if self.__oldName in obj.name:
                 self.replace_source_wave(obj)
+        elif replace_type == WwiseObjectType.AudioSource and obj.type == WwiseObjectType.AudioSource:
+            # AudioSource 由其所属 Sound 统一替换源文件，这里不重复处理
+            pass
         elif replace_type == WwiseObjectType.Event and obj.type == WwiseObjectType.Event:
             if self.__oldName in obj.name:
                 self.replace_event(obj)
@@ -52,8 +53,6 @@ class TemplateReplacer(QDialog, Ui_TemplateReplacer):
         else:
             if self.__oldName in obj.name:
                 self.rename_structure(obj)
-            for child in waapi_utils.get_child_objects(obj):
-                self.iterate_child_objects(child, replace_type)
 
     # 对结构名字重命名
     def rename_structure(self, obj: WwiseObject):
@@ -65,7 +64,7 @@ class TemplateReplacer(QDialog, Ui_TemplateReplacer):
         self.rename_structure(obj)
         sources = waapi_utils.get_child_objects(obj)
         for source in sources:
-            original_path = audio_source_utils.get_source_file_path(source)
+            original_path = audio_source_utils.get_source_absolute_path(source)
             language = localization_utils.get_sound_language(source)
             new_wave_path = original_path.replace(self.__oldName, self.__newName)
             waapi_utils.delete_object(source)
@@ -76,10 +75,10 @@ class TemplateReplacer(QDialog, Ui_TemplateReplacer):
         new_event_name = obj.name.replace(self.__oldName, self.__newName).replace('_01', '')
         waapi_utils.rename_object(obj, new_event_name)
         for action in waapi_utils.get_child_objects(obj):
-            target = waapi_utils.get_object_property(action, 'Target')
+            target = waapi_utils.get_referenced_object(action, 'Target')
             if not target:
                 continue
-            target_full = waapi_utils.get_full_info_from_obj_id(target['id'])
+            target_full = waapi_utils.get_full_info_from_obj_id(target.id)
             new_target_path = target_full.path.replace(self.__oldName, self.__newName)
             new_target = waapi_utils.find_object_by_path(new_target_path)
             if new_target:

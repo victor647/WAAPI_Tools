@@ -19,7 +19,10 @@ from libraries.utils.wwise import common_utils, event_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 # 每个工具结果回传给模型的最大字符数，避免长列表撑爆上下文
-RESULT_CHAR_LIMIT = 3000
+RESULT_CHAR_LIMIT = 6000
+# 工具结果按字符预算收缩：先减列表条数，再缩短超长字符串，保证回传的 JSON 始终完整可解析
+MODEL_LIST_ITEM_CAP = 30
+MODEL_STRING_LIMIT = 240
 
 # 部分模型（如 MiniMax）会把内部推理写在 <think> 块里，展示给用户时去除
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
@@ -537,6 +540,45 @@ def _extract_think(content: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _shorten_string(text: str) -> str:
+    # 路径类字段很长时保留首尾，避免单条就把字符预算吃光
+    if len(text) <= MODEL_STRING_LIMIT:
+        return text
+    head = MODEL_STRING_LIMIT // 2
+    tail = MODEL_STRING_LIMIT - head
+    return f"{text[:head]}…{text[-tail:]}"
+
+
+def _shrink_for_model(value, item_cap: int):
+    if isinstance(value, dict):
+        shrunk = {key: _shrink_for_model(item, item_cap) for key, item in value.items()}
+        # 标量字段（count/total/matched_count 等）排到前面，确保被收敛时仍然可见
+        scalars = {key: item for key, item in shrunk.items() if not isinstance(item, (list, dict))}
+        others = {key: item for key, item in shrunk.items() if isinstance(item, (list, dict))}
+        return {**scalars, **others}
+    if isinstance(value, list):
+        if len(value) > item_cap:
+            return {
+                "items": [_shrink_for_model(item, item_cap) for item in value[:item_cap]],
+                "total": len(value),
+                "truncated": True,
+                "omitted": len(value) - item_cap,
+            }
+        return [_shrink_for_model(item, item_cap) for item in value]
+    if isinstance(value, str):
+        return _shorten_string(value)
+    return value
+
+
+def _serialize_for_model(value) -> str:
+    # 逐级收缩直到落在字符预算内：先保留 30 条，再 10/3/0 条，字符串同步截短
+    for item_cap in (MODEL_LIST_ITEM_CAP, 10, 3, 0):
+        text = json.dumps(_shrink_for_model(value, item_cap), ensure_ascii=False)
+        if len(text) <= RESULT_CHAR_LIMIT:
+            return text
+    return json.dumps(_shrink_for_model(value, 0), ensure_ascii=False)[: RESULT_CHAR_LIMIT - 20] + "…（已截断）"
+
+
 def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> str:
     # 执行一次工具调用并返回回传给模型的结果文本
     registry_spec = tool_registry.get_tool(name)
@@ -552,11 +594,14 @@ def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> s
         if registry_spec is not None:
             # 注册表工具返回 JSON 兼容的结构化结果，统一转成文本回传给模型
             value = tool_registry.execute_tool(name, arguments)
-            result_text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            result_text = value if isinstance(value, str) else _serialize_for_model(value)
         else:
             result_text = TOOL_HANDLERS[name](arguments)
             if not isinstance(result_text, str):
                 result_text = str(result_text)
+    except tool_registry.ExecutionInterrupted as e:
+        # 用户中止：向上抛出，由 agent loop 结束本次任务
+        raise AIAgentStopped(str(e)) from e
     except Exception as e:
         result_text = f"工具执行失败：{e}"
     executed.append({"name": name, "arguments": arguments, "result": result_text[:200]})
@@ -581,7 +626,13 @@ def run_assistant(
     should_stop: Callable[[], bool] | None = None,
 ) -> AIAssistantResult:
     """与模型对话直到得到最终回复；期间自动执行模型请求的工具调用。"""
-    proxy_url = user_config.get_ai_proxy_url()
+    # 连接信息：代理模式 / 官方 API 模式（含 Anthropic 原生协议）
+    connection = ai_utils.resolve_connection(
+        user_config.get_ai_mode(),
+        user_config.get_ai_proxy_url(),
+        user_config.get_ai_provider(),
+        user_config.get_ai_base_url(),
+    )
     model = user_config.get_ai_model()
     api_key = user_config.get_ai_api_key()
     max_turns = user_config.get_ai_max_turns()
@@ -611,7 +662,7 @@ def run_assistant(
         def request():
             try:
                 holder["data"] = ai_utils.chat_completion(
-                    proxy_url,
+                    connection,
                     messages,
                     tools=schemas,
                     model=model,
@@ -647,15 +698,20 @@ def run_assistant(
             waapi_utils.end_undo_group(undo_label)
             log("已结束撤销组：可在 Wwise 用「撤销」一次性回退本次任务的全部修改")
 
-    log(f"已发送请求到 AI 代理 {proxy_url}，表格对象 {len(objects)} 个")
+    log(f"已加载 AI 提示词模板：{PROMPT_FILE_NAME}（{len(system_prompt)} 字符）")
+    log(
+        f"已发送请求到 AI（{connection['mode']}/{connection['protocol']}）{connection['chat_url']}，"
+        f"表格对象 {len(objects)} 个"
+    )
+    # 脚本执行期间同样响应中止请求
+    tool_registry.set_execution_guard(lambda: bool(should_stop and should_stop()))
     try:
         for turn in range(1, max_turns + 1):
             raise_if_stopped()
             data = chat_interruptible()
-            try:
-                message = data["choices"][0]["message"]
-            except (KeyError, IndexError, TypeError) as e:
-                raise ai_utils.AIChatError(f"AI 代理响应缺少 choices/message 字段：{str(data)[:300]}") from e
+            message = data.get("message") if isinstance(data, dict) else None
+            if not isinstance(message, dict):
+                raise ai_utils.AIChatError(f"AI 服务响应缺少 message 字段：{str(data)[:300]}")
 
             assistant_content = message.get("content") or ""
             think_text = _extract_think(assistant_content)
@@ -706,6 +762,7 @@ def run_assistant(
             return result
 
     finally:
+        tool_registry.set_execution_guard(None)
         _close_undo_group()
     result.content = f"达到最大对话轮数（{max_turns}）仍未得到最终回复，已停止；可在 user_config.json 的 ai.max_turns 中调大。"
     log(result.content)

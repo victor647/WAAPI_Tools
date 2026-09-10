@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'WorkUnitImporter.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.9.2
+## Created by: Qt User Interface Compiler version 6.11.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -23,35 +23,36 @@ class Ui_WorkUnitImporter(object):
     def setupUi(self, WorkUnitImporter):
         if not WorkUnitImporter.objectName():
             WorkUnitImporter.setObjectName(u"WorkUnitImporter")
-        WorkUnitImporter.resize(356, 166)
+        WorkUnitImporter.resize(400, 200)
         self.horizontalLayout_2 = QHBoxLayout(WorkUnitImporter)
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
         self.groupBox = QGroupBox(WorkUnitImporter)
         self.groupBox.setObjectName(u"groupBox")
-        self.groupBox.setMaximumSize(QSize(120, 16777215))
+        self.groupBox.setMinimumSize(QSize(210, 0))
+        self.groupBox.setMaximumSize(QSize(210, 16777215))
         self.cbxImportEffects = QCheckBox(self.groupBox)
         self.cbxImportEffects.setObjectName(u"cbxImportEffects")
-        self.cbxImportEffects.setGeometry(QRect(31, 120, 68, 20))
+        self.cbxImportEffects.setGeometry(QRect(12, 150, 180, 20))
         self.cbxImportEffects.setChecked(True)
         self.cbxImportSourceFile = QCheckBox(self.groupBox)
         self.cbxImportSourceFile.setObjectName(u"cbxImportSourceFile")
-        self.cbxImportSourceFile.setGeometry(QRect(31, 20, 71, 20))
+        self.cbxImportSourceFile.setGeometry(QRect(12, 30, 180, 20))
         self.cbxImportSourceFile.setChecked(True)
         self.cbxImportConversion = QCheckBox(self.groupBox)
         self.cbxImportConversion.setObjectName(u"cbxImportConversion")
-        self.cbxImportConversion.setGeometry(QRect(31, 80, 71, 20))
+        self.cbxImportConversion.setGeometry(QRect(12, 102, 180, 20))
         self.cbxImportConversion.setChecked(True)
         self.cbxImportAttenuation = QCheckBox(self.groupBox)
         self.cbxImportAttenuation.setObjectName(u"cbxImportAttenuation")
-        self.cbxImportAttenuation.setGeometry(QRect(31, 60, 71, 20))
+        self.cbxImportAttenuation.setGeometry(QRect(12, 78, 180, 20))
         self.cbxImportAttenuation.setChecked(True)
         self.cbxImportBus = QCheckBox(self.groupBox)
         self.cbxImportBus.setObjectName(u"cbxImportBus")
-        self.cbxImportBus.setGeometry(QRect(31, 100, 68, 20))
+        self.cbxImportBus.setGeometry(QRect(12, 126, 180, 20))
         self.cbxImportBus.setChecked(True)
         self.cbxImportRTPC = QCheckBox(self.groupBox)
         self.cbxImportRTPC.setObjectName(u"cbxImportRTPC")
-        self.cbxImportRTPC.setGeometry(QRect(31, 40, 53, 20))
+        self.cbxImportRTPC.setGeometry(QRect(12, 54, 180, 20))
         self.cbxImportRTPC.setChecked(True)
 
         self.horizontalLayout_2.addWidget(self.groupBox)
@@ -103,11 +104,11 @@ class Ui_WorkUnitImporter(object):
     def retranslateUi(self, WorkUnitImporter):
         WorkUnitImporter.setWindowTitle(QCoreApplication.translate("WorkUnitImporter", u"WorkUnit\u5bfc\u5165\u5de5\u5177", None))
         self.groupBox.setTitle(QCoreApplication.translate("WorkUnitImporter", u"\u5bfc\u5165\u5185\u5bb9", None))
-        self.cbxImportEffects.setText(QCoreApplication.translate("WorkUnitImporter", u"\u6548\u679c\u5668", None))
-        self.cbxImportSourceFile.setText(QCoreApplication.translate("WorkUnitImporter", u"\u97f3\u9891\u6837\u672c", None))
-        self.cbxImportConversion.setText(QCoreApplication.translate("WorkUnitImporter", u"\u538b\u7f29\u8bbe\u7f6e", None))
-        self.cbxImportAttenuation.setText(QCoreApplication.translate("WorkUnitImporter", u"\u8870\u51cf\u66f2\u7ebf", None))
-        self.cbxImportBus.setText(QCoreApplication.translate("WorkUnitImporter", u"\u8f93\u51faBus", None))
+        self.cbxImportEffects.setText(QCoreApplication.translate("WorkUnitImporter", u"Effects", None))
+        self.cbxImportSourceFile.setText(QCoreApplication.translate("WorkUnitImporter", u"AudioSource", None))
+        self.cbxImportConversion.setText(QCoreApplication.translate("WorkUnitImporter", u"Conversion", None))
+        self.cbxImportAttenuation.setText(QCoreApplication.translate("WorkUnitImporter", u"Attenuation", None))
+        self.cbxImportBus.setText(QCoreApplication.translate("WorkUnitImporter", u"OutputBus", None))
         self.cbxImportRTPC.setText(QCoreApplication.translate("WorkUnitImporter", u"RTPC", None))
         self.lblMissingAction.setText(QCoreApplication.translate("WorkUnitImporter", u"\u627e\u4e0d\u5230\u540c\u540d\u5bf9\u8c61\u65f6", None))
         self.cbbMissingAction.setItemText(0, QCoreApplication.translate("WorkUnitImporter", u"\u521b\u5efa", None))

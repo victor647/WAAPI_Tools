@@ -113,7 +113,7 @@ class Ui_PropertyQuery(object):
     def retranslateUi(self, PropertyQuery):
         PropertyQuery.setWindowTitle(QCoreApplication.translate("PropertyQuery", u"\u5c5e\u6027\u67e5\u8be2", None))
         self.lblPropertyPrompt.setText(QCoreApplication.translate("PropertyQuery", u"\u5c5e\u6027\u540d\uff08\u591a\u4e2a\u7528 ; \u5206\u9694\uff09", None))
-        self.iptPropertyNames.setPlaceholderText(QCoreApplication.translate("PropertyQuery", u"\u4f8b\u5982\uff1aNotes;Color;Volume;IsStreamingEnabled", None))
+        self.iptPropertyNames.setPlaceholderText(QCoreApplication.translate("PropertyQuery", u"\u4f8b\u5982\uff1aVolume;IsStreamingEnabled", None))
         self.lblCommonProperty.setText(QCoreApplication.translate("PropertyQuery", u"\u5e38\u7528\u5c5e\u6027", None))
         self.btnQuery.setText(QCoreApplication.translate("PropertyQuery", u"\u67e5\u8be2", None))
         self.btnPropertyHelp.setText(QCoreApplication.translate("PropertyQuery", u"\u5c5e\u6027\u8bf4\u660e", None))

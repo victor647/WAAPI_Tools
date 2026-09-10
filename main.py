@@ -4,10 +4,10 @@ import sys
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
-from qt_material import build_stylesheet
+from qt_material import build_stylesheet, list_themes
 
-from libraries.utils import path_utils
-from libraries.utils.log_utils import Logger
+from libraries.utils import path_utils, user_config
+from libraries.utils.log_utils import Logger, set_log_theme
 from windows.main_window import MainWindow
 
 # 关闭 QtMultimedia ffmpeg 后端的媒体信息输出，避免打开音频时在控制台打印冗余日志
@@ -40,7 +40,11 @@ def parse_args(argv: list[str]) -> tuple[list[str], bool]:
 def run_app_loop(object_ids: list[str] | None = None, from_wwise: bool = False):
     app = QApplication([])
     css_path = path_utils.get_resource_path("material.css")
-    stylesheet = build_stylesheet(theme="dark_teal.xml", template=css_path)
+    theme = user_config.get_appearance_theme()
+    if theme not in list_themes():
+        theme = user_config.DEFAULT_CONFIG["appearance"]["theme"]
+    set_log_theme(theme)
+    stylesheet = build_stylesheet(theme=theme, template=css_path)
     main_window = MainWindow(stylesheet)
     app.setStyleSheet(stylesheet)
     icon_path = path_utils.get_resource_path("icons/Icon.png")

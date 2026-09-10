@@ -6,13 +6,13 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1160</width>
+    <width>1200</width>
     <height>600</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>1160</width>
+    <width>1200</width>
     <height>600</height>
    </size>
   </property>
@@ -25,17 +25,11 @@
      <layout class="QHBoxLayout" name="horizontalLayout_5">
       <item>
        <widget class="QGroupBox" name="grpTableAction">
-        <property name="minimumSize">
-         <size>
-          <width>420</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>500</width>
-          <height>16777215</height>
-         </size>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
         </property>
         <property name="title">
          <string>状态与操作</string>
@@ -123,9 +117,15 @@
        </widget>
       </item>
       <item>
-       <widget class="QGroupBox" name="grpFindFilter">
+       <widget class="QGroupBox" name="grpFind">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <property name="title">
-         <string>查找与筛选</string>
+         <string>查找</string>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout">
          <item>
@@ -133,10 +133,13 @@
            <item>
             <widget class="QCheckBox" name="cbxRecursiveFind">
              <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-               <horstretch>0</horstretch>
+              <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+               <horstretch>1</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
+             </property>
+             <property name="visible">
+              <bool>false</bool>
              </property>
              <property name="text">
               <string>递归查找</string>
@@ -154,11 +157,8 @@
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
-             <property name="minimumSize">
-              <size>
-               <width>140</width>
-               <height>0</height>
-              </size>
+             <property name="visible">
+              <bool>false</bool>
              </property>
              <property name="text">
               <string>保留原始层级</string>
@@ -168,8 +168,8 @@
            <item>
             <widget class="QCheckBox" name="cbxTurboMode">
              <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-               <horstretch>0</horstretch>
+              <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+               <horstretch>1</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
@@ -179,65 +179,22 @@
              <property name="text">
               <string>极速模式</string>
              </property>
-             <property name="checked">
-              <bool>true</bool>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnAdvancedFind">
+             <property name="text">
+              <string>高级查找</string>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QPushButton" name="btnFindParent">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>78</width>
-               <height>16777215</height>
-              </size>
-             </property>
+            <widget class="QPushButton" name="btnClearTable">
              <property name="text">
-              <string>查找上级</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="btnFindChildren">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>78</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>查找下级</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="btnFindReferences">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>78</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>查找引用</string>
+              <string>清空</string>
              </property>
             </widget>
            </item>
@@ -267,49 +224,139 @@
              </property>
             </widget>
            </item>
-           <item>
-            <widget class="QPushButton" name="btnClearTable">
-             <property name="text">
-              <string>清空</string>
-             </property>
-            </widget>
-           </item>
           </layout>
          </item>
          <item>
-          <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <layout class="QHBoxLayout" name="horizontalLayout_findActions">
            <item>
-            <widget class="QCheckBox" name="cbxTableSelectAll">
-             <property name="maximumSize">
-              <size>
-               <width>60</width>
-               <height>16777215</height>
-              </size>
+            <widget class="QPushButton" name="btnFindParent">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
              </property>
              <property name="text">
-              <string>全选</string>
-             </property>
-             <property name="checked">
-              <bool>true</bool>
+              <string>找父级</string>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QComboBox" name="cbbFilterType">
+            <widget class="QPushButton" name="btnFindChildren">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>找子级</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnFindReferences">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>找引用</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="cbbFindProperty">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
                <horstretch>0</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
-             <property name="maximumSize">
+             <property name="minimumSize">
               <size>
-               <width>180</width>
-               <height>16777215</height>
+               <width>120</width>
+               <height>0</height>
               </size>
+             </property>
+             <item>
+              <property name="text">
+               <string>Attenuation</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>Conversion</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>OutputBus</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>SwitchGroupOrStateGroup</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>DefaultSwitchOrState</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>UserAuxSend0</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>ReflectionsAuxSend</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnFindProperty">
+             <property name="text">
+              <string>找属性</string>
              </property>
             </widget>
            </item>
+           <item>
+            <spacer name="findActionsSpacer">
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QGroupBox" name="grpFilter">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="title">
+         <string>筛选</string>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout_filter">
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_2">
            <item>
             <widget class="QLineEdit" name="ledFilterKeyword">
              <property name="sizePolicy">
@@ -350,6 +397,42 @@ Boss        包含 Boss
              </property>
              <property name="text">
               <string>筛选</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_filterActions">
+           <item>
+            <widget class="QCheckBox" name="cbxTableSelectAll">
+             <property name="maximumSize">
+              <size>
+               <width>60</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>全选</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="cbbFilterType">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>180</width>
+               <height>16777215</height>
+              </size>
              </property>
             </widget>
            </item>
@@ -635,7 +718,8 @@ Boss        包含 Boss
     </widget>
     <addaction name="mnuOptimizeName"/>
     <addaction name="mnuSetNameCase"/>
-    <addaction name="actUpdateNoteAndColor"/>
+    <addaction name="actAutoSetColor"/>
+    <addaction name="actAutoAddNotes"/>
     <addaction name="separator"/>
     <addaction name="mnuCreateParent"/>
     <addaction name="actSplitUnderScore"/>
@@ -667,14 +751,12 @@ Boss        包含 Boss
     <addaction name="actImportWorkUnit"/>
     <widget class="QMenu" name="mnuImportFmod">
      <property name="title">
-      <string>FMOD工程</string>
+      <string>从FMOD工程导入</string>
      </property>
      <addaction name="actImportFMODEvent"/>
      <addaction name="actImportFMODPreset"/>
     </widget>
     <addaction name="mnuImportFmod"/>
-    <addaction name="separator"/>
-    <addaction name="actProjectSettings"/>
    </widget>
    <widget class="QMenu" name="mnuEdit">
     <property name="title">
@@ -690,10 +772,8 @@ Boss        包含 Boss
      <string>其他</string>
     </property>
     <addaction name="actHelpDoc"/>
-    <addaction name="separator"/>
     <addaction name="actProjectValidation"/>
-    <addaction name="separator"/>
-    <addaction name="separator"/>
+    <addaction name="actProjectSettings"/>
    </widget>
    <widget class="QMenu" name="mnuGameSync">
     <property name="title">
@@ -1100,9 +1180,14 @@ Boss        包含 Boss
     <string>Preset</string>
    </property>
   </action>
-  <action name="actUpdateNoteAndColor">
+  <action name="actAutoSetColor">
    <property name="text">
-    <string>更新备注与颜色</string>
+    <string>自动设置颜色</string>
+   </property>
+  </action>
+  <action name="actAutoAddNotes">
+   <property name="text">
+    <string>自动添加备注</string>
    </property>
   </action>
   <action name="actRenameEventByTarget">

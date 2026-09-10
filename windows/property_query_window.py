@@ -153,7 +153,7 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
             name_item.setData(Qt.ItemDataRole.UserRole, obj.id)
             self.tblPropertyResults.setItem(index, 0, name_item)
             self.tblPropertyResults.setItem(index, 1, QTableWidgetItem(obj.type.name))
-            self.tblPropertyResults.setItem(index, 2, QTableWidgetItem(WwiseTableRowData.get_path_compact_text(obj.path)))
+            self.tblPropertyResults.setItem(index, 2, QTableWidgetItem(WwiseTableRowData.get_path_text(obj.path)))
         batch_processor.create_async(
             self.__objects,
             lambda index, obj: self.read_object_properties(index, obj),

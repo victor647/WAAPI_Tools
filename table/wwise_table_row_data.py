@@ -1,7 +1,9 @@
 from data.design_info import DesignInfo
+from data import project_conventions
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_row_data import TableRowData
-from libraries.utils.wwise import common_utils, audio_source_utils, localization_utils, event_utils, waapi_utils
+from libraries.utils import user_config
+from libraries.utils.wwise import common_utils, audio_source_utils, localization_utils, event_utils, soundbank_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_table_headers import *
 
@@ -157,7 +159,14 @@ class WwiseTableRowData(TableRowData):
         return separator.join(compact_parts)
 
     def set_path_cell(self, column: int, path: str):
-        self.set_cell_value(column, self.get_path_compact_text(path), path)
+        self.set_cell_value(column, self.get_path_text(path), path)
+
+    # 按「路径显示简写」设置返回路径显示文本（关闭时显示完整路径）
+    @staticmethod
+    def get_path_text(path: str) -> str:
+        if user_config.get_tool_path_display_compact():
+            return WwiseTableRowData.get_path_compact_text(path)
+        return path
 
     # 筛选时决定需要筛选的条目
     def get_searched_properties(self) -> list[str]:
@@ -196,7 +205,7 @@ class WwiseTableRowData(TableRowData):
             self.set_cell_severity(column, CellSeverity.Ignored)
 
     def read_design_info(self):
-        self[VOLUME_COL] = self.design_info.volume
+        self.read_volume()
         self.read_output_bus()
         self.read_attenuation()
         self.read_conversion()
@@ -204,10 +213,23 @@ class WwiseTableRowData(TableRowData):
         self.read_wwise_original_path()
         self.apply_inclusion_text_style()
 
-    def read_integration_info(self):
+    # 属性在对象上不存在时统一显示「不适用」并置灰
+    def set_not_applicable(self, column: int):
+        self[column] = "不适用"
+        self.set_cell_severity(column, CellSeverity.Ignored)
+
+    # 读取音量
+    def read_volume(self):
+        if not self.design_info.has_property("Volume"):
+            self.set_not_applicable(VOLUME_COL)
+            return
+        self[VOLUME_COL] = self.design_info.volume
+
+    def read_integration_info(self, event_bank_map: dict | None = None):
         self.read_event_action_types()
         self.read_wwise_target_info()
         self.read_wwise_localization()
+        self.read_soundbank(event_bank_map)
         self.apply_inclusion_text_style()
 
     # 读取 Event 下所有 Action 的类型（集成视图「动作」列）；非 Event 显示不适用
@@ -225,6 +247,9 @@ class WwiseTableRowData(TableRowData):
 
     # 读取总线
     def read_output_bus(self):
+        if not self.design_info.has_property("OutputBus"):
+            self.set_not_applicable(OUTPUT_BUS_COL)
+            return
         bus = self.design_info.output_bus
         if bus and bus.name != "Master Audio Bus":
             self[OUTPUT_BUS_COL] = bus.name
@@ -233,14 +258,21 @@ class WwiseTableRowData(TableRowData):
 
     # 读取衰减
     def read_attenuation(self):
+        if not self.design_info.has_property("Attenuation"):
+            self.set_not_applicable(ATTENUATION_COL)
+            return
         setting = self.design_info.attenuation
         if setting and setting.is_valid:
             self[ATTENUATION_COL] = setting.name
         else:
-            self[ATTENUATION_COL] = "无"
+            # 没有衰减曲线即 2D 声音
+            self[ATTENUATION_COL] = "2D"
 
     # 读取音质
     def read_conversion(self):
+        if not self.design_info.has_property("Conversion"):
+            self.set_not_applicable(CONVERSION_COL)
+            return
         setting = self.design_info.conversion_setting
         if setting:
             self[CONVERSION_COL] = setting.name
@@ -249,6 +281,9 @@ class WwiseTableRowData(TableRowData):
 
     # 读取最大发声数
     def read_playback_limit(self):
+        if not self.design_info.has_property("MaxSoundPerInstance"):
+            self.set_not_applicable(PLAYBACK_LIMIT_COL)
+            return
         limit = self.design_info.playback_limit
         if not limit:
             self[PLAYBACK_LIMIT_COL] = "不限"
@@ -258,6 +293,9 @@ class WwiseTableRowData(TableRowData):
     # 读取播放对象的类型和路径
     def read_wwise_target_info(self):
         if self.type != WwiseObjectType.Event:
+            for column in (TARGET_TYPE_COL, TARGET_PATH_COL):
+                self[column] = "不适用"
+                self.set_cell_severity(column, CellSeverity.Ignored)
             return
         targets = event_utils.get_event_targets(self.wwise_object)
         target_count = len(targets)
@@ -276,19 +314,33 @@ class WwiseTableRowData(TableRowData):
                 self[TARGET_TYPE_COL] = "对象已失效"
                 self.set_cell_severity(TARGET_TYPE_COL, CellSeverity.Warning)
 
-    # 读取事件源文件路径
+    # 读取对象自身的源文件路径（不递归子对象，取不到时显示不适用）
     def read_wwise_original_path(self):
-        wave_paths = audio_source_utils.get_all_audio_file_paths(self.wwise_object)
-        wave_count = len(wave_paths)
-        if wave_count == 0:
-            self[ORIGINAL_PATH_COL] = "事件不包含源文件"
-            self.set_cell_severity(ORIGINAL_PATH_COL, CellSeverity.Ignored)
-        elif wave_count > 1:
-            self[ORIGINAL_PATH_COL] = f"共包含{wave_count}条音频资源"
-        else:
-            self[ORIGINAL_PATH_COL] = wave_paths[0]
+        if self.type not in (WwiseObjectType.Sound, WwiseObjectType.AudioSource, WwiseObjectType.MusicTrack):
+            self.set_not_applicable(ORIGINAL_PATH_COL)
+            return
+        source_path = audio_source_utils.get_source_absolute_path(self.wwise_object)
+        if not source_path:
+            self.set_not_applicable(ORIGINAL_PATH_COL)
+            return
+        self[ORIGINAL_PATH_COL] = source_path
 
     # 读取事件是否包含本地化内容
     def read_wwise_localization(self):
         is_localized = localization_utils.is_localized(self.wwise_object)
         self[LOCALIZATION_COL] = "是" if is_localized else "否"
+
+    # 读取所属 SoundBank（集成视图）；拆分 Event/Media 的工程不显示 _Event / _Media 后缀
+    def read_soundbank(self, event_bank_map: dict | None):
+        if self.type != WwiseObjectType.Event:
+            self[SOUNDBANK_COL] = "不适用"
+            self.set_cell_severity(SOUNDBANK_COL, CellSeverity.Ignored)
+            return
+        bank_names = (event_bank_map or {}).get(self.id, [])
+        if not bank_names:
+            self[SOUNDBANK_COL] = "未包含"
+            self.set_cell_severity(SOUNDBANK_COL, CellSeverity.Warning)
+            return
+        if project_conventions.split_bank_event_media():
+            bank_names = list(dict.fromkeys(soundbank_utils.get_bank_display_name(name) for name in bank_names))
+        self[SOUNDBANK_COL] = "/".join(bank_names)

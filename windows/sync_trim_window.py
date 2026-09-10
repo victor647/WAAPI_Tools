@@ -35,7 +35,7 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
     def refresh_sources(self):
         self.tblTrimInfo.setRowCount(len(self.__sources))
         for index, source in enumerate(self.__sources):
-            self.tblTrimInfo.setItem(index, 1, QTableWidgetItem(WwiseTableRowData.get_path_compact_text(source.path)))
+            self.tblTrimInfo.setItem(index, 1, QTableWidgetItem(WwiseTableRowData.get_path_text(source.path)))
         batch_processor.create_async(
             self.__sources,
             lambda index, source: self.fill_source_info(index, source),
@@ -46,7 +46,7 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
     # 异步读取单个对象的源文件路径与裁剪信息
     def fill_source_info(self, index: int, source: WwiseObject):
         relative_path = waapi_utils.get_object_property(source, 'originalRelativeFilePath') or ''
-        self.tblTrimInfo.setItem(index, 0, QTableWidgetItem(relative_path))
+        self.tblTrimInfo.setItem(index, 0, QTableWidgetItem(WwiseTableRowData.get_path_text(relative_path)))
         info = audio_source_utils.get_source_edit_info(source)
         if info is None:
             return
@@ -60,6 +60,10 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
             return '无'
         if isinstance(value, (int, float)) and (value == 0 or abs(value + 0.001) < 1e-6):
             return '无'
+        # 参数只保留 3 位小数
+        if isinstance(value, float):
+            text = f'{value:.3f}'.rstrip('0').rstrip('.')
+            return text if text not in ('', '-') else '0'
         return str(value)
 
     # 读取完成后自适应列宽

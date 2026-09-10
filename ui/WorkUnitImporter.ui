@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>356</width>
-    <height>166</height>
+   <width>400</width>
+   <height>200</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,9 +16,15 @@
   <layout class="QHBoxLayout" name="horizontalLayout_2">
    <item>
     <widget class="QGroupBox" name="groupBox">
+     <property name="minimumSize">
+      <size>
+       <width>210</width>
+       <height>0</height>
+      </size>
+     </property>
      <property name="maximumSize">
       <size>
-       <width>120</width>
+       <width>210</width>
        <height>16777215</height>
       </size>
      </property>
@@ -28,14 +34,14 @@
      <widget class="QCheckBox" name="cbxImportEffects">
       <property name="geometry">
        <rect>
-        <x>31</x>
-        <y>120</y>
-        <width>68</width>
+       <x>12</x>
+        <y>150</y>
+       <width>180</width>
         <height>20</height>
        </rect>
       </property>
       <property name="text">
-       <string>效果器</string>
+       <string>Effects</string>
       </property>
       <property name="checked">
        <bool>true</bool>
@@ -44,14 +50,14 @@
      <widget class="QCheckBox" name="cbxImportSourceFile">
       <property name="geometry">
        <rect>
-        <x>31</x>
-        <y>20</y>
-        <width>71</width>
+       <x>12</x>
+        <y>30</y>
+       <width>180</width>
         <height>20</height>
        </rect>
       </property>
       <property name="text">
-       <string>音频样本</string>
+       <string>AudioSource</string>
       </property>
       <property name="checked">
        <bool>true</bool>
@@ -60,14 +66,14 @@
      <widget class="QCheckBox" name="cbxImportConversion">
       <property name="geometry">
        <rect>
-        <x>31</x>
-        <y>80</y>
-        <width>71</width>
+       <x>12</x>
+        <y>102</y>
+       <width>180</width>
         <height>20</height>
        </rect>
       </property>
       <property name="text">
-       <string>压缩设置</string>
+       <string>Conversion</string>
       </property>
       <property name="checked">
        <bool>true</bool>
@@ -76,14 +82,14 @@
      <widget class="QCheckBox" name="cbxImportAttenuation">
       <property name="geometry">
        <rect>
-        <x>31</x>
-        <y>60</y>
-        <width>71</width>
+       <x>12</x>
+        <y>78</y>
+       <width>180</width>
         <height>20</height>
        </rect>
       </property>
       <property name="text">
-       <string>衰减曲线</string>
+       <string>Attenuation</string>
       </property>
       <property name="checked">
        <bool>true</bool>
@@ -92,14 +98,14 @@
      <widget class="QCheckBox" name="cbxImportBus">
       <property name="geometry">
        <rect>
-        <x>31</x>
-        <y>100</y>
-        <width>68</width>
+       <x>12</x>
+        <y>126</y>
+       <width>180</width>
         <height>20</height>
        </rect>
       </property>
       <property name="text">
-       <string>输出Bus</string>
+       <string>OutputBus</string>
       </property>
       <property name="checked">
        <bool>true</bool>
@@ -108,9 +114,9 @@
      <widget class="QCheckBox" name="cbxImportRTPC">
       <property name="geometry">
        <rect>
-        <x>31</x>
-        <y>40</y>
-        <width>53</width>
+       <x>12</x>
+        <y>54</y>
+       <width>180</width>
         <height>20</height>
        </rect>
       </property>

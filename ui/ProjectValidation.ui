@@ -17,7 +17,10 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
-      <widget class="QGroupBox" name="grpProjectStandards">
+     <widget class="QGroupBox" name="grpProjectStandards">
+      <property name="toolTip">
+       <string>命名/颜色等工程规范检查；勾选或取消勾选可整组启用/停用。</string>
+      </property>
        <property name="enabled">
         <bool>true</bool>
        </property>
@@ -36,6 +39,9 @@
        <layout class="QVBoxLayout" name="verticalLayout_2">
         <item>
          <widget class="QCheckBox" name="cbxWrongCase">
+          <property name="toolTip">
+           <string>检查对象名是否符合设置-命名与颜色规范里选择的大小写方式（首字母大写/全小写/全大写）。</string>
+          </property>
           <property name="text">
            <string>不符合大小写规范</string>
           </property>
@@ -49,6 +55,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxWrongNameLength">
+          <property name="toolTip">
+           <string>检查名称长度是否超出工程约定的范围。</string>
+          </property>
           <property name="text">
            <string>名称长短不符合规范</string>
           </property>
@@ -59,6 +68,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxColorTypeMismatch">
+          <property name="toolTip">
+           <string>检查对象颜色是否与分类颜色规范（设置-命名与颜色规范-颜色映射表）一致。</string>
+          </property>
           <property name="text">
            <string>颜色与对象的类别不一致</string>
           </property>
@@ -69,6 +81,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxNoRefNotesOrColorTag">
+          <property name="toolTip">
+           <string>检查被 Event 引用的对象备注/颜色标记是否缺失或写错（如 “Played by Event [...]”）。依赖设置里「Event 引用使用深色」与「Event 与播放对象互为备注」：只检查已开启的那部分，两者都关闭时本项不可用。</string>
+          </property>
           <property name="text">
            <string>引用备注/颜色标记缺失或错误</string>
           </property>
@@ -81,7 +96,10 @@
       </widget>
      </item>
      <item>
-      <widget class="QGroupBox" name="grpDesignStructure">
+     <widget class="QGroupBox" name="grpDesignStructure">
+      <property name="toolTip">
+       <string>层级与容器结构合理性检查；勾选或取消勾选可整组启用/停用。</string>
+      </property>
        <property name="title">
         <string>设计缺陷</string>
        </property>
@@ -91,6 +109,9 @@
        <layout class="QVBoxLayout" name="verticalLayout_4">
         <item>
          <widget class="QCheckBox" name="cbxNestedWorkUnit">
+          <property name="toolTip">
+           <string>检查 WorkUnit 下是否又嵌套了 WorkUnit（多余层级）。</string>
+          </property>
           <property name="text">
            <string>WorkUnit多层嵌套</string>
           </property>
@@ -104,6 +125,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxRedundantActorMixer">
+          <property name="toolTip">
+           <string>检查 ActorMixer 是否没有实际调整（音量/总线等），属于可精简的多余层级。</string>
+          </property>
           <property name="text">
            <string>ActorMixer无实际调整</string>
           </property>
@@ -114,6 +138,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxSingleChildContainer">
+          <property name="toolTip">
+           <string>检查容器是否只包含一个子节点（可考虑打散容器）。</string>
+          </property>
           <property name="text">
            <string>Container仅包含一个子节点</string>
           </property>
@@ -124,6 +151,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxEmptyNode">
+          <property name="toolTip">
+           <string>检查对象是否不包含有效内容（无子级、无音频源等）。</string>
+          </property>
           <property name="text">
            <string>对象不包含有效内容</string>
           </property>
@@ -134,6 +164,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxDuplicatedParameter">
+          <property name="toolTip">
+           <string>检查同一对象上是否有重复绑定同一属性的 RTPC 曲线。</string>
+          </property>
           <property name="text">
            <string>RTPC重复绑定内部属性</string>
           </property>
@@ -146,7 +179,10 @@
       </widget>
      </item>
      <item>
-      <widget class="QGroupBox" name="grpSoundLocalization">
+     <widget class="QGroupBox" name="grpSoundLocalization">
+      <property name="toolTip">
+       <string>源文件与本地化相关检查；勾选或取消勾选可整组启用/停用。</string>
+      </property>
        <property name="title">
         <string>样本与本地化</string>
        </property>
@@ -156,6 +192,9 @@
        <layout class="QVBoxLayout" name="verticalLayout_3">
         <item>
          <widget class="QCheckBox" name="cbxSourceNameDifferent">
+          <property name="toolTip">
+           <string>检查源文件（wav）文件名与对应 Sound 命名是否不一致。</string>
+          </property>
           <property name="text">
            <string>源文件与Sound命名不一致</string>
           </property>
@@ -166,6 +205,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxSourceNotImported">
+          <property name="toolTip">
+           <string>检查语音是否缺少参考语言或未接入语言的音频源（未接入语言见设置-工具行为）。</string>
+          </property>
           <property name="text">
            <string>未导入或缺失语言</string>
           </property>
@@ -176,6 +218,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxSilentPlaceholder">
+          <property name="toolTip">
+           <string>检查是否使用了静音/静音插件作为临时占位资源，尚未替换为真实样本。</string>
+          </property>
           <property name="text">
            <string>使用静音临时替代资源</string>
           </property>
@@ -186,6 +231,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxSoundNotInEvent">
+          <property name="toolTip">
+           <string>检查 Sound 是否未被任何 Event 引用（无法被播放）。</string>
+          </property>
           <property name="text">
            <string>音效未被事件包含</string>
           </property>
@@ -196,6 +244,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxInvalidTrimRange">
+          <property name="toolTip">
+           <string>检查 Source Editor 的裁剪起点/终点是否超出音频采样范围。</string>
+          </property>
           <property name="text">
            <string>音频裁剪超出范围</string>
           </property>
@@ -208,7 +259,10 @@
       </widget>
      </item>
      <item>
-      <widget class="QGroupBox" name="grpEventBank">
+     <widget class="QGroupBox" name="grpEventBank">
+      <property name="toolTip">
+       <string>Event 与 SoundBank 相关检查；勾选或取消勾选可整组启用/停用。</string>
+      </property>
        <property name="title">
         <string>Event与Bank</string>
        </property>
@@ -218,6 +272,9 @@
        <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <widget class="QCheckBox" name="cbxEventDuplicatedByNetRole">
+          <property name="toolTip">
+           <string>检查同一声源是否同时存在 1P/3P 两个 Event（应合并为 NetRole 切换）。</string>
+          </property>
           <property name="text">
            <string>存在1P/3P两个事件</string>
           </property>
@@ -228,6 +285,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxWrongEventName">
+          <property name="toolTip">
+           <string>检查 Event 名称是否与播放对象命名规则冲突或不规范。</string>
+          </property>
           <property name="text">
            <string>Event与播放对象命名冲突</string>
           </property>
@@ -238,6 +298,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxEmptyEvent">
+          <property name="toolTip">
+           <string>检查 Event 是否缺少动作（Action）或目标为空。</string>
+          </property>
           <property name="text">
            <string>Event缺少动作或目标</string>
           </property>
@@ -248,6 +311,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxEventNotInBank">
+          <property name="toolTip">
+           <string>检查 Event 是否未被任何 SoundBank 包含。</string>
+          </property>
           <property name="text">
            <string>Event未被任何Bank包含</string>
           </property>
@@ -258,6 +324,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxAbnormalBankSize">
+          <property name="toolTip">
+           <string>检查 SoundBank 体积是否异常（过大或过小）。</string>
+          </property>
           <property name="text">
            <string>Bank过大或过小</string>
           </property>
@@ -270,7 +339,10 @@
       </widget>
      </item>
      <item>
-      <widget class="QGroupBox" name="grpMistakes">
+     <widget class="QGroupBox" name="grpMistakes">
+      <property name="toolTip">
+       <string>其它易遗漏问题（Bus/SwitchContainer/衰减/Streaming 等）；勾选或取消勾选可整组启用/停用。</string>
+      </property>
        <property name="title">
         <string>粗心大意</string>
        </property>
@@ -280,6 +352,9 @@
        <layout class="QVBoxLayout" name="verticalLayout_6">
         <item>
          <widget class="QCheckBox" name="cbxUnassignedToBus">
+          <property name="toolTip">
+           <string>检查对象是否未指定对应类别的 Output Bus。</string>
+          </property>
           <property name="text">
            <string>未指定对应类别的Bus</string>
           </property>
@@ -290,6 +365,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxUnassignedSwitchContainer">
+          <property name="toolTip">
+           <string>检查 SwitchContainer 是否未设置 SwitchGroup 或存在未分配的子对象。</string>
+          </property>
           <property name="text">
            <string>SwitchContainer未分配</string>
           </property>
@@ -300,6 +378,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxSwitchTo1PByDefault">
+          <property name="toolTip">
+           <string>检查 SwitchContainer 的默认分支是否指向 1P（通常应为 3P 或全部）。</string>
+          </property>
           <property name="text">
            <string>SwitchContainer默认播放1P</string>
           </property>
@@ -310,6 +391,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxMissingAttenuation">
+          <property name="toolTip">
+           <string>检查 3D 音效是否未设置衰减曲线（Attenuation）。</string>
+          </property>
           <property name="text">
            <string>3D音效未设置衰减曲线</string>
           </property>
@@ -320,6 +404,9 @@
         </item>
         <item>
          <widget class="QCheckBox" name="cbxSoundNotStreamed">
+          <property name="toolTip">
+           <string>检查音乐/环境/语音等长音频是否未开启 Streaming。</string>
+          </property>
           <property name="text">
            <string>音乐环境语音未Streaming</string>
           </property>
@@ -346,6 +433,13 @@
       <widget class="QPushButton" name="btnDeselectAll">
        <property name="text">
         <string>全不选</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnSaveChecks">
+       <property name="text">
+        <string>保存检查项</string>
        </property>
       </widget>
      </item>

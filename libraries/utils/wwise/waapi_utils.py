@@ -15,6 +15,11 @@ def close_client():
     WAAPIClient().disconnect()
 
 
+# 是否已连接到 Wwise（供业务层判断连接状态，避免直接依赖 WAAPIClient）
+def is_connected() -> bool:
+    return WAAPIClient().is_connected()
+
+
 # region Query
 def get_authoring_info(property_name: str) -> dict:
     return WAAPIClient().get_authoring_info(property_name)
@@ -26,6 +31,11 @@ def get_project_info(property_name: str) -> dict:
 
 def get_project_property(property_name: str):
     return WAAPIClient().get_project_property(property_name)
+
+
+def get_referenced_object(obj: WwiseObject, property_name: str):
+    obj = get_object_property(obj, property_name)
+    return WwiseObject(obj) if obj else None
 
 
 def get_object_property(obj: WwiseObject, property_name: str):
@@ -72,8 +82,12 @@ def get_child_objects(obj: WwiseObject, include_descendants=False) -> list[Wwise
     return _dict_list_to_wobjs(WAAPIClient().get_child_objects(obj.wwise_dict, include_descendants=include_descendants))
 
 
-def get_descendants_of_type(obj: WwiseObject, child_type: WwiseObjectType) -> list[WwiseObject]:
-    return _dict_list_to_wobjs(WAAPIClient().get_descendants_of_type(obj.wwise_dict, child_type.value))
+def get_descendants_of_type(obj: WwiseObject, child_type) -> list[WwiseObject]:
+    if isinstance(child_type, (list, set, tuple)):
+        types = [item.value if isinstance(item, WwiseObjectType) else item for item in child_type]
+    else:
+        types = child_type.value if isinstance(child_type, WwiseObjectType) else child_type
+    return _dict_list_to_wobjs(WAAPIClient().get_descendants_of_type(obj.wwise_dict, types))
 
 
 def get_global_objects() -> list[WwiseObject]:
@@ -227,7 +241,7 @@ def add_effect(obj: WwiseObject, share_set_name: str) -> bool:
 
 # region Localization
 def get_language_list() -> list:
-    return WAAPIClient().get_language_list()
+    return _dict_list_to_wobjs(WAAPIClient().get_language_list())
 
 
 # endregion Localization

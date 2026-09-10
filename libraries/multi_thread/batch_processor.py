@@ -14,8 +14,10 @@ def create_sync(objects: list, processor: Callable, title: str,
 
 # 多线程批处理（适用于GUI模式）
 def create_async(objects: list, processor: Callable, title: str, obj_name: str = "",
-                 on_finished: Callable = None, on_interrupted: Callable = None, on_item_processed: Callable = None):
-    gv.batch_processor = BatchProcessorAsync(objects, processor, obj_name, on_finished, on_interrupted, on_item_processed)
+                 on_finished: Callable = None, on_interrupted: Callable = None, on_item_processed: Callable = None,
+                 progress_text_func: Callable = None):
+    gv.batch_processor = BatchProcessorAsync(objects, processor, obj_name, on_finished, on_interrupted,
+                                             on_item_processed, progress_text_func)
     gv.progress_bar = ProgressBar(len(objects), title, gv.batch_processor)
     gv.progress_bar.show()
     gv.progress_bar.raise_()
@@ -58,10 +60,12 @@ class BatchProcessorAsync(BatchProcessor, QThread):
     interrupted_signal = Signal()
 
     def __init__(self, objects: list, processor: Callable, name_attr: str = "",
-                 on_finished: Callable = None, on_interrupted: Callable = None, on_item_processed: Callable = None):
+                 on_finished: Callable = None, on_interrupted: Callable = None, on_item_processed: Callable = None,
+                 progress_text_func: Callable = None):
         BatchProcessor.__init__(self, objects, processor, on_finished=on_finished, on_interrupted=on_interrupted)
         QThread.__init__(self)
         self.name_attr = name_attr
+        self.progress_text_func = progress_text_func
         self.is_working = True
         self.progress_bar: ProgressBar = None
         self._interrupt_enabled = on_interrupted is not None
@@ -76,12 +80,12 @@ class BatchProcessorAsync(BatchProcessor, QThread):
         self.progress_bar_signal.connect(progress_bar.update_progress)
 
     def run(self):
-        title = self.progress_bar.windowTitle()
+        title = self.progress_bar.windowTitle() if self.progress_bar else self.title
         Logger().debug(f"异步批处理开始：{title}")
         for index, obj in enumerate(self.objects, 0):
             if not self.is_working:
                 break
-            if self.progress_bar:
+            if self.progress_bar and not self.progress_text_func:
                 # 遍历字符串的话直接显示对象名称
                 if isinstance(obj, str):
                     text = obj
@@ -94,6 +98,11 @@ class BatchProcessorAsync(BatchProcessor, QThread):
                 Logger().exception(f"异步批处理异常：{title}\n{traceback.format_exc()}")
                 self.interrupted_signal.emit()
                 return
+            # 单条处理完成后通知主线程（用于实时刷新进度信息，不触碰 UI 之外的状态）
+            self.item_processed_signal.emit((index, obj))
+            if self.progress_bar and self.progress_text_func:
+                # 自定义进度文本（如“已找到 N 条”）：处理完当前对象后再刷新，避免被默认文本覆盖
+                self.progress_bar_signal.emit(index, self.progress_text_func(index, obj))
             if self._interrupt_enabled and not should_continue:
                 Logger().debug(f"异步批处理中断：{title}")
                 self.interrupted_signal.emit()

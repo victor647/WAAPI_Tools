@@ -29,14 +29,12 @@ def delete_audio_source_by_language(sound: WwiseObject, language: str) -> bool:
     return False
 
 # 获取音效的源文件路径
-def get_source_file_path(sound_or_source: WwiseObject) -> str:
-    return waapi_utils.get_object_property(sound_or_source, 'sound:originalWavFilePath')
+def get_source_absolute_path(sound_or_source: WwiseObject) -> str:
+    return waapi_utils.get_object_property(sound_or_source, 'originalFilePath')
 
 # 获取源文件相对路径
 def get_source_relative_path(sound_or_source: WwiseObject) -> str:
-    full_path = get_source_file_path(sound_or_source)
-    original_path = project_utils.get_originals_folder()
-    return os.path.relpath(full_path, original_path)
+    return waapi_utils.get_object_property(sound_or_source, 'originalRelativeFilePath')
 
 
 # 把 Originals 下的绝对路径转为相对路径（等同 Wwise 的 originalRelativeFilePath）；否则原样返回
@@ -66,7 +64,7 @@ def get_all_audio_file_paths(root: WwiseObject) -> list[str]:
             return
 
         if obj.type == WwiseObjectType.Sound or obj.type == WwiseObjectType.AudioSource:
-            path = get_source_file_path(obj)
+            path = get_source_absolute_path(obj)
             if path:
                 collected.extend(path)
             return
@@ -128,7 +126,7 @@ def apply_source_edits(obj: WwiseObject) -> bool:
         return modified
     elif obj.type != WwiseObjectType.AudioSource:
         return False
-    source_path = get_source_file_path(obj)
+    source_path = get_source_absolute_path(obj)
     if not source_path:
         return False
     trim_begin, trim_end, fade_in, fade_out, _, _ = get_source_edit_info(obj)
@@ -155,12 +153,8 @@ def reset_source_editor(obj: WwiseObject) -> bool:
         return modified
     elif obj.type != WwiseObjectType.AudioSource:
         return False
-    modified |= waapi_utils.set_object_property(obj, 'FadeInDuration', 0)
-    modified |= waapi_utils.set_object_property(obj, 'FadeOutDuration', 0)
-    modified |= waapi_utils.set_object_property(obj, 'TrimBegin', -1)
-    modified |= waapi_utils.set_object_property(obj, 'TrimEnd', -1)
-    modified |= waapi_utils.set_object_property(obj, 'LoopBegin', -1)
-    modified |= waapi_utils.set_object_property(obj, 'LoopEnd', -1)
+    # 清空裁剪与淡变：Trim/Loop 回到 -1，Fade 回到 0
+    modified |= set_source_edit_info(obj, -1, -1, 0, 0, -1, -1)
     return modified
 
 # 替换样本文件
@@ -215,7 +209,7 @@ def rename_original_to_wwise(sound: WwiseObject) -> bool:
     modified = False
     for source in sources:
         language = localization_utils.get_sound_language(source)
-        original_wave_path = get_source_file_path(source)
+        original_wave_path = get_source_absolute_path(source)
         if not original_wave_path:
             print(f'AudioFile of Sound [{sound_name}] missing at [{original_wave_path}]!')
             continue
@@ -238,7 +232,7 @@ def rename_original_to_wwise(sound: WwiseObject) -> bool:
 def tidy_original_folders(sound: WwiseObject) -> bool:
     if sound.type != WwiseObjectType.Sound:
         return False
-    original_path = get_source_file_path(sound)
+    original_path = get_source_absolute_path(sound)
     if not original_path:
         return False
     file_name = os.path.basename(original_path)

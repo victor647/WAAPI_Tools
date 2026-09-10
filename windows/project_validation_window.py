@@ -9,7 +9,8 @@ from data import project_conventions
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
 from table.wwise_table_context_menu import add_common_object_actions
-from libraries.utils import audio_utils
+from table.wwise_table_row_data import WwiseTableRowData
+from libraries.utils import audio_utils, user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, audio_source_utils, soundbank_utils, localization_utils, event_utils, \
     container_utils, waapi_utils, mixing_utils
@@ -18,22 +19,52 @@ from ui.ProjectValidation_ui import Ui_ProjectValidation
 from libraries.multi_thread import batch_processor
 
 
+# 对象可用属性/引用名缓存（按对象 id）：避免对类型上不存在的属性发起 WAAPI 查询
+_AVAILABLE_NAMES_CACHE: dict[str, set] = {}
+
+
+def _available_names(obj: WwiseObject) -> set:
+    names = _AVAILABLE_NAMES_CACHE.get(obj.id)
+    if names is None:
+        names = set(waapi_utils.get_property_and_reference_names(obj))
+        _AVAILABLE_NAMES_CACHE[obj.id] = names
+    return names
+
+
 # Wwise工程检查工具
 class ProjectValidation(QDialog, Ui_ProjectValidation):
 
     def __init__(self, main_window):
         super().__init__()
         self.setupUi(self)
+        self.load_check_states()
+        # 规范开关关闭时对应检查项取消勾选并置灰
+        if not project_conventions.is_color_enabled():
+            self.cbxColorTypeMismatch.setChecked(False)
+            self.cbxColorTypeMismatch.setEnabled(False)
+        if not project_conventions.is_name_case_enabled():
+            self.cbxWrongCase.setChecked(False)
+            self.cbxWrongCase.setEnabled(False)
+        if not project_conventions.is_path_length_enabled():
+            self.cbxWrongNameLength.setChecked(False)
+            self.cbxWrongNameLength.setEnabled(False)
+        # 「引用备注/颜色标记」依赖深色标记或互为备注开关，两者都关闭时不可用
+        if not (project_conventions.use_dark_color_for_event_ref()
+                or project_conventions.use_event_ref_notes()):
+            self.cbxNoRefNotesOrColorTag.setChecked(False)
+            self.cbxNoRefNotesOrColorTag.setEnabled(False)
         self.setup_triggers()
         self.tblValidationResults.setItemDelegate(SeverityTableDelegate(self.tblValidationResults))
-        self.__currentTitle = ''
         self.__mainWindow = main_window
         self.__builtInRTPCs = []
+        self.__pendingProblems = []
+        self.__pendingWritten = 0
         self.problematicObjects = []
 
     def setup_triggers(self):
         self.btnSelectAll.clicked.connect(lambda: self.select_all(True))
         self.btnDeselectAll.clicked.connect(lambda: self.select_all(False))
+        self.btnSaveChecks.clicked.connect(self.save_check_states)
         self.btnValidateEntireProject.clicked.connect(self.validate_entire_project)
         self.btnValidateListEntries.clicked.connect(
             lambda: self.validate_objects(self.__mainWindow.get_visible_objects())
@@ -44,19 +75,37 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         self.btnAutoFixSelection.clicked.connect(self.auto_fix_selection)
         self.tblValidationResults.customContextMenuRequested.connect(self.show_result_context_menu)
 
-        # self.grpProjectStandards.toggled.connect(lambda toggled: ScriptingHelper.on_group_box_toggled(self.grpProjectStandards, toggled))
-        # self.grpDesignStructure.toggled.connect(lambda toggled: ScriptingHelper.on_group_box_toggled(self.grpDesignStructure, toggled))
-        # self.grpSoundLocalization.toggled.connect(lambda toggled: ScriptingHelper.on_group_box_toggled(self.grpSoundLocalization, toggled))
-        # self.grpEventBank.toggled.connect(lambda toggled: ScriptingHelper.on_group_box_toggled(self.grpEventBank, toggled))
-        # self.grpOthers.toggled.connect(lambda toggled: ScriptingHelper.on_group_box_toggled(self.grpOthers, toggled))
-
         self.tblValidationResults.itemDoubleClicked.connect(self.select_object_in_wwise)
         self.tblValidationResults.setColumnWidth(3, 600)
+
+    # 收集所有检查项的开关状态 {objectName: checked}
+    def _check_states(self) -> dict:
+        return {
+            checkbox.objectName(): checkbox.isChecked()
+            for checkbox in self.findChildren(QCheckBox)
+        }
+
+    # 保存检查项开关到 user_config（以本窗口为节点）
+    def save_check_states(self):
+        user_config.set_window_settings('project_validation', self._check_states())
+        Logger().info('检查项设置已保存')
+
+    # 打开窗口时恢复上次保存的检查项
+    def load_check_states(self):
+        saved = user_config.get_window_settings('project_validation')
+        if not saved:
+            return
+        for checkbox in self.findChildren(QCheckBox):
+            if checkbox.objectName() in saved:
+                checkbox.setChecked(bool(saved[checkbox.objectName()]))
 
     # 每次运行前重置数据
     def reset_data(self):
         self.__builtInRTPCs = []
+        self.__pendingProblems = []
+        self.__pendingWritten = 0
         self.problematicObjects = []
+        _AVAILABLE_NAMES_CACHE.clear()
         self.tblValidationResults.setRowCount(0)
 
     # 全选或全不选检查条目
@@ -70,11 +119,15 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
 
     # 在Wwise中选中对象
     def select_object_in_wwise(self, item: QTableWidgetItem):
-        if waapi_utils.client is None:
+        if not waapi_utils.is_connected():
             return
         if item.column() != 3:
             item = self.tblValidationResults.item(item.row(), 3)
-        obj = waapi_utils.find_object_by_path(item.text())
+        if item is None:
+            return
+        # 路径列可能显示简写，完整路径存在 UserRole 中
+        path = item.data(Qt.ItemDataRole.UserRole) or item.text()
+        obj = waapi_utils.find_object_by_path(path)
         if obj:
             waapi_utils.select_objects_in_wwise([obj])
 
@@ -125,7 +178,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         obj = self.problematicObjects[index]
         # ProjectStandards
         if problem_type == self.cbxWrongCase.text():
-            fixed = common_utils.rename_to_title_case(obj)
+            fixed = rename_to_name_case(obj)
         elif problem_type == self.cbxWrongNameLength.text():
             fixed = common_utils.optimize_name_length(obj)
         elif problem_type == self.cbxColorTypeMismatch.text():
@@ -191,6 +244,8 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             lambda index, obj: self.validate_object(obj),
             '工程检查',
             on_finished=self.on_validate_finished,
+            on_item_processed=self._on_validation_progress,
+            progress_text_func=lambda index, obj: f"已找到 {len(self.__pendingProblems)} 条",
         )
 
     # 检查对象列表及其所有子对象
@@ -208,10 +263,26 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             lambda index, obj: self.validate_object(obj),
             '工程检查',
             on_finished=self.on_validate_finished,
+            on_item_processed=self._on_validation_progress,
+            progress_text_func=lambda index, obj: f"已找到 {len(self.__pendingProblems)} 条",
         )
+
+    # 批处理每完成一条：把工作线程新收集的问题边查边插入表格（主线程回调）
+    def _on_validation_progress(self, payload):
+        _index, _obj = payload
+        self._flush_pending_problems()
+
+    # 把工作线程已收集、尚未写入的问题行插入表格（仅在主线程调用）
+    def _flush_pending_problems(self):
+        for obj, category, rule in self.__pendingProblems[self.__pendingWritten:]:
+            self.record_problematic_object(obj, category, rule)
+        self.__pendingWritten = len(self.__pendingProblems)
 
     # 将检查结果写入json文件
     def on_validate_finished(self):
+        # 收尾：补写剩余问题行并清理收集缓存
+        self._flush_pending_problems()
+        self.__pendingProblems = []
         self.tblValidationResults.resizeColumnsToContents()
         problem_count = len(self.problematicObjects)
         if problem_count == 0:
@@ -229,48 +300,51 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             return
 
         if self.grpProjectStandards.isChecked():
-            self.__currentTitle = self.grpProjectStandards.title()
-            self.check_object_by_rule(obj, self.cbxWrongCase, is_not_camel_cased)
-            self.check_object_by_rule(obj, self.cbxWrongNameLength, violates_naming_length)
-            self.check_object_by_rule(obj, self.cbxColorTypeMismatch, color_mismatch_category)
-            self.check_object_by_rule(obj, self.cbxNoRefNotesOrColorTag, wrong_reference_notes_or_color)
+            title = self.grpProjectStandards.title()
+            if project_conventions.is_name_case_enabled():
+                self.check_object_by_rule(obj, self.cbxWrongCase, is_wrong_name_case, title)
+            if project_conventions.is_path_length_enabled():
+                self.check_object_by_rule(obj, self.cbxWrongNameLength, violates_naming_length, title)
+            if project_conventions.is_color_enabled():
+                self.check_object_by_rule(obj, self.cbxColorTypeMismatch, color_mismatch_category, title)
+            self.check_object_by_rule(obj, self.cbxNoRefNotesOrColorTag, wrong_reference_notes_or_color, title)
 
         if self.grpDesignStructure.isChecked():
-            self.__currentTitle = self.grpDesignStructure.title()
-            self.check_object_by_rule(obj, self.cbxNestedWorkUnit, is_work_unit_nested)
-            self.check_object_by_rule(obj, self.cbxRedundantActorMixer, is_actor_mixer_redundant)
-            self.check_object_by_rule(obj, self.cbxSingleChildContainer, container_has_single_child)
-            self.check_object_by_rule(obj, self.cbxEmptyNode, is_node_empty)
-            self.check_object_by_rule(obj, self.cbxDuplicatedParameter, self.is_duplicated_parameter)
+            title = self.grpDesignStructure.title()
+            self.check_object_by_rule(obj, self.cbxNestedWorkUnit, is_work_unit_nested, title)
+            self.check_object_by_rule(obj, self.cbxRedundantActorMixer, is_actor_mixer_redundant, title)
+            self.check_object_by_rule(obj, self.cbxSingleChildContainer, container_has_single_child, title)
+            self.check_object_by_rule(obj, self.cbxEmptyNode, is_node_empty, title)
+            self.check_object_by_rule(obj, self.cbxDuplicatedParameter, self.is_duplicated_parameter, title)
 
         if self.grpSoundLocalization.isChecked():
-            self.__currentTitle = self.grpSoundLocalization.title()
-            self.check_object_by_rule(obj, self.cbxSourceNameDifferent, file_path_different_from_sound)
-            self.check_object_by_rule(obj, self.cbxSourceNotImported, sound_missing_or_not_localized)
-            self.check_object_by_rule(obj, self.cbxSilentPlaceholder, is_audio_source_silent)
-            self.check_object_by_rule(obj, self.cbxSoundNotInEvent, sound_not_in_any_events)
-            self.check_object_by_rule(obj, self.cbxInvalidTrimRange, audio_trim_out_of_range)
+            title = self.grpSoundLocalization.title()
+            self.check_object_by_rule(obj, self.cbxSourceNameDifferent, file_path_different_from_sound, title)
+            self.check_object_by_rule(obj, self.cbxSourceNotImported, sound_missing_or_not_localized, title)
+            self.check_object_by_rule(obj, self.cbxSilentPlaceholder, is_audio_source_silent, title)
+            self.check_object_by_rule(obj, self.cbxSoundNotInEvent, sound_not_in_any_events, title)
+            self.check_object_by_rule(obj, self.cbxInvalidTrimRange, audio_trim_out_of_range, title)
 
         if self.grpEventBank.isChecked():
-            self.__currentTitle = self.grpEventBank.title()
-            self.check_object_by_rule(obj, self.cbxWrongEventName, event_has_wrong_name)
-            self.check_object_by_rule(obj, self.cbxEventDuplicatedByNetRole, event_has_net_role_naming)
-            self.check_object_by_rule(obj, self.cbxEmptyEvent, is_event_empty)
-            self.check_object_by_rule(obj, self.cbxEventNotInBank, event_not_included_in_any_banks)
-            self.check_object_by_rule(obj, self.cbxAbnormalBankSize, is_bank_size_abnormal)
+            title = self.grpEventBank.title()
+            self.check_object_by_rule(obj, self.cbxWrongEventName, event_has_wrong_name, title)
+            self.check_object_by_rule(obj, self.cbxEventDuplicatedByNetRole, event_has_net_role_naming, title)
+            self.check_object_by_rule(obj, self.cbxEmptyEvent, is_event_empty, title)
+            self.check_object_by_rule(obj, self.cbxEventNotInBank, event_not_included_in_any_banks, title)
+            self.check_object_by_rule(obj, self.cbxAbnormalBankSize, is_bank_size_abnormal, title)
 
         if self.grpMistakes.isChecked():
-            self.__currentTitle = self.grpMistakes.title()
-            self.check_object_by_rule(obj, self.cbxUnassignedToBus, is_bus_unassigned)
-            self.check_object_by_rule(obj, self.cbxUnassignedSwitchContainer, is_switch_container_unassigned)
-            self.check_object_by_rule(obj, self.cbxSwitchTo1PByDefault, switch_to_1p_by_default)
-            self.check_object_by_rule(obj, self.cbxMissingAttenuation, object_missing_attenuation)
-            self.check_object_by_rule(obj, self.cbxSoundNotStreamed, sound_not_streamed)
+            title = self.grpMistakes.title()
+            self.check_object_by_rule(obj, self.cbxUnassignedToBus, is_bus_unassigned, title)
+            self.check_object_by_rule(obj, self.cbxUnassignedSwitchContainer, is_switch_container_unassigned, title)
+            self.check_object_by_rule(obj, self.cbxSwitchTo1PByDefault, switch_to_1p_by_default, title)
+            self.check_object_by_rule(obj, self.cbxMissingAttenuation, object_missing_attenuation, title)
+            self.check_object_by_rule(obj, self.cbxSoundNotStreamed, sound_not_streamed, title)
 
-    # 检查项目通用接口
-    def check_object_by_rule(self, obj: WwiseObject, check_box: QCheckBox, check_function):
-        if check_box.isChecked() and check_function(obj):
-            self.record_problematic_object(obj, self.__currentTitle, check_box.text())
+    # 检查项目通用接口：置灰（不可用）的检查项一律跳过
+    def check_object_by_rule(self, obj: WwiseObject, check_box: QCheckBox, check_function, category: str):
+        if check_box.isEnabled() and check_box.isChecked() and check_function(obj):
+            self.__pendingProblems.append((obj, category, check_box.text()))
 
     # 记录不符合规范的对象
     def record_problematic_object(self, obj: WwiseObject, category: str, rule: str):
@@ -281,7 +355,9 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         self.tblValidationResults.setItem(row_count, 0, QTableWidgetItem(category))
         self.tblValidationResults.setItem(row_count, 1, rule_item)
         self.tblValidationResults.setItem(row_count, 2, QTableWidgetItem(obj.type.name))
-        self.tblValidationResults.setItem(row_count, 3, QTableWidgetItem(obj.path))
+        path_item = QTableWidgetItem(WwiseTableRowData.get_path_text(obj.path))
+        path_item.setData(Qt.ItemDataRole.UserRole, obj.path)
+        self.tblValidationResults.setItem(row_count, 3, path_item)
         self.problematicObjects.append(obj)
 
     # 检查是否存在重复绑定的RTPC
@@ -305,24 +381,6 @@ def remove_duplicated_rtpc(obj: WwiseObject):
     return waapi_utils.delete_object(obj)
 
 
-# 修复大小写命名规范
-def fix_camel_case_naming(obj: WwiseObject):
-    obj_name = obj.name
-    split_char = '_'
-    words = obj_name.split(split_char)
-    if len(words) == 1:
-        split_char = ' '
-        words = obj_name.split(split_char)
-    new_name = ''
-    for word in words:
-        if not re.match(r'^[A-Z\d][a-zA-Z\d]*$', word):
-            word = word.title()
-        new_name += word + split_char
-    new_name = new_name[:-1]
-    waapi_utils.rename_object(obj, new_name)
-    return True
-
-
 # 删除非必要的Event
 def remove_unnecessary_event(event: WwiseObject):
     event_name = event.name
@@ -336,7 +394,7 @@ def remove_unnecessary_event(event: WwiseObject):
         waapi_utils.rename_object(event, new_event_name)
         actions = waapi_utils.get_child_objects(event)
         for action in actions:
-            target = waapi_utils.get_object_property(action, 'Target')
+            target = waapi_utils.get_referenced_object(action, 'Target')
             if target and target.name.endswith(suffix):
                 target_parent = waapi_utils.get_parent_object(target)
                 if target_parent.type == WwiseObjectType.SwitchContainer:
@@ -354,28 +412,68 @@ def fix_nested_work_unit(work_unit: WwiseObject):
 
 
 # region ProjectStandards
-# 检查对象是否符合CamelCase命名规范
-def is_not_camel_cased(obj: WwiseObject):
+# 取出参与大小写检查的名称分段；返回 None 表示该对象不参与检查
+def name_case_words(obj: WwiseObject):
     obj_type = obj.type
     obj_path = obj.path
     if 'Factory' in obj_path:
-        return False
+        return None
     if obj_type == WwiseObjectType.EventAction:
-        return False
+        return None
     # 过滤根目录和MIDI对象
     if obj_type == WwiseObjectType.WorkUnit and len(obj_path.split('\\')) == 2:
-        return False
+        return None
     obj_name = obj.name
     if obj_type == WwiseObjectType.Folder and (obj_path.startswith('MIDI')):
-        return False
+        return None
 
     words = obj_name.split('_')
     if len(words) == 1:
         words = obj_name.split(' ')
+    return words
+
+
+# 检查对象名是否符合设置里选择的大小写方式（首字母大写/全小写/全大写）
+def is_wrong_name_case(obj: WwiseObject):
+    words = name_case_words(obj)
+    if words is None:
+        return False
+    mode = project_conventions.get_name_case_mode()
     for word in words:
-        if len(word) > 1 and not re.match(r'^[A-Z\d][a-zA-Z\d]*$', word):
+        if len(word) <= 1:
+            continue
+        if mode == 'lower':
+            pattern = r'^[a-z\d]+$'
+        elif mode == 'upper':
+            pattern = r'^[A-Z\d]+$'
+        else:
+            pattern = r'^[A-Z\d][a-zA-Z\d]*$'
+        if not re.match(pattern, word):
             return True
     return False
+
+
+# 按设置的大小写方式重命名对象，用于自动修复「不符合大小写规范」
+def rename_to_name_case(obj: WwiseObject) -> bool:
+    words = name_case_words(obj)
+    if words is None:
+        return False
+    mode = project_conventions.get_name_case_mode()
+    split_char = '_' if '_' in obj.name else ' '
+    fixed_words = []
+    for word in words:
+        if mode == 'lower':
+            fixed_words.append(word.lower())
+        elif mode == 'upper':
+            fixed_words.append(word.upper())
+        elif len(word) <= 1:
+            fixed_words.append(word)
+        else:
+            fixed_words.append(word[0].upper() + word[1:])
+    new_name = split_char.join(fixed_words)
+    if new_name == obj.name:
+        return False
+    return waapi_utils.rename_object(obj, new_name)
 
 
 # 检查对象是否命名长度不符合要求
@@ -415,33 +513,36 @@ def color_mismatch_category(obj: WwiseObject):
 
 # 检查对象是否缺少引用的备注与颜色标记
 def wrong_reference_notes_or_color(obj: WwiseObject):
+    # 备注与深色标记各自受设置开关控制，关闭的那部分不参与检查
+    use_notes = project_conventions.use_event_ref_notes()
+    use_dark_color = project_conventions.use_dark_color_for_event_ref()
     obj_type = obj.type
     # 对象是Event且播放别的对象
     if obj.type == WwiseObjectType.Event:
         targets = event_utils.get_event_targets(obj)
         if len(targets) == 1:
             target = targets[0]
-            if WwiseObjectType.Bus in target.type:
+            if 'Bus' in target.type.value:
                 return False
             references = waapi_utils.get_object_references(target)
             # 对象被唯一事件引用时才检查备注
-            if len(references) == 1:
+            if use_notes and len(references) == 1:
                 notes = common_utils.get_object_notes(obj)
                 if notes != target.path:
                     return True
-            return not has_dark_color_tag(target)
+            return use_dark_color and not has_dark_color_tag(target)
     else:
         references = waapi_utils.get_object_references(obj)
-        notes = common_utils.get_object_notes(obj)
+        notes = common_utils.get_object_notes(obj) if use_notes else ''
         obj_path = obj.path
         # 对象被SoundBank引用
         if obj_type == WwiseObjectType.Folder or obj_type == WwiseObjectType.WorkUnit:
             if obj_path.startswith('\\Events'):
                 for reference in references:
                     if reference.type == WwiseObjectType.SoundBank:
-                        if notes != f"Included by SoundBank [{reference.name}]":
+                        if use_notes and notes != f"Included by SoundBank [{reference.name}]":
                             return True
-                        return not has_dark_color_tag(obj)
+                        return use_dark_color and not has_dark_color_tag(obj)
         # 对象被Event引用
         elif 'Hierarchy' in obj_path:
             for reference in references:
@@ -449,9 +550,9 @@ def wrong_reference_notes_or_color(obj: WwiseObject):
                     action_type = waapi_utils.get_object_property(reference, 'ActionType')
                     if action_type == 1:
                         event = waapi_utils.get_parent_object(reference)
-                        if notes != f"Played by Event [{event.name}]":
+                        if use_notes and notes != f"Played by Event [{event.name}]":
                             return True
-                    return not has_dark_color_tag(obj)
+                    return use_dark_color and not has_dark_color_tag(obj)
     return False
 
 
@@ -497,8 +598,11 @@ def is_actor_mixer_redundant(actor_mixer: WwiseObject):
     parent = waapi_utils.get_parent_object(actor_mixer)
     if parent.type == WwiseObjectType.WorkUnit:
         return False
-    effects = waapi_utils.get_object_property(actor_mixer, 'Effect')
-    rtpcs = waapi_utils.get_object_property(actor_mixer, '@RTPC')
+    names = _available_names(actor_mixer)
+    effects_name = next((name for name in ('Effects', '@Effects', 'Effect') if name in names), None)
+    rtpcs_name = next((name for name in ('RTPC', '@RTPC') if name in names), None)
+    effects = waapi_utils.get_object_property(actor_mixer, effects_name) if effects_name else None
+    rtpcs = waapi_utils.get_object_property(actor_mixer, rtpcs_name) if rtpcs_name else None
     if effects or rtpcs:
         return False
     return not mixing_utils.has_fader_edits(actor_mixer)
@@ -539,7 +643,7 @@ def file_path_different_from_sound(sound: WwiseObject):
     suffix = project_conventions.get_net_role_suffix_from_name(sound_name)
     children = waapi_utils.get_child_objects(sound)
     for audio_source in children:
-        source_path = audio_source_utils.get_source_file_path(audio_source)
+        source_path = audio_source_utils.get_source_absolute_path(audio_source)
         if source_path:
             source_name = os.path.basename(source_path)[:-4]
             if sound_name != source_name:
@@ -555,9 +659,15 @@ def file_path_different_from_sound(sound: WwiseObject):
 def sound_missing_or_not_localized(sound: WwiseObject):
     if sound.type != WwiseObjectType.Sound:
         return False
-    implemented_languages = project_conventions.get_implemented_languages()
+    # 未接入语言不需要本地化；其余工程语言都需要存在对应语音
+    unimplemented_languages = project_conventions.get_unimplemented_languages()
+    implemented_languages = [
+        language
+        for language in localization_utils.get_all_language_names()
+        if language not in unimplemented_languages
+    ]
     if localization_utils.get_sound_language(sound) == 'SFX':
-        path = audio_source_utils.get_source_file_path(sound)
+        path = audio_source_utils.get_source_absolute_path(sound)
         if not path:
             return not audio_source_utils.sound_play_from_plugin(sound)
         return not os.path.exists(path)
@@ -580,7 +690,7 @@ def is_audio_source_silent(source: WwiseObject):
             class_id = waapi_utils.get_object_property(source, 'classId')
             return class_id == 6619138
         return False
-    source_path = audio_source_utils.get_source_file_path(source)
+    source_path = audio_source_utils.get_source_absolute_path(source)
     silent = audio_utils.is_sound_completely_silent(source_path)
     if silent:
         return True
@@ -626,7 +736,7 @@ def event_has_wrong_name(event: WwiseObject):
     if len(targets) == 0:
         return False
     for target in targets:
-        if WwiseObjectType.Bus in target.type:
+        if 'Bus' in target.type.value:
             return False
         correct_name = event_utils.get_event_name(target)
         if correct_name == event_name:
@@ -685,23 +795,31 @@ def is_bank_size_abnormal(bank: WwiseObject):
 # region Mistakes
 # 检查是否分配了Bus
 def is_bus_unassigned(obj: WwiseObject):
-    bus = waapi_utils.get_object_property(obj, 'OutputBus')
+    names = _available_names(obj)
+    if 'OutputBus' not in names:
+        return False
+    bus = waapi_utils.get_referenced_object(obj, 'OutputBus')
     if bus is None:
         return False
     is_master = bus.name == 'Master Audio Bus'
-    override = waapi_utils.get_object_property(obj, 'OverrideOutput')
+    override = waapi_utils.get_object_property(obj, 'OverrideOutput') if 'OverrideOutput' in names else 0
     if override:
         return is_master
     # 非override的对象需要检查是否上级已经检查过了
     parent = waapi_utils.get_parent_object(obj)
-    if parent and not waapi_utils.get_object_property(parent, 'OutputBus'):
-        return is_master
+    if parent:
+        parent_has_bus = (
+            'OutputBus' in _available_names(parent)
+            and waapi_utils.get_referenced_object(parent, 'OutputBus')
+        )
+        if not parent_has_bus:
+            return is_master
     return False
 
 
 # 检查SwitchContainer是否未分配播放对象
 def is_switch_container_unassigned(container: WwiseObject):
-    if WwiseObjectType.SwitchContainer not in container.type:
+    if container.type != WwiseObjectType.SwitchContainer:
         return False
     mappings = waapi_utils.get_switch_mappings(container)
     if len(mappings) == 0:
@@ -722,10 +840,10 @@ def is_switch_container_unassigned(container: WwiseObject):
 def switch_to_1p_by_default(container: WwiseObject):
     if container.type != WwiseObjectType.SwitchContainer:
         return False
-    group = waapi_utils.get_object_property(container, 'SwitchGroupOrStateGroup')
-    if 'name' in group:
-        default_switch = waapi_utils.get_object_property(container, 'DefaultSwitchOrState')
-        return 'name' in default_switch and '1P' in default_switch.name
+    group = waapi_utils.get_referenced_object(container, 'SwitchGroupOrStateGroup')
+    if group and group.name:
+        default_switch = waapi_utils.get_referenced_object(container, 'DefaultSwitchOrState')
+        return bool(default_switch and default_switch.name and '1P' in default_switch.name)
     return False
 
 
@@ -733,16 +851,21 @@ def switch_to_1p_by_default(container: WwiseObject):
 def object_missing_attenuation(obj: WwiseObject):
     if not obj.path.startswith('\\Actor-Mixer Hierarchy'):
         return False
-    override = waapi_utils.get_object_property(obj, 'OverridePositioning')
+    names = _available_names(obj)
+    override = waapi_utils.get_object_property(obj, 'OverridePositioning') if 'OverridePositioning' in names else 0
     if not override and not mixing_utils.is_mixing_root(obj):
+        return False
+    if '3DSpatialization' not in names:
         return False
     spatialization_mode = waapi_utils.get_object_property(obj, '3DSpatialization')
     if not spatialization_mode:
         return False
     if spatialization_mode == 0:
         return '_3P' in obj.name
-    attenuation = waapi_utils.get_object_property(obj, 'Attenuation')
-    return 'name' not in attenuation
+    if 'Attenuation' not in names:
+        return True
+    attenuation = waapi_utils.get_referenced_object(obj, 'Attenuation')
+    return not (attenuation and attenuation.name)
 
 
 # 检查语音、环境声和音乐是否设为Streaming

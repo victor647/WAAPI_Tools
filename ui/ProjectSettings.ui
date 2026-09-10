@@ -21,75 +21,135 @@
      </property>
      <widget class="QWidget" name="tabNaming">
       <attribute name="title">
-       <string>命名与颜色规范</string>
+       <string>工程规范</string>
       </attribute>
       <layout class="QVBoxLayout" name="tabNamingLayout">
        <item>
-        <widget class="QLabel" name="lblCategoryHeader">
-         <property name="text">
-          <string>分类命名与颜色（分类名 → 缩写 / Wwise 颜色值）</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="MapEdit" name="categoryMap">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>200</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="lblContainerHeader">
-         <property name="text">
-          <string>容器类型后缀（容器类型 → 名称后缀）</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="MapEdit" name="containerSuffix">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>150</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QCheckBox" name="cbxFullNameInSound">
-         <property name="text">
-          <string>Sound 节点使用完整名称</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QCheckBox" name="cbxPlayPrefixInEvent">
-         <property name="text">
-          <string>Event 以 Play_ 开头</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="tabHabits">
-      <attribute name="title">
-       <string>工程习惯</string>
-      </attribute>
-      <layout class="QVBoxLayout" name="tabHabitsLayout">
-       <item>
-        <layout class="QHBoxLayout" name="suffixRow">
-         <item>
-          <widget class="QLabel" name="lblSuffixLabel">
+        <layout class="QGridLayout" name="regulationSwitches">
+         <item row="0" column="0">
+          <widget class="QCheckBox" name="cbxEnableAcronym">
            <property name="text">
-            <string>1P/2P/3P 后缀</string>
+            <string>启用缩写规范</string>
+           </property>
+           <property name="toolTip">
+            <string>启用后，创建/重命名对象时按「分类命名与颜色」表在分类全名与缩写之间转换（如 Character 转成 CHR）；关闭后所有缩写转换直接跳过。</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
            </property>
           </widget>
          </item>
-         <item>
-          <spacer name="suffixSpacer">
+         <item row="0" column="1">
+          <widget class="QCheckBox" name="cbxEnableColor">
+           <property name="text">
+            <string>启用颜色规范</string>
+           </property>
+           <property name="toolTip">
+            <string>启用后，新建/复制对象时按「分类命名与颜色」表给对象设置对应的 Wwise 颜色值；工程检查工具中的「颜色与对象类别不一致」也依赖此项。</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QCheckBox" name="cbxEventRefDarkColor">
+           <property name="text">
+            <string>Event 引用使用深色</string>
+           </property>
+           <property name="toolTip">
+            <string>启用后，「更新备注与颜色」等自动调整颜色的工具会把被 Event 播放（或被 SoundBank 包含）的对象改成同色系的深色版本，方便区分已挂事件的对象；关闭后这些对象保持普通分类色。</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="2">
+          <widget class="QCheckBox" name="cbxEnableNameCase">
+           <property name="text">
+            <string>启用名称大小写规范</string>
+           </property>
+           <property name="toolTip">
+            <string>启用后，工程检查会按下面选择的大小写方式校验对象名分段（按 _ 或空格分词）；关闭后「不符合大小写规范」检查项不可用。</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="2">
+          <widget class="QComboBox" name="cbbNameCase">
+           <property name="toolTip">
+            <string>首字母大写：每个分段首字母大写、其余保持原样（如 IMP_SwordToVolcano）。
+全小写：每个分段只允许小写字母与数字（如 imp_sword）。
+全大写：每个分段只允许大写字母与数字（如 IMP_SWORD）。</string>
+           </property>
+           <item>
+            <property name="text">
+             <string>首字母大写</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>全小写</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>全大写</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+         <item row="0" column="3">
+          <widget class="QCheckBox" name="cbxEnablePathLength">
+           <property name="text">
+            <string>启用路径长度规范</string>
+           </property>
+           <property name="toolTip">
+            <string>启用后，工程检查会校验名称长短：Actor-Mixer 下 Sound 应为「前缀_描述」形式、其余容器不应带 _，Music 层级同样不应带 _；关闭后「名称长短不符合规范」检查项不可用。</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="3">
+          <widget class="QCheckBox" name="cbxFullNameInSound">
+           <property name="text">
+            <string>Sound 节点使用完整名称</string>
+           </property>
+           <property name="toolTip">
+            <string>路径长度规范的一部分，仅在启用路径长度规范时可用：创建 Play 事件时，Sound 节点即使带 _ 也直接用完整名称作为事件名，而不是再拼一次上游层级名称。</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="5">
+          <widget class="QCheckBox" name="cbxPlayPrefixInEvent">
+           <property name="text">
+            <string>Event 以 Play_ 开头</string>
+           </property>
+           <property name="toolTip">
+            <string>独立开关，不受其它规范影响：开启后新建的 Play 事件名称统一带 Play_ 前缀。</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="5">
+          <widget class="QCheckBox" name="cbxEventRefNotes">
+           <property name="text">
+            <string>Event 与播放对象互为备注</string>
+           </property>
+           <property name="toolTip">
+            <string>开启后，自动更新备注的工具会把 Event 的播放对象写上「Played by Event [...]」、Event 写上对象路径（被 SoundBank 包含的对象写「Included by SoundBank [...]」）；关闭后这些工具不再改动 Notes。</string>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="4" rowspan="2">
+          <spacer name="regulationSpacer">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
            </property>
@@ -101,80 +161,152 @@
            </property>
           </spacer>
          </item>
-         <item>
-          <widget class="QLabel" name="lblRole1P">
-           <property name="text">
-            <string>1P</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="iptNetRole1P"/>
-         </item>
-         <item>
-          <widget class="QLabel" name="lblRole2P">
-           <property name="text">
-            <string>2P</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="iptNetRole2P"/>
-         </item>
-         <item>
-          <widget class="QLabel" name="lblRole3P">
-           <property name="text">
-            <string>3P</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="iptNetRole3P"/>
-         </item>
         </layout>
        </item>
        <item>
-        <widget class="QLabel" name="lblGroupHeader">
-         <property name="text">
-          <string>NetRole SwitchGroup 名称</string>
+        <widget class="QGroupBox" name="grpBankSettings">
+         <property name="title">
+          <string>Bank设置</string>
          </property>
+         <layout class="QHBoxLayout" name="bankSettingsLayout">
+          <item>
+           <widget class="QCheckBox" name="cbxAutoDefinedBank">
+            <property name="text">
+             <string>使用自动定义的Bank</string>
+            </property>
+            <property name="toolTip">
+             <string>开启后，Bank 的组成按工具自动定义的方式生成，SoundBank 分配工具为每个矩阵组合创建一个同时包含全部内容的 Bank；关闭后才能自行选择是否把 Event 与 Media 拆成两个 Bank。</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="cbxSplitEventMedia">
+            <property name="text">
+             <string>Bank拆分Event和Media</string>
+            </property>
+            <property name="toolTip">
+             <string>仅在关闭「使用自动定义的Bank」时可用：开启后 SoundBank 分配工具会为每个矩阵组合创建 _Event 与 _Media 两个 Bank（分别包含事件结构与媒体），关闭时只创建一个同时包含全部内容的 Bank。</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="bankSettingsSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
         </widget>
        </item>
-       <item>
-        <widget class="QLineEdit" name="iptNetRoleGroup"/>
-       </item>
-       <item>
-        <widget class="QLabel" name="lblValuesHeader">
-         <property name="text">
-          <string>1P/2P/3P 对应的 Switch 值</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="MapEdit" name="netRoleValues">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>150</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="lblLanguagesHeader">
-         <property name="text">
-          <string>已接入语言（每行一个）</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPlainTextEdit" name="pteLanguages">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>120</height>
-          </size>
-         </property>
+      <item>
+        <widget class="QWidget" name="wgtNamingContent">
+        <layout class="QHBoxLayout" name="namingColumns">
+         <item>
+          <layout class="QVBoxLayout" name="categoryColumn">
+           <item>
+            <widget class="QLabel" name="lblCategoryHeader">
+             <property name="text">
+              <string>分类命名与颜色（分类名 → 缩写 / Wwise 颜色值）</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="MapEdit" name="categoryMap">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>200</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="namingRightColumn">
+           <item>
+            <widget class="QLabel" name="lblContainerHeader">
+             <property name="text">
+              <string>容器子节点后缀（正则表达式）</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="MapEdit" name="containerSuffix">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>100</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>140</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="netRoleGroupRow">
+             <item>
+              <widget class="QLabel" name="lblGroupHeader">
+               <property name="text">
+                <string>角色1P/2P/3P SwitchGroup 名称</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="iptNetRoleGroup">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="MapEdit" name="netRoleValues">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>140</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>角色：1P（主角）/2P（队友）/3P（敌人）。Switch 名称：对应的 Switch 分支名。对象名后缀：拆分时该角色对象的名称后缀。Bus后缀：该角色 Bus 的名称后缀；把 2P 的 Bus 后缀填成 3P 的后缀即表示不区分 2P/3P Bus，两者复用同一个 Bus。</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="namingRightSpacer">
+             <property name="orientation">
+              <enum>Qt::Vertical</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>40</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </item>
+        </layout>
         </widget>
        </item>
       </layout>
@@ -188,6 +320,69 @@
         <widget class="QCheckBox" name="cbxAutoFetchChildren">
          <property name="text">
           <string>工具执行前自动获取子对象</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="pageSizeRow">
+         <item>
+          <widget class="QLabel" name="lblPageSize">
+           <property name="text">
+            <string>查询分页大小</string>
+           </property>
+           <property name="toolTip">
+            <string>WAAPI 查询子对象/后代/批量查找时每次拉取的数量。调大能减少请求次数，但单次请求更重；主窗口查找对象与各工具共用该值。</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="spbPageSize">
+           <property name="toolTip">
+            <string>默认 500，可调范围 50-5000。对象数量很大的工程建议保持 500 左右，避免单次请求超时。</string>
+           </property>
+           <property name="minimum">
+            <number>50</number>
+           </property>
+           <property name="maximum">
+            <number>5000</number>
+           </property>
+           <property name="singleStep">
+            <number>50</number>
+           </property>
+           <property name="value">
+            <number>500</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="pageSizeSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblLanguagesHeader">
+         <property name="text">
+          <string>未接入语言（用分号分隔）</string>
+         </property>
+         <property name="toolTip">
+          <string>这些语言尚未接入，工程检查时不会要求它们存在对应语音，也不参与本地化检查。多个语言用分号分隔，例如 Chinese;Japanese。</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="iptLanguages">
+         <property name="toolTip">
+          <string>多个语言用分号分隔，例如 Chinese;Japanese。</string>
          </property>
         </widget>
        </item>
@@ -214,55 +409,89 @@
        <item>
         <layout class="QFormLayout" name="aiForm">
          <item row="0" column="0">
+          <widget class="QLabel" name="lblAiMode">
+           <property name="text">
+            <string>连接模式</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QComboBox" name="cbbAiMode"/>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="lblAiProvider">
+           <property name="text">
+            <string>服务提供方</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QComboBox" name="cbbAiProvider"/>
+         </item>
+         <item row="2" column="0">
           <widget class="QLabel" name="lblAiProxy">
            <property name="text">
             <string>代理地址</string>
            </property>
           </widget>
          </item>
-         <item row="0" column="1">
+         <item row="2" column="1">
           <widget class="QLineEdit" name="iptAiProxy">
            <property name="placeholderText">
             <string>http://127.0.0.1:15721</string>
            </property>
           </widget>
          </item>
-         <item row="1" column="0">
+         <item row="3" column="0">
+          <widget class="QLabel" name="lblAiBaseUrl">
+           <property name="text">
+            <string>自定义地址</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QLineEdit" name="iptAiBaseUrl">
+           <property name="placeholderText">
+            <string>官方模式选择“自定义”时填写，如 https://api.example.com</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="0">
           <widget class="QLabel" name="lblAiApiKey">
            <property name="text">
             <string>API Key</string>
            </property>
           </widget>
          </item>
-         <item row="1" column="1">
+         <item row="4" column="1">
           <widget class="QLineEdit" name="iptAiApiKey">
            <property name="echoMode">
             <enum>QLineEdit::Password</enum>
            </property>
           </widget>
          </item>
-         <item row="2" column="0">
+         <item row="5" column="0">
           <widget class="QLabel" name="lblAiModel">
            <property name="text">
             <string>模型</string>
            </property>
           </widget>
          </item>
-         <item row="2" column="1">
+         <item row="5" column="1">
           <widget class="QLineEdit" name="iptAiModel">
            <property name="placeholderText">
-            <string>留空表示不指定模型</string>
+            <string>官方模式建议填写（Claude 必填）；代理模式可留空</string>
            </property>
           </widget>
          </item>
-         <item row="3" column="0">
+         <item row="6" column="0">
           <widget class="QLabel" name="lblAiMaxContext">
            <property name="text">
             <string>单次最大对象数</string>
            </property>
           </widget>
          </item>
-         <item row="3" column="1">
+         <item row="6" column="1">
           <widget class="QSpinBox" name="spnAiMaxContext">
            <property name="minimum">
             <number>1</number>
@@ -271,18 +500,18 @@
             <number>10000</number>
            </property>
            <property name="value">
-            <number>300</number>
+            <number>500</number>
            </property>
           </widget>
          </item>
-         <item row="4" column="0">
+         <item row="7" column="0">
           <widget class="QLabel" name="lblAiMaxTurns">
            <property name="text">
             <string>最大对话轮数</string>
            </property>
           </widget>
          </item>
-         <item row="4" column="1">
+         <item row="7" column="1">
           <widget class="QSpinBox" name="spnAiMaxTurns">
            <property name="minimum">
             <number>1</number>
@@ -291,7 +520,7 @@
             <number>200</number>
            </property>
            <property name="value">
-            <number>20</number>
+            <number>10</number>
            </property>
           </widget>
          </item>
@@ -303,12 +532,63 @@
           <bool>true</bool>
          </property>
          <property name="text">
-          <string>AI 助手设置保存在 user_config.json 的 ai 节：代理为 OpenAI 兼容地址；模型可留空；修改后下一次发送指令生效，主窗口的模型下拉框会在重启后同步。</string>
+          <string>连接模式：代理模式走本地/公司代理地址；官方 API 模式按“服务提供方”直连（OpenAI / DeepSeek / 通义千问 / Kimi / 智谱 GLM / Gemini / Claude / 自定义）。Claude 使用 Anthropic 原生协议，必须填写模型名；其余厂商走 OpenAI 兼容协议。设置保存在 user_config.json 的 ai 节，修改后下一次发送指令生效，主窗口模型下拉框会在重启后同步。</string>
          </property>
         </widget>
        </item>
        <item>
         <spacer name="aiSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabAppearance">
+      <attribute name="title">
+       <string>外观</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabAppearanceLayout">
+       <item>
+        <layout class="QHBoxLayout" name="themeRow">
+         <item>
+          <widget class="QLabel" name="lblTheme">
+           <property name="text">
+            <string>界面主题</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="cbbTheme">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="cbxPathDisplayCompact">
+         <property name="text">
+          <string>表格路径显示关键词去重后的简写</string>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="appearanceSpacer">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
          </property>

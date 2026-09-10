@@ -182,3 +182,9 @@ cython_debug/
 
 # 用户配置文件（本机个性化设置，不入库）
 user_config.json
+.codemap/
+.codemaker/codemap/
+.codemaker/codeindex/
+.codex/
+.agents/skills/codemap-*/
+.agents/skills/code-index-*/

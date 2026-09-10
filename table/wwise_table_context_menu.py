@@ -9,7 +9,7 @@ from libraries.wwise_object import WwiseObject, WwiseObjectType
 def preview_audio_source(obj: WwiseObject, parent=None):
     from windows.audio_preview_window import AudioPreviewWindow
 
-    file_path = audio_source_utils.get_source_file_path(obj)
+    file_path = audio_source_utils.get_source_absolute_path(obj)
     if not file_path or not os.path.exists(file_path):
         Logger().warning(f"找不到源文件：{file_path}")
         return

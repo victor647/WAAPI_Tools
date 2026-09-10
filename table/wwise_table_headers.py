@@ -9,7 +9,7 @@ TYPE_COL = 3
 PATH_COL = 4
 DESCRIPTION_COL = 5
 REFERENCE_COUNT_COL = 6
-COMMON_HEADERS = ["选中", "启用", "名称", "类型", "路径", "描述", "引用计数"]
+COMMON_HEADERS = ["选中", "启用", "名称", "类型", "路径", "描述", "引用数"]
 # 设计视图
 VOLUME_COL = 7
 OUTPUT_BUS_COL = 8
@@ -17,7 +17,7 @@ ATTENUATION_COL = 9
 CONVERSION_COL = 10
 PLAYBACK_LIMIT_COL = 11
 ORIGINAL_PATH_COL = 12
-DESIGN_HEADERS = ["音量", "总线", "衰减", "音质", "最大发声数", "源文件路径"]
+DESIGN_HEADERS = ["音量", "输出总线", "衰减曲线", "压缩设置", "最大发声数", "源文件路径"]
 # 集成视图
 ACTION_COL = 7
 TARGET_TYPE_COL = 8

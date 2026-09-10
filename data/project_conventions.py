@@ -8,6 +8,14 @@ from libraries.utils.wwise import project_utils
 
 conventions = {}
 
+# 名称大小写规范的校验方式：title=首字母大写，lower=全小写，upper=全大写
+NAME_CASE_MODES = ('title', 'lower', 'upper')
+DEFAULT_NAME_CASE_MODE = 'title'
+
+# Bank 设置默认值：默认使用自动定义的 Bank，且不拆分 Event 与 Media
+DEFAULT_USE_AUTO_DEFINED_BANK = True
+DEFAULT_SPLIT_EVENT_MEDIA = False
+
 
 def _resolve_conventions_json_path(project_directory: str) -> str | None:
     # 工程目录下优先 project_conventions.json，其次兼容旧名 ProjectConventions.json；再尝试当前工作目录
@@ -62,18 +70,108 @@ def init():
             conventions = json.load(f)
 
 
+# 规范配置节点：新结构为 <X>Convention 子节点（Enabled + 数据表），兼容旧的顶层平铺字段
+def _convention_section(name: str) -> dict:
+    if not conventions:
+        return {}
+    section = conventions.get(name)
+    return section if isinstance(section, dict) else {}
+
+
+# 规范开关：关闭时对应转换与检查全部跳过；旧配置的 EnableAcronymColor 兼容映射到缩写与颜色
+def _enabled_flag(section_name: str, legacy_keys: tuple = (), default: bool = True) -> bool:
+    section = _convention_section(section_name)
+    if 'Enabled' in section:
+        return bool(section['Enabled'])
+    if conventions:
+        for key in legacy_keys:
+            if key in conventions:
+                return bool(conventions[key])
+    return default
+
+
+# 缩写映射表（分类全名 -> 缩写）
+def get_acronym_map() -> dict:
+    section = _convention_section('AcronymConvention')
+    if 'AcronymMap' in section:
+        return section['AcronymMap'] or {}
+    if not conventions:
+        return {}
+    return conventions.get('AcronymMap') or {}
+
+
+# 颜色映射表（分类全名 -> Wwise 颜色值）
+def get_color_map() -> dict:
+    section = _convention_section('ColorConvention')
+    if 'ColorMap' in section:
+        return section['ColorMap'] or {}
+    if not conventions:
+        return {}
+    return conventions.get('ColorMap') or {}
+
+
+# 被 Event 引用的对象是否使用同色系深色（仅影响自动调整颜色的工具）
+def use_dark_color_for_event_ref() -> bool:
+    section = _convention_section('ColorConvention')
+    if 'EventRefDarkColor' in section:
+        return bool(section['EventRefDarkColor'])
+    return True
+
+
+# Event 与播放对象是否互为备注（关闭后自动更新备注的工具不再改动 Notes）
+def use_event_ref_notes() -> bool:
+    if not conventions or 'EventRefNotes' not in conventions:
+        return True
+    return bool(conventions['EventRefNotes'])
+
+
+def is_acronym_enabled() -> bool:
+    return _enabled_flag('AcronymConvention', ('EnableAcronym', 'EnableAcronymColor'))
+
+
+def is_color_enabled() -> bool:
+    return _enabled_flag('ColorConvention', ('EnableColor', 'EnableAcronymColor'))
+
+
+def is_name_case_enabled() -> bool:
+    return _enabled_flag('NameCaseConvention', ('EnableNameCase',))
+
+
+# 大小写检查方式（无该字段时按旧配置当作首字母大写）
+def get_name_case_mode() -> str:
+    section = _convention_section('NameCaseConvention')
+    mode = section.get('Mode')
+    if isinstance(mode, str) and mode in NAME_CASE_MODES:
+        return mode
+    return DEFAULT_NAME_CASE_MODE
+
+
+def is_path_length_enabled() -> bool:
+    return _enabled_flag('PathLengthConvention', ('EnablePathLength',))
+
+
+# Sound 节点是否使用完整名称（隶属路径长度规范）；兼容旧的顶层 FullNameInSound
+def use_full_name_in_sound() -> bool:
+    section = _convention_section('PathLengthConvention')
+    if 'FullNameInSound' in section:
+        return bool(section['FullNameInSound'])
+    if not conventions or 'FullNameInSound' not in conventions:
+        return True
+    return conventions['FullNameInSound']
+
+
 # 使用颜色规范
 def has_color_convention() -> bool:
-    if not conventions or 'ColorMap' not in conventions:
+    if not is_color_enabled():
         return False
-    return conventions['ColorMap'] != {}
+    return get_color_map() != {}
 
 
 # 使用缩写规范
 def has_acronym_convention() -> bool:
-    if not conventions or 'AcronymMap' not in conventions:
+    if not is_acronym_enabled():
         return False
-    return conventions['AcronymMap'] != {}
+    return get_acronym_map() != {}
 
 
 # 根据对象的名称获取类型
@@ -87,7 +185,7 @@ def get_object_category(obj: Any) -> str:
         return ''
     splits = obj_path.split('\\')[1:]
     for name in splits:
-        for key, value in conventions['AcronymMap'].items():
+        for key, value in get_acronym_map().items():
             if key in name:
                 return key
     return ''
@@ -97,7 +195,7 @@ def get_object_category(obj: Any) -> str:
 def get_color_by_category(category: str) -> int:
     if not has_color_convention():
         return 0
-    for key, value in conventions['ColorMap'].items():
+    for key, value in get_color_map().items():
         if key in category:
             return value
     return 0
@@ -107,7 +205,7 @@ def get_color_by_category(category: str) -> int:
 def convert_category_to_acronym(category: str) -> str:
     if not has_acronym_convention():
         return category
-    for key, value in conventions['AcronymMap'].items():
+    for key, value in get_acronym_map().items():
         if key in category:
             return value
     return category
@@ -117,7 +215,7 @@ def convert_category_to_acronym(category: str) -> str:
 def convert_acronym_to_category(acronym: str) -> str:
     if not has_acronym_convention():
         return acronym
-    for key, value in conventions['AcronymMap'].items():
+    for key, value in get_acronym_map().items():
         if acronym == value:
             return key
     return acronym
@@ -127,7 +225,7 @@ def convert_acronym_to_category(acronym: str) -> str:
 def remove_acronym_from_name(obj_name: str) -> str:
     if not has_acronym_convention():
         return obj_name
-    for key, value in conventions['AcronymMap'].items():
+    for key, value in get_acronym_map().items():
         if value in obj_name:
             obj_name = obj_name.replace(value, key)
     return obj_name
@@ -137,7 +235,7 @@ def remove_acronym_from_name(obj_name: str) -> str:
 def add_acronym_from_name(obj_name: str) -> str:
     if not has_acronym_convention():
         return obj_name
-    for key, value in conventions['AcronymMap'].items():
+    for key, value in get_acronym_map().items():
         if key in obj_name:
             obj_name = obj_name.replace(key, value)
     return obj_name
@@ -157,6 +255,18 @@ def get_net_role_suffix(role: str) -> str:
     if not conventions or 'NetRole' not in conventions:
         return '_' + role
     return conventions['NetRole']['Suffix'][role]
+
+
+# 获取1P/2P/3P的Bus后缀；未单独配置时跟随名称后缀。
+# 把2P的Bus后缀填成3P的后缀即表示不区分2P/3P Bus，此时两者复用同一个Bus
+def get_net_role_bus_suffix(role: str) -> str:
+    if not conventions or 'NetRole' not in conventions:
+        return '_' + role
+    net_role = conventions['NetRole']
+    bus_suffix = (net_role.get('BusSuffix') or {}).get(role)
+    if bus_suffix:
+        return bus_suffix
+    return (net_role.get('Suffix') or {}).get(role, '_' + role)
 
 
 # 获取1P/2P/3P的SwitchGroup名称
@@ -193,18 +303,11 @@ def get_default_net_role_suffix() -> str:
     return conventions['NetRole']['Suffix']['1P']
 
 
-# 获取已经接入的语言列表
-def get_implemented_languages() -> list:
-    if not conventions or 'ImplementedLanguages' not in conventions:
-        return ['Chinese', 'English']
-    return conventions['ImplementedLanguages']
-
-
-# 是否使用全名作为Sound节点名称
-def use_full_name_in_sound() -> bool:
-    if not conventions or 'FullNameInSound' not in conventions:
-        return True
-    return conventions['FullNameInSound']
+# 获取未接入的语言列表（这些语言不参与本地化检查）
+def get_unimplemented_languages() -> list:
+    if not conventions or 'UnimplementedLanguages' not in conventions:
+        return []
+    return conventions['UnimplementedLanguages']
 
 
 # 事件是否以Play_开头
@@ -212,3 +315,26 @@ def has_event_play_prefix() -> bool:
     if not conventions or 'PlayPrefixInEvent' not in conventions:
         return False
     return conventions['PlayPrefixInEvent']
+
+
+# Bank 设置：是否使用自动定义的 Bank
+def use_auto_defined_bank() -> bool:
+    section = _convention_section('BankConvention')
+    if 'UseAutoDefinedBank' in section:
+        return bool(section['UseAutoDefinedBank'])
+    return DEFAULT_USE_AUTO_DEFINED_BANK
+
+
+# Bank 设置：拆分开关的配置值（不受「自动定义的Bank」影响，供设置界面回显）
+def get_split_event_media_setting() -> bool:
+    section = _convention_section('BankConvention')
+    if 'SplitEventMedia' in section:
+        return bool(section['SplitEventMedia'])
+    return DEFAULT_SPLIT_EVENT_MEDIA
+
+
+# Bank 是否按 Event / Media 拆分：仅在关闭「使用自动定义的Bank」后才生效
+def split_bank_event_media() -> bool:
+    if use_auto_defined_bank():
+        return False
+    return get_split_event_media_setting()

@@ -30,7 +30,7 @@ def replace_parent(obj: WwiseObject) -> bool:
 # region SwitchContainer
 # 根据名称为Switch Container的下级自动分配
 def auto_assign_switch_mappings(container: WwiseObject) -> bool:
-    if WwiseObjectType.SwitchContainer not in container.type:
+    if container.type != WwiseObjectType.SwitchContainer:
         return False
     # 获取Switch Group中所有可能值
     switch_objects = get_available_switch_items(container)
@@ -51,9 +51,9 @@ def auto_assign_switch_mappings(container: WwiseObject) -> bool:
 
 # 获取SwitchContainer当前分配的Switch下面所有的选项
 def get_available_switch_items(container: WwiseObject) -> list:
-    if WwiseObjectType.SwitchContainer not in container.type:
+    if container.type != WwiseObjectType.SwitchContainer:
         return []
-    group = waapi_utils.get_object_property(container, 'SwitchGroupOrStateGroup')
+    group = waapi_utils.get_referenced_object(container, 'SwitchGroupOrStateGroup')
     if group:
         children = waapi_utils.get_child_objects(group)
         return children
@@ -71,7 +71,7 @@ def assign_to_generic_path(obj: WwiseObject) -> bool:
     for item in switch_items:
         found = False
         for mapping in mappings:
-            if item['id'] == mapping['stateOrSwitch']:
+            if item.id == mapping['stateOrSwitch']:
                 found = True
                 break
         if not found:
@@ -89,6 +89,9 @@ def split_by_net_role(obj: WwiseObject, has_teammate: bool, has_enemy: bool) -> 
     suffix_1p = project_conventions.get_net_role_suffix('1P')
     suffix_2p = project_conventions.get_net_role_suffix('2P')
     suffix_3p = project_conventions.get_net_role_suffix('3P')
+    bus_suffix_1p = project_conventions.get_net_role_bus_suffix('1P')
+    bus_suffix_2p = project_conventions.get_net_role_bus_suffix('2P')
+    bus_suffix_3p = project_conventions.get_net_role_bus_suffix('3P')
     obj_teammate = obj_enemy = None
     # 拆分结构并重组到SwitchContainer下面
     old_parent = waapi_utils.get_parent_object(obj)
@@ -103,13 +106,15 @@ def split_by_net_role(obj: WwiseObject, has_teammate: bool, has_enemy: bool) -> 
         waapi_utils.rename_object(obj_enemy, original_name + suffix_3p)
     waapi_utils.rename_object(new_parent, original_name)
     # 创建并分配bus
-    original_bus = waapi_utils.get_object_property(obj, 'OutputBus')
-    original_bus = waapi_utils.get_full_info_from_obj_id(original_bus['id'])
-    original_bus_name = original_bus.name
-    if original_bus_name != 'Master Audio Bus':
-        bus_self = mixing_utils.get_or_create_bus(original_bus_name + suffix_1p, original_bus)
-        bus_teammate = mixing_utils.get_or_create_bus(original_bus_name + suffix_2p, original_bus) if has_teammate else None
-        bus_enemy = mixing_utils.get_or_create_bus(original_bus_name + suffix_3p, original_bus)
+    original_bus = waapi_utils.get_referenced_object(obj, 'OutputBus')
+    if original_bus and not original_bus.name:
+        original_bus = waapi_utils.get_full_info_from_obj_id(original_bus.id)
+    if original_bus and original_bus.name != 'Master Audio Bus':
+        original_bus_name = original_bus.name
+        bus_self = mixing_utils.get_or_create_bus(original_bus_name + bus_suffix_1p, original_bus)
+        # 2P 与 3P 的后缀填成一样（如都填 _3P）即代表不区分，get_or_create_bus 会复用同一个 Bus
+        bus_teammate = mixing_utils.get_or_create_bus(original_bus_name + bus_suffix_2p, original_bus) if has_teammate else None
+        bus_enemy = mixing_utils.get_or_create_bus(original_bus_name + bus_suffix_3p, original_bus) if has_enemy else None
         mixing_utils.set_output_bus(obj, bus_self)
         if has_teammate:
             mixing_utils.set_output_bus(obj_teammate, bus_teammate)

@@ -12,8 +12,8 @@ def _waapi_mcp_mode() -> bool:
 def _console_print(line: str) -> None:
     print(line, file=sys.stderr if _waapi_mcp_mode() else sys.stdout)
 
-# 用于设置
-FONT_STYLE_DICT = {
+# 日志窗口字体颜色：[颜色, 字号, 字重]
+_DARK_FONT_STYLES = {
         "INFO": ["#1DE9B6", 10.5, 400],
         "QUERY": ["#C7B8E2", 10.5, 400],
         "WARNING": ["#FFD700", 10.5, 400],
@@ -21,6 +21,45 @@ FONT_STYLE_DICT = {
         "DEBUG": ["#8A71BF", 10.5, 400],
         "EXCEPTION": ["#FF0015", 10.5, 400],
     }
+
+# 浅色主题下改用深色系文字，保证在浅色背景上可读
+_LIGHT_FONT_STYLES = {
+        "INFO": ["#00796B", 10.5, 400],
+        "QUERY": ["#6A1B9A", 10.5, 400],
+        "WARNING": ["#B26A00", 10.5, 400],
+        "ERROR": ["#C62828", 10.5, 400],
+        "DEBUG": ["#5E35B1", 10.5, 400],
+        "EXCEPTION": ["#B71C1C", 10.5, 400],
+    }
+
+FONT_STYLE_DICT = dict(_DARK_FONT_STYLES)
+
+
+# 取主题主色（qt_material 的 primaryColor）；浅色主题下过亮时压暗，保证可读
+def _theme_primary_color(theme_name: str) -> str | None:
+    try:
+        from qt_material import get_theme
+
+        color = get_theme(theme_name).get("primaryColor")
+    except Exception:
+        return None
+    if not color or not str(color).startswith("#") or len(color) != 7:
+        return None
+    if str(theme_name).startswith("light"):
+        red, green, blue = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+        if 0.299 * red + 0.587 * green + 0.114 * blue > 160:
+            red, green, blue = int(red * 0.6), int(green * 0.6), int(blue * 0.6)
+            return f"#{red:02x}{green:02x}{blue:02x}"
+    return color
+
+
+# 按 qt_material 主题切换日志窗口配色（dark_*.xml 用亮色、light_*.xml 用深色）
+def set_log_theme(theme_name: str) -> None:
+    is_dark = not str(theme_name).startswith("light")
+    FONT_STYLE_DICT.update(_DARK_FONT_STYLES if is_dark else _LIGHT_FONT_STYLES)
+    info_color = _theme_primary_color(theme_name)
+    if info_color:
+        FONT_STYLE_DICT["INFO"] = [info_color, 10.5, 400]
 
 
 # Format used for log colored text in cmd
