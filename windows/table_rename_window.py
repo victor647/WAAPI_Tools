@@ -7,7 +7,7 @@ from libraries.table_view.table_severity_delegate import SeverityTableDelegate
 from libraries.multi_thread import batch_processor
 from libraries.utils.wwise import waapi_utils
 from libraries.wwise_object import WwiseObjectType
-from libraries.utils import io_utils
+from libraries.utils import io_utils, user_config
 
 
 # 通过读表批量重命名工具
@@ -16,6 +16,8 @@ class TableRenamer(QDialog, Ui_RenameByTable):
     def __init__(self, main_window):
         super().__init__()
         self.setupUi(self)
+        # 先回填持久化选项再连信号，避免回填过程触发一次保存
+        self.load_user_settings()
         self.setup_triggers()
         self.tblConfigItems.setItemDelegate(SeverityTableDelegate(self.tblConfigItems))
         self.__csvData = []
@@ -27,6 +29,32 @@ class TableRenamer(QDialog, Ui_RenameByTable):
         self.btnChooseConfig.clicked.connect(self.read_from_table)
         self.btnDoRename.clicked.connect(self.start_renaming)
         self.tblConfigItems.itemDoubleClicked.connect(self.show_object_in_wwise)
+        self.cbbObjectType.currentIndexChanged.connect(self._on_option_changed)
+        self.cbxExactMatch.toggled.connect(self._on_option_changed)
+        self.cbxHasHeaderRow.toggled.connect(self._on_option_changed)
+
+    # 读取本窗口持久化的选项（user_config.json 的 window_settings.table_rename）
+    def load_user_settings(self):
+        saved = user_config.get_window_settings('table_rename')
+        obj_type = saved.get('object_type')
+        if obj_type is not None:
+            index = self.cbbObjectType.findText(str(obj_type))
+            if index >= 0:
+                self.cbbObjectType.setCurrentIndex(index)
+        self.cbxExactMatch.setChecked(bool(saved.get('exact_match', self.cbxExactMatch.isChecked())))
+        self.cbxHasHeaderRow.setChecked(bool(saved.get('has_header_row', self.cbxHasHeaderRow.isChecked())))
+
+    # 把本窗口选项写回 user_config.json
+    def save_user_settings(self):
+        user_config.set_window_settings('table_rename', {
+            'object_type': self.cbbObjectType.currentText(),
+            'exact_match': self.cbxExactMatch.isChecked(),
+            'has_header_row': self.cbxHasHeaderRow.isChecked(),
+        })
+
+    # 选项一变就落盘：窗口没有确定/取消按钮，Esc 关闭不会触发 closeEvent
+    def _on_option_changed(self, _value=None):
+        self.save_user_settings()
 
     # 读取CSV文件，必须为3列
     def read_from_table(self):

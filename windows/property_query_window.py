@@ -51,7 +51,10 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         self.setup_triggers()
         self.__pressed_common_state = None
         self.lblObjectCount.setText(f'表格内共 {len(self.__objects)} 个对象')
-        self.tblPropertyResults.setColumnCount(0)
+        # 打开窗口就先把对象列表铺进表格，属性列留空，点「查询」后再补值
+        self._render_object_rows()
+        self.tblPropertyResults.resizeColumnsToContents()
+        self.tblPropertyResults.setSortingEnabled(True)
 
     def setup_triggers(self):
         self.btnQuery.clicked.connect(self.start_query)
@@ -124,6 +127,20 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
     def open_property_doc(self):
         webbrowser.open(PROPERTY_DOC_URL)
 
+    # 按当前属性名列表重建表格：名称/类型/路径三列填对象信息，属性列留空
+    def _render_object_rows(self):
+        self.tblPropertyResults.clear()
+        self.tblPropertyResults.setColumnCount(3 + len(self.__property_names))
+        self.tblPropertyResults.setHorizontalHeaderLabels(['名称', '类型', '路径'] + self.__property_names)
+        self.tblPropertyResults.setRowCount(len(self.__objects))
+        for index, obj in enumerate(self.__objects):
+            name_item = QTableWidgetItem(obj.name)
+            # 排序后行序会变化，用对象 id 保证双击仍能定位到正确对象
+            name_item.setData(Qt.ItemDataRole.UserRole, obj.id)
+            self.tblPropertyResults.setItem(index, 0, name_item)
+            self.tblPropertyResults.setItem(index, 1, QTableWidgetItem(obj.type.name))
+            self.tblPropertyResults.setItem(index, 2, QTableWidgetItem(WwiseTableRowData.get_path_text(obj.path)))
+
     # 按输入属性名对全部对象发起查询
     def start_query(self):
         self.__property_names = self.parse_property_names()
@@ -137,18 +154,8 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         self.__row_types = [''] * len(self.__objects)
         self.__type_missing_props = {}
         self.__missing_combos = []
-        self.tblPropertyResults.clear()
         self.tblPropertyResults.setSortingEnabled(False)
-        self.tblPropertyResults.setColumnCount(3 + len(self.__property_names))
-        self.tblPropertyResults.setHorizontalHeaderLabels(['名称', '类型', '路径'] + self.__property_names)
-        self.tblPropertyResults.setRowCount(len(self.__objects))
-        for index, obj in enumerate(self.__objects):
-            name_item = QTableWidgetItem(obj.name)
-            # 排序后行序会变化，用对象 id 保证双击仍能定位到正确对象
-            name_item.setData(Qt.ItemDataRole.UserRole, obj.id)
-            self.tblPropertyResults.setItem(index, 0, name_item)
-            self.tblPropertyResults.setItem(index, 1, QTableWidgetItem(obj.type.name))
-            self.tblPropertyResults.setItem(index, 2, QTableWidgetItem(WwiseTableRowData.get_path_text(obj.path)))
+        self._render_object_rows()
         batch_processor.create_async(
             self.__objects,
             lambda index, obj: self.read_object_properties(index, obj),

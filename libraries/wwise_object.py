@@ -1,5 +1,15 @@
 from enum import Enum
 
+from libraries.wwise_object_properties import BUILTIN_ACCESSORS, TYPE_PROPERTIES
+
+
+# 属性名统一成小写再做查表：去掉 @ / @@ 前缀与访问器括号，点号后是目标对象自己的字段，只看第一段
+def _normalize_property_name(name: str) -> str:
+    if not name:
+        return ""
+    normalized = name.strip().lstrip("@").split(".", 1)[0].split("(", 1)[0]
+    return normalized.strip().lower()
+
 
 class WwiseObjectType(Enum):
     Folder = "Folder"
@@ -124,6 +134,16 @@ class WwiseObject(object):
     @property
     def is_container(self) -> bool:
         return "Container" in self.type.value
+
+    # 该对象类型上是否存在该属性/引用/内置访问器；名称不区分大小写，文档里查不到的类型不拦截
+    def has_property(self, name: str) -> bool:
+        normalized = _normalize_property_name(name)
+        if normalized in BUILTIN_ACCESSORS:
+            return True
+        properties = TYPE_PROPERTIES.get((self.wwise_dict or {}).get("type", "").strip().lower())
+        if properties is None:
+            return True
+        return normalized in properties
 
     @property
     def id(self) -> str:

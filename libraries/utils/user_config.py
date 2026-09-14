@@ -48,8 +48,10 @@ DEFAULT_CONFIG = {
         # 高级查找窗口各选项的持久化状态
         "recursive_find": True,
         "keep_self": False,
-        # 查找特定类型子对象时选择的类型
-        "find_child_type": "全部类型",
+        # 查找特定类型子对象时勾选的类型（空列表即全部类型）
+        "find_child_types": [],
+        # 「找属性」下拉框上次选择的属性名
+        "find_property": "Attenuation",
     },
     "appearance": {
         # qt_material 主题（themes/*.xml 文件名）
@@ -288,6 +290,7 @@ def get_advanced_find_settings() -> dict:
     stored = load_config().get("advanced_find")
     if not isinstance(stored, dict):
         stored = {}
+    # 类型默认一个都不勾（即「全部类型」）；旧版的 find_child_type 单值不再沿用
     return {key: stored.get(key, defaults[key]) for key in defaults}
 
 
@@ -297,6 +300,8 @@ def save_advanced_find_settings(settings: dict) -> None:
     section = config.setdefault("advanced_find", {})
     allowed = set(DEFAULT_CONFIG["advanced_find"])
     section.update({key: value for key, value in settings.items() if key in allowed})
+    # 清掉旧版遗留的单值键，避免和 find_child_types 并存产生歧义
+    section.pop("find_child_type", None)
     path = get_config_path()
     try:
         with open(path, "w", encoding="utf-8") as f:

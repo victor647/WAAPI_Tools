@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox,
     QSizePolicy, QSpacerItem, QSplitter, QStatusBar,
     QTableView, QTextEdit, QVBoxLayout, QWidget)
 
+from libraries.widgets.multi_select_combo import MultiSelectCombo
+
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
@@ -323,7 +325,6 @@ class Ui_MainWindow(object):
         self.cbxRecursiveFind.setObjectName(u"cbxRecursiveFind")
         sizePolicy1.setHeightForWidth(self.cbxRecursiveFind.sizePolicy().hasHeightForWidth())
         self.cbxRecursiveFind.setSizePolicy(sizePolicy1)
-        self.cbxRecursiveFind.setVisible(False)
         self.cbxRecursiveFind.setChecked(True)
 
         self.horizontalLayout_4.addWidget(self.cbxRecursiveFind)
@@ -343,16 +344,6 @@ class Ui_MainWindow(object):
         self.cbxTurboMode.setChecked(True)
 
         self.horizontalLayout_4.addWidget(self.cbxTurboMode)
-
-        self.btnAdvancedFind = QPushButton(self.grpFind)
-        self.btnAdvancedFind.setObjectName(u"btnAdvancedFind")
-
-        self.horizontalLayout_4.addWidget(self.btnAdvancedFind)
-
-        self.btnClearTable = QPushButton(self.grpFind)
-        self.btnClearTable.setObjectName(u"btnClearTable")
-
-        self.horizontalLayout_4.addWidget(self.btnClearTable)
 
         self.btnObjectHistoryBack = QPushButton(self.grpFind)
         self.btnObjectHistoryBack.setObjectName(u"btnObjectHistoryBack")
@@ -395,32 +386,19 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_findActions.addWidget(self.btnFindReferences)
 
-        self.cbbFindProperty = QComboBox(self.grpFind)
-        self.cbbFindProperty.addItem("")
-        self.cbbFindProperty.addItem("")
-        self.cbbFindProperty.addItem("")
-        self.cbbFindProperty.addItem("")
-        self.cbbFindProperty.addItem("")
-        self.cbbFindProperty.addItem("")
-        self.cbbFindProperty.addItem("")
-        self.cbbFindProperty.setObjectName(u"cbbFindProperty")
-        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.cbbFindProperty.sizePolicy().hasHeightForWidth())
-        self.cbbFindProperty.setSizePolicy(sizePolicy3)
-        self.cbbFindProperty.setMinimumSize(QSize(120, 0))
+        self.btnClearTable = QPushButton(self.grpFind)
+        self.btnClearTable.setObjectName(u"btnClearTable")
 
-        self.horizontalLayout_findActions.addWidget(self.cbbFindProperty)
-
-        self.btnFindProperty = QPushButton(self.grpFind)
-        self.btnFindProperty.setObjectName(u"btnFindProperty")
-
-        self.horizontalLayout_findActions.addWidget(self.btnFindProperty)
+        self.horizontalLayout_findActions.addWidget(self.btnClearTable)
 
         self.findActionsSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_findActions.addItem(self.findActionsSpacer)
+
+        self.btnAdvancedFind = QPushButton(self.grpFind)
+        self.btnAdvancedFind.setObjectName(u"btnAdvancedFind")
+
+        self.horizontalLayout_findActions.addWidget(self.btnAdvancedFind)
 
 
         self.verticalLayout.addLayout(self.horizontalLayout_findActions)
@@ -438,6 +416,9 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
         self.ledFilterKeyword = QLineEdit(self.grpFilter)
         self.ledFilterKeyword.setObjectName(u"ledFilterKeyword")
+        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        sizePolicy3.setHorizontalStretch(0)
+        sizePolicy3.setVerticalStretch(0)
         sizePolicy3.setHeightForWidth(self.ledFilterKeyword.sizePolicy().hasHeightForWidth())
         self.ledFilterKeyword.setSizePolicy(sizePolicy3)
         self.ledFilterKeyword.setMinimumSize(QSize(220, 0))
@@ -462,7 +443,7 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_filterActions.addWidget(self.cbxTableSelectAll)
 
-        self.cbbFilterType = QComboBox(self.grpFilter)
+        self.cbbFilterType = MultiSelectCombo(self.grpFilter)
         self.cbbFilterType.setObjectName(u"cbbFilterType")
         sizePolicy3.setHeightForWidth(self.cbbFilterType.sizePolicy().hasHeightForWidth())
         self.cbbFilterType.setSizePolicy(sizePolicy3)
@@ -865,22 +846,13 @@ class Ui_MainWindow(object):
         self.cbxTurboMode.setToolTip(QCoreApplication.translate("MainWindow", u"\u6781\u901f\u6a21\u5f0f\uff1a\u53ea\u8bfb\u53d6\u57fa\u7840\u4fe1\u606f\u4e0e\u542f\u7528\u72b6\u6001\uff1b\u53d6\u6d88\u52fe\u9009\u540e\u5bf9\u5f53\u524d\u53ef\u89c1\u5bf9\u8c61\u8bfb\u53d6\u5907\u6ce8\u3001\u5f15\u7528\u8ba1\u6570\u7b49\u5b8c\u6574\u5c5e\u6027\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.cbxTurboMode.setText(QCoreApplication.translate("MainWindow", u"\u6781\u901f\u6a21\u5f0f", None))
-        self.btnAdvancedFind.setText(QCoreApplication.translate("MainWindow", u"\u9ad8\u7ea7\u67e5\u627e", None))
-        self.btnClearTable.setText(QCoreApplication.translate("MainWindow", u"\u6e05\u7a7a", None))
         self.btnObjectHistoryBack.setText(QCoreApplication.translate("MainWindow", u"\u540e\u9000", None))
         self.btnObjectHistoryForward.setText(QCoreApplication.translate("MainWindow", u"\u524d\u8fdb", None))
         self.btnFindParent.setText(QCoreApplication.translate("MainWindow", u"\u627e\u7236\u7ea7", None))
         self.btnFindChildren.setText(QCoreApplication.translate("MainWindow", u"\u627e\u5b50\u7ea7", None))
         self.btnFindReferences.setText(QCoreApplication.translate("MainWindow", u"\u627e\u5f15\u7528", None))
-        self.cbbFindProperty.setItemText(0, QCoreApplication.translate("MainWindow", u"Attenuation", None))
-        self.cbbFindProperty.setItemText(1, QCoreApplication.translate("MainWindow", u"Conversion", None))
-        self.cbbFindProperty.setItemText(2, QCoreApplication.translate("MainWindow", u"OutputBus", None))
-        self.cbbFindProperty.setItemText(3, QCoreApplication.translate("MainWindow", u"SwitchGroupOrStateGroup", None))
-        self.cbbFindProperty.setItemText(4, QCoreApplication.translate("MainWindow", u"DefaultSwitchOrState", None))
-        self.cbbFindProperty.setItemText(5, QCoreApplication.translate("MainWindow", u"UserAuxSend0", None))
-        self.cbbFindProperty.setItemText(6, QCoreApplication.translate("MainWindow", u"ReflectionsAuxSend", None))
-
-        self.btnFindProperty.setText(QCoreApplication.translate("MainWindow", u"\u627e\u5c5e\u6027", None))
+        self.btnClearTable.setText(QCoreApplication.translate("MainWindow", u"\u6e05\u7a7a", None))
+        self.btnAdvancedFind.setText(QCoreApplication.translate("MainWindow", u"\u9ad8\u7ea7\u67e5\u627e", None))
         self.grpFilter.setTitle(QCoreApplication.translate("MainWindow", u"\u7b5b\u9009", None))
 #if QT_CONFIG(tooltip)
         self.ledFilterKeyword.setToolTip(QCoreApplication.translate("MainWindow", u"\u7b5b\u9009\u4f1a\u5339\u914d\u540d\u79f0\u4e0e\u8def\u5f84\u3002\n"

@@ -138,9 +138,6 @@
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
-             <property name="visible">
-              <bool>false</bool>
-             </property>
              <property name="text">
               <string>递归查找</string>
              </property>
@@ -182,20 +179,6 @@
             <property name="checked">
              <bool>true</bool>
             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="btnAdvancedFind">
-             <property name="text">
-              <string>高级查找</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="btnClearTable">
-             <property name="text">
-              <string>清空</string>
-             </property>
             </widget>
            </item>
            <item>
@@ -268,60 +251,9 @@
             </widget>
            </item>
            <item>
-            <widget class="QComboBox" name="cbbFindProperty">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>120</width>
-               <height>0</height>
-              </size>
-             </property>
-             <item>
-              <property name="text">
-               <string>Attenuation</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>Conversion</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>OutputBus</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>SwitchGroupOrStateGroup</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>DefaultSwitchOrState</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>UserAuxSend0</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>ReflectionsAuxSend</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="btnFindProperty">
+            <widget class="QPushButton" name="btnClearTable">
              <property name="text">
-              <string>找属性</string>
+              <string>清空</string>
              </property>
             </widget>
            </item>
@@ -337,6 +269,13 @@
               </size>
              </property>
             </spacer>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnAdvancedFind">
+             <property name="text">
+              <string>高级查找</string>
+             </property>
+            </widget>
            </item>
           </layout>
          </item>
@@ -421,7 +360,7 @@ Boss        包含 Boss
             </widget>
            </item>
            <item>
-            <widget class="QComboBox" name="cbbFilterType">
+            <widget class="MultiSelectCombo" name="cbbFilterType">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
                <horstretch>0</horstretch>
@@ -1373,6 +1312,13 @@ Boss        包含 Boss
    </property>
   </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MultiSelectCombo</class>
+   <extends>QComboBox</extends>
+   <header>libraries.widgets.multi_select_combo</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
  <slots>

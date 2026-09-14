@@ -2,7 +2,7 @@ import os
 import shutil
 import logging
 import xml.etree.ElementTree as ElementTree
-from libraries.utils import io_utils
+from libraries.utils import io_utils, user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, game_sync_utils, project_utils, waapi_utils, mixing_utils
 from PySide6.QtWidgets import QDialog
@@ -26,12 +26,49 @@ class WorkUnitImporter(QDialog, Ui_WorkUnitImporter):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        # 先回填持久化选项再连信号，避免回填过程触发一次保存
+        self.load_user_settings()
         self.setup_triggers()
         self.__sourceProjectPath = ''
         self.__objectCount = 0
 
     def setup_triggers(self):
         self.btnStartImport.clicked.connect(self.start_import)
+        for checkbox in (self.cbxImportEffects, self.cbxImportSourceFile, self.cbxImportConversion,
+                         self.cbxImportAttenuation, self.cbxImportBus, self.cbxImportRTPC):
+            checkbox.toggled.connect(self._on_option_changed)
+        self.cbbMissingAction.currentIndexChanged.connect(self._on_option_changed)
+
+    # 读取本窗口持久化的导入选项（user_config.json 的 window_settings.work_unit_import）
+    def load_user_settings(self):
+        saved = user_config.get_window_settings('work_unit_import')
+        self.cbxImportEffects.setChecked(bool(saved.get('import_effects', self.cbxImportEffects.isChecked())))
+        self.cbxImportSourceFile.setChecked(bool(saved.get('import_source_file', self.cbxImportSourceFile.isChecked())))
+        self.cbxImportConversion.setChecked(bool(saved.get('import_conversion', self.cbxImportConversion.isChecked())))
+        self.cbxImportAttenuation.setChecked(bool(saved.get('import_attenuation', self.cbxImportAttenuation.isChecked())))
+        self.cbxImportBus.setChecked(bool(saved.get('import_bus', self.cbxImportBus.isChecked())))
+        self.cbxImportRTPC.setChecked(bool(saved.get('import_rtpc', self.cbxImportRTPC.isChecked())))
+        action = saved.get('missing_action')
+        if action is not None:
+            index = self.cbbMissingAction.findText(str(action))
+            if index >= 0:
+                self.cbbMissingAction.setCurrentIndex(index)
+
+    # 把本窗口选项写回 user_config.json
+    def save_user_settings(self):
+        user_config.set_window_settings('work_unit_import', {
+            'import_effects': self.cbxImportEffects.isChecked(),
+            'import_source_file': self.cbxImportSourceFile.isChecked(),
+            'import_conversion': self.cbxImportConversion.isChecked(),
+            'import_attenuation': self.cbxImportAttenuation.isChecked(),
+            'import_bus': self.cbxImportBus.isChecked(),
+            'import_rtpc': self.cbxImportRTPC.isChecked(),
+            'missing_action': self.cbbMissingAction.currentText(),
+        })
+
+    # 选项一变就落盘：窗口没有确定/取消按钮，Esc 关闭不会触发 closeEvent
+    def _on_option_changed(self, _value=None):
+        self.save_user_settings()
 
     # 从WorkUnit中根据名称导入对象
     def start_import(self):

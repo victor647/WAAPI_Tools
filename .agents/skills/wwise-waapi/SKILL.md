@@ -1,140 +1,87 @@
 ---
 name: wwise-waapi
-description: Use for WAAPI_Tools tasks that automate Wwise via Python or MCP, especially object queries, children/parents, SoundBank, Switch, import, RTPC, transport, UI commands, undo groups, or GUID-to-Wwise operations.
+description: Use for WAAPI_Tools tasks that automate Wwise — in the software's AI assistant, through MCP tools, or by editing libraries/utils/wwise code. Covers object queries, children/descendants, references, property filtering, counting/aggregation, SoundBank, Switch, RTPC, transport, undo groups, GUI actions, and GUID-based operations.
 ---
 
 # Wwise WAAPI（本工程）
 
-## 架构
+## 架构：工具只定义一份
 
-- 底层 WAAPI 客户端：`libraries/waapi_client.py` 中的 `WAAPIClient`，入参出参为 dict 或原生值。
-- Wwise 对象门面：`libraries/utils/wwise/waapi_utils.py`，负责 `WwiseObject` / `WwiseObjectType` 与 `WAAPIClient` 所需 dict / type string 的转换。
-- 业务工具：`libraries/utils/wwise/*_utils.py` 基于 `waapi_utils` 组合更高层操作。
-- 对象模型：`libraries/wwise_object.py` 中的 `WwiseObject` 和 `WwiseObjectType`。
-- 连接：`WAAPIClient().connect()` 使用 `ws://127.0.0.1:8080/waapi`；结束时可 `WAAPIClient().disconnect()` 或通过 `waapi_utils.close_client()` 关闭。
-- 编辑业务代码时优先使用 `from libraries.utils.wwise import waapi_utils`。只有 MCP GUID/dict 薄封装或底层客户端改动才直接使用 `WAAPIClient`。
+- `libraries/tool_registry.py`：中立工具注册表（`name / description / parameters / handler / mutating`），
+  不依赖 Qt 与 fastmcp；`libraries/wwise_tool_catalog.py` 是原 MCP 薄封装迁入的实现。
+  两者合计约 110 个后台工具，AI 助手与 MCP **同源同名**。
+- `waapi_mcp/registry_mcp_tools.py`：把注册表工具批量注册为 MCP tool（`WaapiMCP.exe`）；
+  `run_wwise_script` 受 `ai.enable_script_tool` 控制，默认不注册。
+- 软件内 AI 助手：注册表工具 + AI 专用工具（表格 / 大结果文件 / `gui_*` / 脚本）。
+- GUI 手动工具：直接调用 `libraries/utils/wwise/*_utils.py`。
+- 业务代码优先 `from libraries.utils.wwise import waapi_utils`（传 `WwiseObject` / `WwiseObjectType`）；
+  只有 MCP 薄封装或底层改动才直接用 `WAAPIClient`（`libraries/waapi_client.py`，dict 层）。
+- `WAAPIClient` 内部用锁串行化 `call`（界面/批处理/AI 共用一条 websocket），不要依赖并发调用。
 
-## MCP 与自然语言任务
+## 参数与结果约定（AI 与 MCP 通用）
 
-- **工具名**：在 Codex 里调用的 MCP 工具名，与 `waapi_mcp/waapi_mcp_tools.py`、`waapi_mcp/utils_mcp_tools.py` 中带 `@mcp.tool()` 的**函数名一致**。
-- **典型链**：先**查询** → 在助手侧根据返回 JSON 里的 `type`、`name`、`path` **筛选** → 再**写入**（`set_object_property` 等）。批量修改建议用 `begin_undo_group` / `end_undo_group` 包一层，失败时可 `undo`。
-- **名称 + 类型**：若用户同时给出精确名与类型，优先 `find_object_by_name_and_type`；若只给类型或只给名称片段，用 `find_all_objects_by_type` 或 `find_all_objects_by_name`，再在结果上筛选。
-- **`find_all_objects_by_name(obj_name, exact_match)`**（对应 `waapi_utils.find_all_objects_by_name` / `WAAPIClient.find_all_objects_by_name`）：工程版本大于 2020 时走 WAQL `search`；`exact_match=False` 时返回搜索命中的一批对象，**未必**已按「前缀」过滤，常需在客户端保留 `type == 某值` 且 `name` 以某前缀开头等条件。
-- **示例**（用户话：「所有以 Weapon 开头的 ActorMixer 音量设为 -3」）：调用 `find_all_objects_by_name`，参数如 `obj_name="Weapon"`、`exact_match=false` → 在结果中只保留 `type` 为 `ActorMixer` 且 `name` 以 `Weapon` 开头 → 对每个对象的 `id` 调用 `set_object_property`，`property_name` 为 `Volume`，`value` 为 `-3`。
-- **优先 utils**：若 `libraries/utils/wwise` 里已有对应业务封装，优先使用 MCP 中的高层工具；没有时再组合底层 WAAPI 薄封装。
+- 对象一律用 GUID；批量传 `object_ids` 数组。AI 侧可用 `["@table"]`（当前表格对象）与
+  `["@selection"]`（Wwise 当前选中）代替罗列大量 id。
+- 列表型工具有 `limit`（`0` = 不限量）。默认上限：子级 500 / 后代 1000 / 引用 500 /
+  属性筛选扫描 20000。
+- 结果过大时 AI 侧会落盘：返回 `result_file`，用 `read_result_file(result_file, offset, limit)`
+  分页、`group_result_file(result_file, group_by, min_count)` 分组；任务结束自动删除。
+- 结果带 `truncated: true` 时不要下钻重查，改用统计类工具让工具侧完成。
+- 多步任务一次把 id 批量传给下一步；跨层级统计用 `aggregate_tool_chain`（自动注入上一步 id）。
 
-## 意图 → 函数速查
+## 意图 → 工具（后台/数据，AI 与 MCP 都可调用）
 
-按用户需求优先选择 `waapi_utils` 或已有 MCP tool 中的函数。
+| 需求 | 工具 | 说明 |
+|------|------|------|
+| 对象详情 / 备注 / 启用状态 | `get_objects_info` | 备注、Inclusion 等 |
+| 子级或全部后代 | `get_children(object_ids, recursive, limit)` | `recursive=true` 一次取全量 |
+| 指定类型的后代 | `get_descendants_of_type(object_ids, child_type, include_path, limit)` | Wwise 侧按类型过滤，最省数据 |
+| 谁引用了对象 | `get_references(object_ids)` | Event 通过 EventAction(Action) 引用 |
+| 被 Event 引用计数 | `check_event_references(object_ids)` | 已按 Action 口径封装 |
+| 按属性筛选（Volume/Pitch…） | `find_objects_by_property(object_ids, property_name, op, value, child_type?, scan_limit?)` | 与「属性查询」窗口同口径：逐对象 `get_object_properties`，某类型首次读不到即视为该类型无此属性，结果含 `types_without_property` |
+| 列表计数 / 分组 | `count_tool_items` / `group_tool_items` | 包裹任意返回列表的工具 |
+| 多步链式统计 | `aggregate_tool_chain(steps, group_by, min_count)` | 例：统计含 >1 个 MusicTrack 的 MusicSegment |
+| 音频源与体积 | `get_audio_sources` / `calculate_audio_source_size` | 源文件路径、磁盘占用 |
+| 改名 / 备注 / 启用 / 颜色 | `rename_object` / `set_object_notes` / `set_object_inclusion` / `set_object_color` | |
+| 结构操作 | `create_parent` / `convert_to_type` / `split_underscore_to_folder` / `create_play_event` | |
+| 删除 | `delete_object`（需 `confirmed=true`） | AI 侧对应 `delete_objects` |
+| 试听 | `play_sound` / `stop_sound` | 返回 `transport_id` |
+| 撤销 | `begin_undo_group` / `end_undo_group` / `undo` / `redo` | AI 批量任务会自动包撤销组 |
 
-### 连接
+## AI 专用（无界面环境不可用）
 
-| 函数 | 用途 |
+- 表格：`set_table_objects(object_ids, append=false)`（默认**替换**表格内容，`append=true` 追加）
+- 大结果文件：`read_result_file` / `group_result_file`
+- 界面操作（等价于点按钮/菜单）：`gui_get_wwise_selection`、`gui_find_children`、`gui_find_parent`、
+  `gui_set_filter`、`gui_open_window`、`gui_list_actions`、`gui_run_action`
+- 脚本：`run_wwise_script`（需设置里开启 `ai.enable_script_tool` 且传 `confirmed=true`；
+  受限命名空间：可用 `tools_api` / `api_names` / `help()`，禁止 `import os/sys/subprocess/inspect`，
+  循环与超时预算由 AST 注入）
+
+## 代码侧函数速查（waapi_utils / *_utils）
+
+| 区域 | 函数 |
 |------|------|
-| `WAAPIClient().connect()` | 获取/懒建 `WaapiClient` |
-| `close_client()` | 断开并清理客户端 |
+| 查询 | `get_object_property` / `get_object_properties` / `get_property_and_reference_names`、`get_selected_objects`、`get_parent_object`、`get_ancestor_objects`、`get_child_objects`、`get_descendants_of_type`、`get_object_references`、`find_object_by_path`、`find_object_by_name_and_type`、`find_all_objects_by_name` / `find_all_objects_by_type`、`get_full_info_from_obj_id`、`get_authoring_info` / `get_project_info` / `get_project_property` |
+| 通用写 | `create_child_object`、`create_object_by_path`、`create_object_at_default_location`、`move_object`、`copy_object`、`rename_object`、`set_object_property`、`set_object_reference`、`set_object_notes`、`delete_object` |
+| 容器 | `set_sequence_container_playlist`、`get_switch_mappings`、`assign_switch_mapping`、`remove_switch_mappings` |
+| 音频源 | `import_audio_file`、`add_silence`、`get_default_audio_source` |
+| SoundBank | `get_bank_inclusions`、`clear_bank_inclusions`、`set_bank_inclusion` |
+| GameSync / 混音 | `add_rtpc`、`clear_slots`、`add_effect` |
+| 本地化 | `get_language_list` |
+| 播放 | `play_sound_in_transport`、`stop_sound_in_transport`、`destroy_transport` |
+| UI / 撤销 / 源码管理 | `execute_ui_command`、`select_objects_in_wwise`、`bring_wwise_to_foreground`、`begin_undo_group` / `end_undo_group`、`undo` / `redo`、`add_to_source_control` |
 
-### 查询（Query）
+## 约定与坑
 
-| 函数 | 用途 |
-|------|------|
-| `get_authoring_info(property_name)` | Wwise 编辑器信息（`ak.wwise.core.getInfo`） |
-| `get_project_info(property_name)` | 工程信息（`getProjectInfo`） |
-| `get_project_property(property_name)` | 工程根对象上的单个属性 |
-| `get_object_property(obj, property_name)` | 指定对象的单个属性 |
-| `paste_object_property(source_obj, target_objects, property_name)` | 从源对象复制某属性到多个目标 |
-| `get_selected_objects()` | 当前在 Wwise 中选中的对象 |
-| `get_object_from_path(path)` | 按路径解析对象（与 `find_object_by_path` 类似场景，注意返回值形态） |
-| `get_object_references(obj)` | 引用该对象的所有对象 |
-| `get_parent_object(obj)` | 直接父级 |
-| `get_ancestor_objects(obj)` | 自底向上祖先链 |
-| `get_child_objects(obj, include_descendants=False)` | **直属子级**；`include_descendants=True` 时取全部后代（分页拉取） |
-| `get_descendants_of_type(obj, child_type)` | 某类型后代（`WwiseObjectType`） |
-| `get_global_objects()` | 聚合多类型的“全工程对象”列表（内部多次 `find_all_objects_by_type`） |
-| `get_full_info_from_obj_id(obj_id)` | 用 id 取完整 `RETURN_FIELDS` 信息 |
-| `find_object_by_path(path)` | 路径查找单个对象 |
-| `find_object_by_name_and_type(obj_name, obj_type, exact_match=True)` | 按名+类型查找 |
-| `find_all_objects_by_name(obj_name, exact_match)` | 工程内按名称搜索 |
-| `find_all_objects_by_type(obj_type)` | 某类型的全部对象 |
-
-### 通用操作（CommonOperation）
-
-| 函数 | 用途 |
-|------|------|
-| `create_object_at_default_location(obj_name, obj_type)` | 在各类默认 Work Unit 下创建 |
-| `create_child_object(obj_name, obj_type, parent_obj, on_name_conflict='fail')` | 在指定父对象下创建子对象 |
-| `create_object_by_path(obj_path, obj_type, on_name_conflict='fail')` | 按完整路径创建（>2020 用 `object.set`） |
-| `move_object(obj, new_parent)` | 移动到新的父对象下 |
-| `copy_object(obj, parent)` | 复制到某父下 |
-| `rename_object(obj, new_name)` | 重命名 |
-| `set_object_property(obj, property_name, value, platform=None)` | 设置属性；可选平台 |
-| `set_object_reference(obj, reference_type, value)` | 设置引用类字段 |
-| `set_object_notes(obj, notes)` | 备注 |
-| `delete_object(obj)` | 删除对象 |
-
-### 逻辑容器（LogicContainer）
-
-| 函数 | 用途 |
-|------|------|
-| `set_sequence_container_playlist(container, playlist)` | 顺序容器播放列表 |
-| `get_switch_mappings(container)` | Switch 容器当前分配 |
-| `assign_switch_mapping(target, switch_obj)` | 为子对象分配 switch/state |
-| `remove_switch_mappings(obj)` | 移除该 Switch 容器下全部分配 |
-
-### 音频源（AudioSource）
-
-| 函数 | 用途 |
-|------|------|
-| `import_audio_file(wave_path, sound, language='SFX')` | 导入波形到 Sound 下 |
-| `add_silence(obj, length, language='SFX')` | 添加静音 SourcePlugin |
-| `get_audio_source_from_sound(sound)` | Sound 下第一个子级（常见为 AudioSource） |
-
-### SoundBank
-
-| 函数 | 用途 |
-|------|------|
-| `get_bank_inclusions(bank)` | Bank 包含项 |
-| `clear_bank_inclusions(bank)` | 清空 Bank 包含 |
-| `set_bank_inclusion(bank, inclusion, replace, inclusion_type=None)` | 设置/追加包含 |
-
-### GameSync / Mixing
-
-| 函数 | 用途 |
-|------|------|
-| `add_rtpc(target_obj, rtpc_obj, target_property, points)` | 为目标对象添加 RTPC 曲线 |
-| `clear_slots(obj, slot_name)` | 清空列表型属性（如 `@RTPC`、`@Effects` 等，参数为 WAAPI 中的槽位名） |
-| `add_effect(obj, share_set_name)` | 追加 EffectSlot（引用 ShareSet 名） |
-
-### 本地化（Localization）
-
-| 函数 | 用途 |
-|------|------|
-| `get_language_list()` | 工程内所有 Language 对象（返回含 `name`） |
-
-### 播放（Playback）
-
-| 函数 | 用途 |
-|------|------|
-| `play_sound_in_transport(obj)` | 创建 transport 并 play，**返回 transport_id** |
-| `stop_sound_in_transport(transport_id)` | stop 并 `destroy_transport` |
-| `destroy_transport(transport_id)` | 销毁 transport |
-
-### UI / 撤销 / 源码管理（UICommand）
-
-| 函数 | 用途 |
-|------|------|
-| `execute_ui_command(objects, command)` | 执行 Wwise UI 命令名 |
-| `select_objects_in_wwise(objects)` | 在工程浏览器中选中并 Inspect |
-| `bring_wwise_to_foreground()` | 将 Wwise 窗口置前 |
-| `begin_undo_group(action)` / `end_undo_group(action)` | 撤销分组 |
-| `undo()` / `redo()` | 撤销/重做 |
-| `add_to_source_control(file_path)` | 源码管理 add |
-
-## 使用约定
-
-- **子级**：直属子对象用 `get_child_objects(obj, include_descendants=False)`；整棵子树用 `include_descendants=True`。
-- **按类型过滤后代**：`get_descendants_of_type(obj, child_type)`。
-- **优先复用 utils**：若 `libraries/utils/wwise` 已有封装，先读现有工具函数再决定是否直接调 `WAAPIClient`。
-- **版本差异**：工程版本 &gt; 2020 时多处使用 WAQL；旧版使用 `from`/`transform`。新增逻辑需与 `project_utils.get_project_version()` 分支一致。
+- **禁止逐层展开**：一次 `get_descendants_of_type` / `get_children(recursive=true)` 取到位，
+  不要对每个对象重复查询。
+- 属性读取用 `get_object_property(s)`；`options.return` 中属性名带不带 `@` 都可（返回 key 相应变化）。
+- 属性名是否存在于某对象类型，可先用 `WwiseObject.has_property(name)` 本地判定（表见
+  `libraries/wwise_object_properties.py`）；`get_object_property(s)` 已内置该过滤，文档里没有的类型不拦截。
+- 版本差异：工程 >2020 走 WAQL，旧版走 `from` / `transform`；新增逻辑需与
+  `project_utils.get_project_version()` 分支一致。
+- 多数查询失败时返回空 `WwiseObject` / `[]` / `None` 并写日志，不要假设会抛异常。
+- 未对 AI/MCP 开放：迁移类导入（FMOD/截图）与全工程破坏性操作（如删除多余 .akd）。
 
 更多细节与边缘行为见 [reference.md](reference.md)。

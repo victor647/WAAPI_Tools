@@ -27,6 +27,16 @@ RESULT_CHAR_LIMIT = 6000
 MODEL_LIST_ITEM_CAP = 30
 MODEL_STRING_LIMIT = 240
 
+# 这些工具的结果本身就是"读取/统计大结果"的产物，不允许再落盘一次：
+# 否则 read_result_file 会把自己读到的分页又写成新的 result_file，模型永远读不到内容
+NO_OFFLOAD_TOOLS = frozenset({
+    "read_result_file",
+    "group_result_file",
+    "count_tool_items",
+    "group_tool_items",
+    "aggregate_tool_chain",
+})
+
 # 大结果落盘目录（每次任务一个，任务结束自动删除）
 _RESULT_DIR_PREFIX = "waapi_ai_"
 _result_dir: str | None = None
@@ -404,7 +414,9 @@ def _gui_find_parent(args: dict) -> str:
 
 def _gui_set_filter(args: dict) -> str:
     keyword = str(args.get("keyword") or "")
-    object_type = str(args.get("object_type") or "")
+    # 类型筛选控件支持多选：这里同时接受单个类型名与类型名数组
+    raw_type = args.get("object_type") or []
+    object_types = [name for name in (raw_type if isinstance(raw_type, list) else [raw_type]) if name]
     only_included = bool(args.get("only_included", False))
     case_sensitive = bool(args.get("case_sensitive", False))
 
@@ -412,11 +424,11 @@ def _gui_set_filter(args: dict) -> str:
         window.ledFilterKeyword.setText(keyword)
         window.cbxCaseSensitive.setChecked(case_sensitive)
         window.cbxOnlyIncludedEnabled.setChecked(only_included)
-        window.cbbFilterType.setCurrentText(object_type or "全部类型")
+        window.cbbFilterType.set_checked_options(object_types)
         window.apply_table_filter(record_history=True)
 
     _invoke_gui(runner)
-    return f"已应用筛选（关键字={keyword or '无'}，类型={object_type or '全部'}）"
+    return f"已应用筛选（关键字={keyword or '无'}，类型={'、'.join(object_types) or '全部'}）"
 
 
 def _gui_open_window(args: dict) -> str:
@@ -487,6 +499,20 @@ def _load_result_items(path: str) -> list:
     return []
 
 
+def _result_page(items: list, offset: int, limit: int, fields: list) -> dict:
+    page = {
+        "total": len(items),
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < len(items),
+        "next_offset": offset + limit,
+        "items": items[offset : offset + limit],
+    }
+    if fields:
+        page["fields"] = fields
+    return page
+
+
 def _read_result_file(args: dict) -> dict:
     path = _result_file_path(args.get("result_file"))
     items = _load_result_items(path)
@@ -496,14 +522,22 @@ def _read_result_file(args: dict) -> dict:
     except (TypeError, ValueError):
         raise AiToolError("offset / limit 必须是整数")
     limit = max(limit, 1)
-    page = items[offset : offset + limit]
-    return {
-        "total": len(items),
-        "offset": offset,
-        "limit": limit,
-        "has_more": offset + limit < len(items),
-        "items": page,
-    }
+    raw_fields = args.get("fields")
+    fields = [str(name) for name in raw_fields if str(name).strip()] if isinstance(raw_fields, list) else []
+    if fields:
+        # 只保留关心的字段，避免整份对象字典把单页预算撑爆
+        items = [
+            {name: item.get(name) for name in fields} if isinstance(item, dict) else item
+            for item in items
+        ]
+    # 结果文件本身已是大结果的分页视图：这里按模型侧长度预算收缩单页，
+    # 保证"读文件"的结果不会再被落盘一次（否则模型始终读不到内容）
+    while limit > 1:
+        page = _result_page(items, offset, limit, fields)
+        if len(json.dumps(page, ensure_ascii=False)) <= RESULT_CHAR_LIMIT:
+            return page
+        limit //= 2
+    return _result_page(items, offset, 1, fields)
 
 
 def _group_result_file(args: dict) -> dict:
@@ -754,13 +788,18 @@ def build_tool_schemas() -> list[dict]:
         ),
         function_schema(
             "read_result_file",
-            "分页读取工具结果落盘文件（当工具返回 result_file 时使用）。offset/limit 控制分页，返回 total/has_more/items",
+            "分页读取工具结果落盘文件（当工具返回 result_file 时使用）。offset/limit 控制分页，返回 total/has_more/next_offset/items；fields 可只取关心的字段（如 [\"id\",\"name\"]）让单页装下更多条目。只求计数/分组/求和时不要读文件，直接用 count_tool_items / group_tool_items / aggregate_tool_chain",
             {
                 "type": "object",
                 "properties": {
                     "result_file": {"type": "string", "description": "工具结果里返回的 result_file 路径"},
                     "offset": {"type": "integer", "description": "起始下标，默认 0"},
                     "limit": {"type": "integer", "description": "本次读取条数，默认 50"},
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "可选：只返回这些字段，如 [\"id\",\"name\"]；条目字段多时可显著提高单页容量",
+                    },
                 },
                 "required": ["result_file"],
             },
@@ -1051,7 +1090,13 @@ def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> s
         if registry_spec is not None:
             # 注册表工具返回 JSON 兼容的结构化结果，统一转成文本回传给模型
             value = tool_registry.execute_tool(name, arguments)
-            result_text = value if isinstance(value, str) else _serialize_for_model(value)
+            if isinstance(value, str):
+                result_text = value
+            elif name in NO_OFFLOAD_TOOLS:
+                # 分页/元工具的结果不再落盘，宁可收缩也不能让模型读不到
+                result_text = json.dumps(_shrink_for_model(value, MODEL_LIST_ITEM_CAP), ensure_ascii=False)
+            else:
+                result_text = _serialize_for_model(value)
         else:
             result_text = TOOL_HANDLERS[name](arguments)
             if not isinstance(result_text, str):
@@ -1079,6 +1124,66 @@ def _is_mutating_tool(name: str) -> bool:
     return bool(spec and spec.mutating)
 
 
+# 追问上下文：AI 以提问收尾时保留本轮对话，用户回答后接着执行；
+# 其它情况（正常总结/中止）下一轮重新开始，避免旧结论影响后续无关指令
+_CONVERSATION_HISTORY_CAP = 60
+_conversation: dict | None = None
+
+
+def reset_conversation() -> None:
+    global _conversation
+    _conversation = None
+
+
+def _looks_like_question(text: str) -> bool:
+    return "？" in (text or "") or "?" in (text or "")
+
+
+def _conversation_seed(objects: list, prompt: str, system_prompt: str) -> tuple:
+    # 表格对象没变才沿用历史；返回 (表格对象签名, 本轮消息列表)
+    signature = tuple(sorted(obj.id for obj in objects))
+    resumed = _conversation if (_conversation and _conversation.get("signature") == signature) else None
+    messages = [{"role": "system", "content": system_prompt}]
+    if resumed:
+        messages.extend(resumed["messages"])
+    messages.append({"role": "user", "content": prompt})
+    return signature, messages
+
+
+def _store_conversation(signature: tuple, messages: list, content: str) -> None:
+    global _conversation
+    if content and _looks_like_question(content):
+        history = list(messages[1:]) + [{"role": "assistant", "content": content}]
+        _conversation = {"signature": signature, "messages": history[-_CONVERSATION_HISTORY_CAP:]}
+    else:
+        _conversation = None
+
+
+def _created_objects_for_table(created: list) -> list:
+    # Folder/WorkUnit 只是为放对象搭出来的脚手架，不算"产出的对象"
+    scaffold = {WwiseObjectType.Folder, WwiseObjectType.WorkUnit}
+    unique: dict = {}
+    for obj in created:
+        if obj.type not in scaffold:
+            unique[obj.id] = obj
+    return list(unique.values())
+
+
+def _send_created_objects_to_table(result: "AIAssistantResult", log) -> None:
+    # 任务结束时把本次新建的对象发到表格，方便用户直接查看/继续处理
+    created = _created_objects_for_table(waapi_utils.take_recorded_objects())
+    if not created:
+        return
+    if any(item.get("name") == "set_table_objects" for item in result.executed_tools):
+        log(f"本次任务新建了 {len(created)} 个对象（表格内容已由 AI 指定，未覆盖）")
+        return
+    if _table_sink is None:
+        log(f"本次任务新建了 {len(created)} 个对象")
+        return
+    _table_sink([obj.id for obj in created], False)
+    log(f"本次任务新建的 {len(created)} 个对象已发送到表格")
+
+
 def run_assistant(
     prompt: str,
     objects: list[WwiseObject],
@@ -1100,10 +1205,7 @@ def run_assistant(
     max_context_objects = user_config.get_ai_max_context_objects()
 
     system_prompt = build_system_prompt(objects, max_context_objects)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": prompt},
-    ]
+    conversation_signature, messages = _conversation_seed(objects, prompt, system_prompt)
     schemas = build_tool_schemas()
     result = AIAssistantResult()
 
@@ -1167,6 +1269,8 @@ def run_assistant(
     # 脚本执行期间同样响应中止请求
     tool_registry.set_execution_guard(lambda: bool(should_stop and should_stop()))
     set_table_context([obj.id for obj in objects])
+    # 记录本次任务新建的对象，任务结束时把它们发送到表格
+    waapi_utils.start_object_recording()
     _cleanup_stale_result_dirs()
     try:
         result_dir = tempfile.mkdtemp(prefix=_RESULT_DIR_PREFIX)
@@ -1233,6 +1337,8 @@ def run_assistant(
             return result
 
     finally:
+        _send_created_objects_to_table(result, log)
+        _store_conversation(conversation_signature, messages, result.content)
         tool_registry.set_execution_guard(None)
         set_table_context([])
         set_table_sink(None)

@@ -7,7 +7,9 @@ from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 
 # 为每个选中的对象创建一个播放事件
-def create_play_event(obj: WwiseObject) -> bool:
+# like_object：参照对象。传入时，新事件建在"播放该对象的现有事件"所在层级，
+#              避免为拆出来的子节点另起一套 Events 目录；找不到参照事件时退回按事件名推导路径
+def create_play_event(obj: WwiseObject, like_object: WwiseObject | None = None) -> bool:
     obj_type = obj.type
     obj_path = obj.path
     if 'Container' not in obj_type.value and obj_type != WwiseObjectType.Sound:
@@ -27,13 +29,7 @@ def create_play_event(obj: WwiseObject) -> bool:
             print(f'An existing event [{event_name}] found for target {obj_type} [{obj_path}].')
     # 创建新的事件
     else:
-        if '_' in event_name:
-            event_path = project_conventions.remove_acronym_from_name(event_name.replace('_', '\\'))
-            parent_path = os.path.dirname('\\Events\\' + event_path)
-            parent = common_utils.create_folders_recursively(parent_path)
-        else:
-            parent_path = '\\Events\\Default Work Unit'
-            parent = waapi_utils.find_object_by_path(parent_path)
+        parent = _resolve_new_event_parent(event_name, like_object)
         if not parent:
             return False
         event = waapi_utils.create_child_object(event_name, WwiseObjectType.Event, parent)
@@ -46,6 +42,38 @@ def create_play_event(obj: WwiseObject) -> bool:
                 waapi_utils.set_object_property(action, 'FadeTime', 0.5)
     common_utils.update_notes_and_color(obj)
     return waapi_utils.select_objects_in_wwise([event])
+
+
+# 解析新建事件该放在哪个父级对象下
+def _resolve_new_event_parent(event_name: str, like_object: WwiseObject | None):
+    if like_object and like_object.is_valid:
+        sibling = find_play_event(like_object)
+        if sibling:
+            parent = waapi_utils.get_parent_object(sibling)
+            if parent and parent.is_valid:
+                print(f'Placing new event [{event_name}] next to [{sibling.name}].')
+                return parent
+    if '_' in event_name:
+        event_path = project_conventions.remove_acronym_from_name(event_name.replace('_', '\\'))
+        return common_utils.create_folders_recursively(os.path.dirname('\\Events\\' + event_path))
+    return waapi_utils.find_object_by_path('\\Events\\Default Work Unit')
+
+
+# 找出"播放指定对象的 Event"：先按事件名约定查找，名字被改过时按引用反查
+def find_play_event(obj: WwiseObject):
+    if not obj or not obj.is_valid:
+        return None
+    event = waapi_utils.find_object_by_name_and_type(get_event_name(obj), WwiseObjectType.Event)
+    if event and event.is_valid:
+        return event
+    for reference in waapi_utils.get_object_references(obj):
+        if reference.type != WwiseObjectType.EventAction:
+            continue
+        parent = waapi_utils.get_parent_object(reference)
+        if parent and parent.type == WwiseObjectType.Event:
+            return parent
+    return None
+
 
 # 为事件创建播放动作
 def create_event_action(event: WwiseObject, target: WwiseObject, action_type: int) -> WwiseObject:

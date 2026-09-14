@@ -336,6 +336,97 @@ META_TOOL_NAMES = frozenset({"count_tool_items", "group_tool_items", "aggregate_
 _LIST_KEYS = ("items", "objects", "data", "results", "matched_objects", "matched_groups", "groups")
 
 
+# 数值聚合：把工具结果/列表项里读到的值统一折算成可统计的数值
+_AGGREGATE_NAMES = ("sum", "avg", "min", "max", "count")
+# 未显式指定 value_path 时，按这些常见字段自动挑选数值（Duration 返回 {min,max,type}，取 max 表示音频长度）
+_NUMBER_KEYS = ("value", "max", "min", "total", "sum", "duration", "size", "size_mb", "length", "count")
+_ITEM_PLACEHOLDER_RE = re.compile(r"^\$([A-Za-z0-9_.]+)$")
+
+
+def _as_number(value):
+    # 折算成 float；bool 不是数值，其它类型返回 None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _numeric_value(value, value_path: str = "") -> tuple:
+    # 取出参与聚合的数值，返回 (数值, 命中的字段名)；取不到返回 (None, "")
+    # value_path 支持点号路径（如 "max" / "source.max"），未指定时按 _NUMBER_KEYS 自动挑选
+    if value_path:
+        cursor = value
+        for part in value_path.split("."):
+            if isinstance(cursor, dict) and part in cursor:
+                cursor = cursor[part]
+            else:
+                return None, value_path
+        return _as_number(cursor), value_path
+    number = _as_number(value)
+    if number is not None:
+        return number, ""
+    if isinstance(value, dict):
+        for key in _NUMBER_KEYS:
+            if key in value:
+                number = _as_number(value[key])
+                if number is not None:
+                    return number, key
+    return None, ""
+
+
+def _number_stats(numbers: list) -> dict:
+    if not numbers:
+        return {}
+    return {
+        "count": len(numbers),
+        "sum": round(sum(numbers), 6),
+        "avg": round(sum(numbers) / len(numbers), 6),
+        "min": round(min(numbers), 6),
+        "max": round(max(numbers), 6),
+    }
+
+
+def _item_field(item, path: str):
+    # 按点号路径从列表项里取值，返回 (值, 是否取到)
+    cursor = item
+    for part in path.split("."):
+        if isinstance(cursor, dict) and part in cursor:
+            cursor = cursor[part]
+        else:
+            return None, False
+    return cursor, True
+
+
+def _has_placeholders(arguments) -> bool:
+    if not isinstance(arguments, dict):
+        return False
+    return any(isinstance(value, str) and _ITEM_PLACEHOLDER_RE.match(value) for value in arguments.values())
+
+
+def _bind_item_arguments(arguments: dict, item) -> tuple:
+    # 把参数里的 "$字段" 占位符替换成当前列表项的值，返回 (参数, 未解析的字段名)
+    resolved = {}
+    missing = []
+    for key, value in arguments.items():
+        if isinstance(value, str):
+            match = _ITEM_PLACEHOLDER_RE.match(value)
+            if match:
+                found, ok = _item_field(item, match.group(1))
+                if not ok:
+                    missing.append(match.group(1))
+                    continue
+                resolved[key] = found
+                continue
+        resolved[key] = value
+    return resolved, missing
+
+
 def _extract_list(value, list_path: str = ""):
     # 从工具结果里取出目标列表：支持显式 list_path（如 "items"）或按常见键自动识别
     if isinstance(value, list):
@@ -361,6 +452,23 @@ def _extract_list(value, list_path: str = ""):
     return None, ""
 
 
+def _call_tool_checked(tool_name: str, call_args: dict):
+    # 校验必填参数后执行目标工具；返回 (结果, 错误)
+    spec = get_tool(tool_name)
+    if spec is None:
+        return None, f"未知工具：{tool_name}"
+    required = [name for name in spec.parameters.get("required", []) if name not in call_args]
+    if required:
+        hints = ", ".join(
+            f"{name}（{spec.parameters['properties'].get(name, {}).get('description', '')}）" for name in required
+        )
+        return None, f"调用 {tool_name} 缺少必填参数：{hints}；请把参数放进 arguments 对象"
+    try:
+        return execute_tool(tool_name, call_args), ""
+    except Exception as e:
+        return None, f"调用 {tool_name} 失败：{e}；请检查 arguments 是否为该工具的参数对象"
+
+
 def _resolve_list_result(tool_name: str, arguments: dict, list_path: str):
     # 执行目标工具并取出列表；返回 (items, list_key, error)
     tool_name = str(tool_name or "").strip()
@@ -368,22 +476,12 @@ def _resolve_list_result(tool_name: str, arguments: dict, list_path: str):
         return None, "", "缺少 tool_name 参数（要统计的查询工具名）"
     if tool_name in META_TOOL_NAMES:
         return None, "", f"不能对元工具 {tool_name} 再聚合，请传入普通查询工具"
-    spec = get_tool(tool_name)
-    if spec is None:
-        return None, "", f"未知工具：{tool_name}"
     call_args = dict(arguments) if isinstance(arguments, dict) else {}
     # 聚合场景默认不限量，避免目标工具的默认上限截断统计结果
     call_args.setdefault("limit", 0)
-    required = [name for name in spec.parameters.get("required", []) if name not in call_args]
-    if required:
-        hints = ", ".join(
-            f"{name}（{spec.parameters['properties'].get(name, {}).get('description', '')}）" for name in required
-        )
-        return None, "", f"调用 {tool_name} 缺少必填参数：{hints}；请把参数放进 arguments 对象"
-    try:
-        value = execute_tool(tool_name, call_args)
-    except Exception as e:
-        return None, "", f"调用 {tool_name} 失败：{e}；请检查 arguments 是否为该工具的参数对象"
+    value, error = _call_tool_checked(tool_name, call_args)
+    if error:
+        return None, "", error
     items, list_key = _extract_list(value, str(list_path or "").strip())
     if items is None:
         return None, "", f"工具 {tool_name} 的结果里没有找到列表，可用 list_path 指定取值路径"
@@ -439,32 +537,66 @@ def _handler_group_tool_items(args: dict) -> dict:
 
 
 def _handler_aggregate_tool_chain(args: dict) -> dict:
-    # 通用多步聚合：按 steps 顺序执行查询，自动把上一步列表里的 id 作为下一步的 object_ids，
-    # 最后对末步结果按 group_by 分组统计（可选 min_count）
+    # 通用多步聚合：按 steps 顺序执行查询，自动把上一步列表里的 id 作为下一步的 object_ids；
+    # 参数里出现 "$字段" 占位符时改为"对上一步每个结果各调用一次"（该步必须放最后）；
+    # 末步结果可按 group_by 分组计数，或用 aggregate 直接算出 sum/avg/min/max/count
     steps = args.get("steps")
     if not isinstance(steps, list) or not steps:
         return {"error": "需要 steps 数组，如 [{\"tool_name\": \"get_descendants_of_type\", \"arguments\": {...}}, ...]"}
     group_by = str(args.get("group_by") or "").strip()
+    aggregate = str(args.get("aggregate") or "").strip().lower()
+    if aggregate and aggregate not in _AGGREGATE_NAMES:
+        return {"error": f"aggregate 仅支持 {' / '.join(_AGGREGATE_NAMES)}"}
+    value_path = str(args.get("value_path") or "").strip()
     try:
         min_count = int(args.get("min_count") or 0)
     except (TypeError, ValueError):
         min_count = 0
     current_ids = None
+    current_items = None
+    entries = None
     reports = []
     items = []
     list_key = ""
+    errors = []
     for index, step in enumerate(steps):
         if not isinstance(step, dict):
             return {"error": f"steps[{index}] 必须是对象"}
         tool_name = str(step.get("tool_name") or "").strip()
-        call_args = dict(step.get("arguments") or {})
+        arguments = step.get("arguments") if isinstance(step.get("arguments"), dict) else {}
+        if _has_placeholders(arguments):
+            # 逐项调用：占位符取自当前列表项，必须作为末步
+            if current_items is None:
+                return {"error": f"steps[{index}] 用了 $占位符，但没有上一步列表可绑定"}
+            if index != len(steps) - 1:
+                return {"error": f"steps[{index}] 用了 $占位符，占位符步骤必须放在最后一步"}
+            mapped = []
+            for item in current_items:
+                bound, unresolved = _bind_item_arguments(arguments, item)
+                if unresolved:
+                    errors.append(f"列表项缺少字段 {'/'.join(sorted(set(unresolved)))}")
+                    continue
+                value, error = _call_tool_checked(tool_name, bound)
+                if error:
+                    errors.append(error)
+                    continue
+                mapped.append((item, value))
+            reports.append({"step": index, "tool": tool_name, "mapped": len(mapped)})
+            entries = mapped
+            items, list_key, current_items, current_ids = [], "", None, None
+            continue
+        call_args = dict(arguments)
         if current_ids is not None:
             call_args["object_ids"] = current_ids
         items, list_key, error = _resolve_list_result(tool_name, call_args, step.get("list_path"))
         if error:
             return {"error": f"steps[{index}] {error}"}
         reports.append({"step": index, "tool": tool_name, "list_key": list_key, "count": len(items)})
+        current_items = items
         current_ids = [item.get("id") for item in items if isinstance(item, dict) and item.get("id")]
+        entries = None
+    if aggregate:
+        return _aggregate_chain_values(entries, items, aggregate, value_path, group_by, min_count, reports, errors)
     if not group_by:
         return {"steps": reports, "total_items": len(items), "list_key": list_key}
     counts: dict = {}
@@ -483,6 +615,53 @@ def _handler_aggregate_tool_chain(args: dict) -> dict:
         "steps": reports,
         "groups": groups,
     }
+
+
+def _aggregate_chain_values(entries, items, aggregate, value_path, group_by, min_count, reports, errors) -> dict:
+    # 对末步结果做数值统计：entries 非空表示末步是逐项调用（值取调用结果），否则直接对列表项取值
+    sources = entries if entries is not None else [(item, item) for item in items]
+    numbers = []
+    used_keys = set()
+    skipped = 0
+    groups: dict = {}
+    for item, value in sources:
+        number, key = _numeric_value(value, value_path)
+        if number is None:
+            skipped += 1
+            continue
+        if key:
+            used_keys.add(key)
+        numbers.append(number)
+        if group_by:
+            group = item.get(group_by) if isinstance(item, dict) else None
+            group = str(group) if group not in (None, "") else "(未知)"
+            groups.setdefault(group, []).append(number)
+    stats = _number_stats(numbers)
+    result = {
+        "aggregate": aggregate,
+        "value": stats.get(aggregate),
+        "stats": stats,
+        "total_items": len(sources),
+        "skipped": skipped,
+        "steps": reports,
+    }
+    if used_keys:
+        result["value_key"] = used_keys.pop() if len(used_keys) == 1 else sorted(used_keys)
+    if errors:
+        result["errors"] = errors[:5]
+    if not stats:
+        result["hint"] = "没有取到可比数值：确认末步结果里是否含数值字段，或用 value_path 指定（如 Duration 传 \"max\"）"
+    if group_by:
+        group_rows = [{"group": key, **_number_stats(values)} for key, values in groups.items()]
+        matched = sorted((row for row in group_rows if row["count"] > min_count), key=lambda r: r["count"], reverse=True) if min_count > 0 else []
+        result.update({
+            "group_by": group_by,
+            "min_count": min_count,
+            "matched_count": len(matched) if min_count > 0 else None,
+            "matched_groups": matched,
+            "groups": group_rows,
+        })
+    return result
 
 
 # 脚本执行：仅允许白名单内建与受限模块，带循环/时间预算，进程内 exec（打包环境无需外部 Python）
@@ -697,23 +876,29 @@ def _handler_get_references(args: dict) -> dict:
     }
 
 
-def _compare_property(value, op: str, expected) -> bool:
+def _compare_property(value, op: str, expected) -> tuple:
+    # 返回 (是否命中, 是否可比)。Duration 这类结构化属性（{min,max,type}）按数值参与比较，
+    # 无法比较时显式返回 False，避免“静默不匹配”让调用方误以为结果真的是 0 个
     if op == "contains":
-        return str(expected).lower() in str(value).lower()
+        return str(expected).lower() in str(value).lower(), True
     if op in ("==", "!="):
         equal = value == expected or str(value) == str(expected)
-        return equal if op == "==" else not equal
-    try:
-        left, right = float(value), float(expected)
-    except (TypeError, ValueError):
-        return False
+        if not equal:
+            left, _ = _numeric_value(value)
+            right = _as_number(expected)
+            equal = left is not None and right is not None and left == right
+        return (equal if op == "==" else not equal), True
+    left, _ = _numeric_value(value)
+    right = _as_number(expected)
+    if left is None or right is None:
+        return False, False
     if op == ">":
-        return left > right
+        return left > right, True
     if op == ">=":
-        return left >= right
+        return left >= right, True
     if op == "<":
-        return left < right
-    return left <= right
+        return left < right, True
+    return left <= right, True
 
 
 def _handler_find_objects_by_property(args: dict) -> dict:
@@ -739,6 +924,8 @@ def _handler_find_objects_by_property(args: dict) -> dict:
     scanned = 0
     # 与属性查询窗口一致：某类型读不到该属性即视为"该类型不含有此属性"，同类型后续对象直接跳过
     missing_types: dict[str, str] = {}
+    # 属性存在但无法与 value 比较（如结构化属性配了不支持的操作）——显式汇报，避免静默给出 0 个命中
+    incomparable_types: dict[str, str] = {}
     for root_id in roots:
         try:
             root = WwiseObject.from_id(root_id)
@@ -762,7 +949,11 @@ def _handler_find_objects_by_property(args: dict) -> dict:
                 if value is None:
                     missing_types[type_name] = property_name
                     continue
-                if not _compare_property(value, op, expected):
+                matched, comparable = _compare_property(value, op, expected)
+                if not comparable:
+                    incomparable_types[type_name] = property_name
+                    continue
+                if not matched:
                     continue
                 item = {
                     "root": root.name,
@@ -782,6 +973,8 @@ def _handler_find_objects_by_property(args: dict) -> dict:
         except Exception as e:
             errors.append(f"{root_id}: {e}")
     detail = f"，不含有 {property_name} 的类型：{'/'.join(sorted(missing_types))}" if missing_types else ""
+    if incomparable_types:
+        detail += f"，无法比较 {property_name} 的类型：{'/'.join(sorted(incomparable_types))}"
     Logger().info(
         f"属性筛选 {property_name} {op} {expected}：扫描 {scanned} 个对象，匹配 {len(items)} 个{detail}")
     return {
@@ -789,6 +982,7 @@ def _handler_find_objects_by_property(args: dict) -> dict:
         "scanned": scanned,
         "truncated": scan_limit is not None and scanned > scan_limit,
         "types_without_property": sorted(missing_types),
+        "types_not_comparable": sorted(incomparable_types),
         "items": items,
         "errors": errors,
     }
@@ -934,7 +1128,7 @@ register_tool(
 
 register_tool(
     "aggregate_tool_chain",
-    "通用多步聚合：按 steps 依次执行查询，自动把上一步结果的 id 作为下一步的 object_ids（无需模型转发大量 id），最后按 group_by 分组统计。适合「先找出所有 A，再统计每个 A（或有多少个 A）包含超过 N 个 B」这类跨层级问题；例如统计包含超过 1 个 MusicTrack 的 MusicSegment 数量只需一次调用",
+    "通用多步聚合，一次调用就能拿到结论（不要把大量 id 取回来自行累加）：按 steps 依次执行，自动把上一步结果的 id 作为下一步的 object_ids；某步参数里写 \"$id\"/\"$name\"/\"$path\" 占位符时，改为对上一步每个对象各调用一次（该步必须放最后）。三种用法：① 跨层级计数——末步配 group_by（可加 min_count），如统计含 >1 个 MusicTrack 的 MusicSegment；② 数值统计——aggregate 传 sum/avg/min/max/count，直接得到总时长/总体积/均值，value_path 指定从结果里取哪个字段；③ 列表项字段求和——单步取到列表后直接 aggregate + value_path，如 value_path=\"size_mb\"。示例：统计表格对象下全部音频源总时长 → steps=[{tool_name:\"get_descendants_of_type\",arguments:{object_ids:[\"@table\"],child_type:\"AudioFileSource\"}},{tool_name:\"get_object_property\",arguments:{object_id:\"$id\",property_name:\"Duration\"}}]，aggregate=\"sum\"",
     {
         "type": "object",
         "properties": {
@@ -944,20 +1138,32 @@ register_tool(
                     "type": "object",
                     "properties": {
                         "tool_name": {"type": "string", "description": "该步要执行的查询工具名"},
-                        "arguments": {"type": "object", "description": "该步参数（除 object_ids 外；object_ids 由上一步自动注入）"},
+                        "arguments": {
+                            "type": "object",
+                            "description": "该步参数（除 object_ids 外；object_ids 由上一步自动注入）。可用 \"$id\"/\"$name\"/\"$path\" 占位符表示“上一步的每个对象”，此时该步会逐项调用，必须放最后一步",
+                        },
                         "list_path": {"type": "string", "description": "可选：该步结果中列表字段路径"},
                     },
                     "required": ["tool_name", "arguments"],
                 },
-                "description": "查询步骤链，第 1 步用 arguments 里的 object_ids 指定根对象，后续步骤自动接收上一步的 id",
+                "description": "查询步骤链：第 1 步用 arguments 里的 object_ids 指定根对象，后续步骤自动接收上一步的 id",
             },
             "group_by": {
                 "type": "string",
-                "description": "末步结果按哪个字段分组（如 root_id / parent_id / type）；省略则只返回各步条数",
+                "description": "末步结果按哪个字段分组（如 root_id / parent_id / type）；配 aggregate 时分组返回各自的数值统计，省略则只返回各步条数",
             },
             "min_count": {
                 "type": "integer",
                 "description": "可选：只统计分组内数量大于该值的组（如统计含 >1 个 MusicTrack 的 MusicSegment 时传 1），返回 matched_count",
+            },
+            "aggregate": {
+                "type": "string",
+                "enum": list(_AGGREGATE_NAMES),
+                "description": "可选：对末步结果做数值统计，sum=求和 / avg=平均 / min / max / count=计数。统计总时长、总体积、平均值时用它，不要自己累加",
+            },
+            "value_path": {
+                "type": "string",
+                "description": "可选：参与统计的数值字段路径（如 Duration 结果 {min,max,type} 传 \"max\"，列表项字段传 \"size_mb\"）。省略时自动挑选 value/max/min/total/size 等常见数值字段",
             },
         },
         "required": ["steps"],
@@ -967,7 +1173,7 @@ register_tool(
 
 register_tool(
     "find_objects_by_property",
-    "通用属性筛选（与「属性查询」窗口同口径）：逐对象用 waapi_utils.get_object_properties 读取属性，某类型首次读不到该属性即视为该类型不含有它并跳过后续同类型对象，结果里用 types_without_property 汇报。用户说「找出 Volume/Pitch/… 不为 0 的子对象」时用；建议传 child_type 收窄扫描范围，scan_limit 可用 0 取消上限。返回 count 与 items，可直接把 items 里的 id 交给 set_table_objects",
+    "通用属性筛选（与「属性查询」窗口同口径）：逐对象用 waapi_utils.get_object_properties 读取属性，某类型首次读不到该属性即视为该类型不含有它并跳过后续同类型对象（types_without_property 汇报）；结构化属性（如 AudioFileSource 的 Duration 返回 {min,max,type}）按数值参与比较，真的无法比较时在 types_not_comparable 汇报，不要把它当成 0 个命中。用户说「找出 Volume/Pitch/… 不为 0 的子对象」时用；建议传 child_type 收窄扫描范围，scan_limit 可用 0 取消上限。返回 count 与 items，可直接把 items 里的 id 交给 set_table_objects；只求数量级结论（求和/计数/平均）改用 aggregate_tool_chain",
     {
         "type": "object",
         "properties": {

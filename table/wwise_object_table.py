@@ -199,13 +199,20 @@ class WwiseObjectTable(TableFacade):
         except Exception as e:
             Logger().error(f"读取行基础数据失败：{row_data.name} ({e})")
 
-    def filter_by_type(self, obj_type: WwiseObjectType | None) -> int:
+    # obj_types 为 None 表示不限类型；可传单个 WwiseObjectType 或一组
+    def filter_by_type(self, obj_types: WwiseObjectType | set | None) -> int:
         if not self.table_view:
             return len(self.data)
+        if obj_types is None:
+            wanted = None
+        elif isinstance(obj_types, WwiseObjectType):
+            wanted = {obj_types}
+        else:
+            wanted = set(obj_types)
         found_count = 0
         for row in range(self.model.rowCount()):
             if not self.table_view.isRowHidden(row):
-                if obj_type is not None and self.data[row].type != obj_type:
+                if wanted is not None and self.data[row].type not in wanted:
                     self.table_view.setRowHidden(row, True)
                 else:
                     found_count += 1

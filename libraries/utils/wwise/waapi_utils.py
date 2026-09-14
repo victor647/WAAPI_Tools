@@ -11,6 +11,29 @@ def _dict_list_to_wobjs(items: list) -> list[WwiseObject]:
     return [WwiseObject(x) for x in items] if items else []
 
 
+# —— 新建对象记录 ——
+# AI 任务期间把本次新建的对象记下来，任务结束后可把它们发送到表格；
+# 未调用 start_object_recording() 时记录处于关闭状态，对其它调用方没有影响
+_created_objects: list | None = None
+
+
+def start_object_recording() -> None:
+    global _created_objects
+    _created_objects = []
+
+
+def take_recorded_objects() -> list:
+    global _created_objects
+    recorded = _created_objects or []
+    _created_objects = None
+    return recorded
+
+
+def _record_created(obj) -> None:
+    if _created_objects is not None and obj is not None and obj.is_valid:
+        _created_objects.append(obj)
+
+
 def close_client():
     WAAPIClient().disconnect()
 
@@ -39,11 +62,17 @@ def get_referenced_object(obj: WwiseObject, property_name: str):
 
 
 def get_object_property(obj: WwiseObject, property_name: str):
+    # 该类型不含此属性时直接返回，省掉一次必然拿不到值的 WAAPI 往返
+    if not obj.has_property(property_name):
+        return None
     return WAAPIClient().get_object_property(obj.wwise_dict, property_name)
 
 
 def get_object_properties(obj: WwiseObject, property_names: list) -> dict:
-    return WAAPIClient().get_object_properties(obj.wwise_dict, property_names)
+    available_names = [name for name in property_names if obj.has_property(name)]
+    if not available_names:
+        return {}
+    return WAAPIClient().get_object_properties(obj.wwise_dict, available_names)
 
 
 def get_property_and_reference_names(obj: WwiseObject) -> list[str]:
@@ -118,15 +147,21 @@ def find_all_objects_by_type(obj_type: WwiseObjectType) -> list[WwiseObject]:
 
 # region CommonOperation
 def create_object_at_default_location(obj_name: str, obj_type: WwiseObjectType) -> WwiseObject:
-    return _dict_to_wobj(WAAPIClient().create_object_at_default_location(obj_name, obj_type.value))
+    created = _dict_to_wobj(WAAPIClient().create_object_at_default_location(obj_name, obj_type.value))
+    _record_created(created)
+    return created
 
 
 def create_child_object(obj_name: str, obj_type: WwiseObjectType, parent_obj: WwiseObject, on_name_conflict="fail") -> WwiseObject:
-    return _dict_to_wobj(WAAPIClient().create_child_object(obj_name, obj_type.value, parent_obj.wwise_dict, on_name_conflict=on_name_conflict))
+    created = _dict_to_wobj(WAAPIClient().create_child_object(obj_name, obj_type.value, parent_obj.wwise_dict, on_name_conflict=on_name_conflict))
+    _record_created(created)
+    return created
 
 
 def create_object_by_path(obj_path: str, obj_type: str, on_name_conflict='fail') -> WwiseObject:
-    return _dict_to_wobj(WAAPIClient().create_object_by_path(obj_path, obj_type, on_name_conflict=on_name_conflict))
+    created = _dict_to_wobj(WAAPIClient().create_object_by_path(obj_path, obj_type, on_name_conflict=on_name_conflict))
+    _record_created(created)
+    return created
 
 
 def move_object(obj: WwiseObject, new_parent: WwiseObject) -> bool:
@@ -134,7 +169,9 @@ def move_object(obj: WwiseObject, new_parent: WwiseObject) -> bool:
 
 
 def copy_object(obj: WwiseObject, parent: WwiseObject) -> WwiseObject:
-    return _dict_to_wobj(WAAPIClient().copy_object(obj.wwise_dict, parent.wwise_dict))
+    created = _dict_to_wobj(WAAPIClient().copy_object(obj.wwise_dict, parent.wwise_dict))
+    _record_created(created)
+    return created
 
 
 def rename_object(obj: WwiseObject, new_name: str) -> bool:
@@ -180,7 +217,9 @@ def remove_switch_mappings(obj: WwiseObject) -> bool:
 
 # region AudioSource
 def import_audio_file(wave_path: str, sound: WwiseObject, language='SFX') -> WwiseObject:
-    return _dict_to_wobj(WAAPIClient().import_audio_file(wave_path, sound.wwise_dict, language=language))
+    created = _dict_to_wobj(WAAPIClient().import_audio_file(wave_path, sound.wwise_dict, language=language))
+    _record_created(created)
+    return created
 
 
 def convert_audio_objects(objects: list, platforms: list, languages: list) -> dict:

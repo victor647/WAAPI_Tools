@@ -1,12 +1,22 @@
 import os
 import re
 import json
+import shutil
+import sys
 from typing import Any
 
+from libraries.utils import path_utils
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import project_utils
 
 conventions = {}
+# 当前内存中规范数据实际来自哪个文件；保存时写回同一个文件
+_conventions_path = ""
+
+# 工程规范文件名：优先新名，其次兼容旧名
+CONVENTIONS_FILE_NAMES = ('project_conventions.json', 'ProjectConventions.json')
+# 新建或从内置副本初始化时使用的文件名
+CONVENTIONS_FILE_NAME = 'ProjectConventions.json'
 
 # 名称大小写规范的校验方式：title=首字母大写，lower=全小写，upper=全大写
 NAME_CASE_MODES = ('title', 'lower', 'upper')
@@ -17,15 +27,52 @@ DEFAULT_USE_AUTO_DEFINED_BANK = True
 DEFAULT_SPLIT_EVENT_MEDIA = False
 
 
+def _app_dir() -> str:
+    # 打包后为 exe 所在目录（可写），开发环境为仓库根目录
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    try:
+        return path_utils.find_dev_project_root()
+    except RuntimeError:
+        return ""
+
+
+def _bundled_conventions_path() -> str:
+    # 打包时随 exe 打入的工程规范副本（见 packager/WAAPI_Tools_GUI.spec 的 datas）
+    if not getattr(sys, "frozen", False):
+        return ""
+    for name in CONVENTIONS_FILE_NAMES:
+        bundled = path_utils.get_resource_path(name)
+        if os.path.isfile(bundled):
+            return bundled
+    return ""
+
+
+def _initialize_conventions_file() -> str:
+    # 工程目录与应用目录都没有规范文件时，用打包内置副本初始化出一份可写文件；
+    # 复制失败（例如目录只读）则本次直接使用内置副本
+    bundled = _bundled_conventions_path()
+    if not bundled:
+        return ""
+    target = os.path.join(_app_dir(), os.path.basename(bundled))
+    try:
+        shutil.copyfile(bundled, target)
+        Logger().info(f"已使用内置工程规范初始化配置文件: {target}")
+        return target
+    except OSError as e:
+        Logger().warning(f"写入工程规范文件失败，本次直接使用内置配置: {target} ({e})")
+        return bundled
+
+
 def _resolve_conventions_json_path(project_directory: str) -> str | None:
-    # 工程目录下优先 project_conventions.json，其次兼容旧名 ProjectConventions.json；再尝试当前工作目录
-    for name in ('project_conventions.json', 'ProjectConventions.json'):
-        p = os.path.join(project_directory, name)
-        if os.path.isfile(p):
-            return p
-    for name in ('project_conventions.json', 'ProjectConventions.json'):
-        if os.path.isfile(name):
-            return name
+    # 依次查找：Wwise 工程目录、应用目录（exe 目录或仓库根目录），最后兜底当前工作目录
+    directories = [directory for directory in (project_directory, _app_dir()) if directory]
+    directories.append("")
+    for directory in directories:
+        for name in CONVENTIONS_FILE_NAMES:
+            p = os.path.join(directory, name) if directory else name
+            if os.path.isfile(p):
+                return p
     return None
 
 
@@ -40,16 +87,17 @@ def get_conventions_path() -> str | None:
 
 # 保存工程规范到文件并刷新内存缓存
 def save_conventions(new_conventions: dict) -> bool:
-    global conventions
-    path = get_conventions_path() or "project_conventions.json"
-    if not os.path.isfile(path):
-        # 工程目录下没有配置文件时，在工程目录新建；取不到工程目录再退回当前目录
+    global conventions, _conventions_path
+    # 优先写回最近一次读取的文件；没有读取记录时再重新解析
+    path = _conventions_path or get_conventions_path()
+    if not path:
+        # 没有现成文件时：工程目录优先（每工程独立规范），取不到工程目录则写到应用目录
         try:
             project_directory = project_utils.get_project_directory()
         except Exception:
             project_directory = ""
-        if project_directory:
-            path = os.path.join(project_directory, "project_conventions.json")
+        directory = project_directory or _app_dir()
+        path = os.path.join(directory, CONVENTIONS_FILE_NAME) if directory else CONVENTIONS_FILE_NAME
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(new_conventions, f, ensure_ascii=False, indent=2)
@@ -57,17 +105,22 @@ def save_conventions(new_conventions: dict) -> bool:
         Logger().error(f"写入工程规范文件失败：{path} ({e})")
         return False
     conventions = new_conventions
+    _conventions_path = path
     return True
 
 
 # 初始化工程规范配置文件
 def init():
+    global conventions, _conventions_path
     project_directory = project_utils.get_project_directory()
     json_path = _resolve_conventions_json_path(project_directory)
+    if not json_path:
+        json_path = _initialize_conventions_file()
     if json_path and os.path.exists(json_path):
-        global conventions
-        with open(json_path, 'r', encoding='utf-8') as f:
+        with open(json_path, "r", encoding='utf-8') as f:
             conventions = json.load(f)
+        # 记住实际读取的文件（只读的内置副本除外，保存时另行寻找可写位置）
+        _conventions_path = "" if json_path == _bundled_conventions_path() else json_path
 
 
 # 规范配置节点：新结构为 <X>Convention 子节点（Enabled + 数据表），兼容旧的顶层平铺字段

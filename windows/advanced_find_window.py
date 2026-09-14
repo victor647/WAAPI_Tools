@@ -4,59 +4,60 @@ from libraries.utils import user_config
 from ui.AdvancedFind_ui import Ui_AdvancedFind
 
 
-# 高级查找窗口：递归查找、保留原始层级
+# 高级查找窗口：按属性查找、按类型查找子对象、保留原始层级开关
 class AdvancedFindWindow(QDialog, Ui_AdvancedFind):
 
     def __init__(self, main_window, parent: QWidget = None):
         super().__init__(parent)
         self.setupUi(self)
         self.__main = main_window
-        self.setup_triggers()
+        # 先回填再连信号，避免回填过程触发一次保存
         self.__sync_from_main()
+        self.setup_triggers()
 
-    # 绑定复选控件信号槽
+    # 绑定控件信号槽
     def setup_triggers(self):
-        self.cbxRecursiveFind.toggled.connect(self._on_recursive_find_toggled)
         self.cbxKeepSelf.toggled.connect(self._on_keep_self_toggled)
-        self.cbbFindChildType.currentIndexChanged.connect(self._on_find_child_type_changed)
+        self.cbbFindChildType.selectionChanged.connect(self._on_find_child_type_changed)
         self.btnFindChildType.clicked.connect(self._on_find_child_type)
-        self.btnClose.clicked.connect(self.accept)
+        self.cbbFindProperty.currentTextChanged.connect(self._on_find_property_changed)
+        self.btnFindProperty.clicked.connect(self._on_find_property)
 
-    # 打开时从 user_config 恢复上次保存的选项，并同步主窗口隐藏的状态控件
+    # 打开时从 user_config 恢复上次保存的选项
     def __sync_from_main(self):
         settings = user_config.get_advanced_find_settings()
-        # 类型选项复用主窗口筛选里的类型列表
-        self.cbbFindChildType.clear()
-        self.cbbFindChildType.addItems(self.__main.get_filter_type_options())
-        saved_index = self.cbbFindChildType.findText(settings["find_child_type"])
-        self.cbbFindChildType.setCurrentIndex(saved_index if saved_index >= 0 else 0)
-        self.cbxRecursiveFind.blockSignals(True)
+        # 类型选项复用主窗口筛选里的类型列表（可复选，一个都没勾时按全部类型查找）
+        self.cbbFindChildType.set_options(
+            self.__main.get_filter_type_options(), settings["find_child_types"], all_text='全部类型')
+        # 「找属性」下拉框恢复上次选择
+        index = self.cbbFindProperty.findText(settings["find_property"])
+        if index >= 0:
+            self.cbbFindProperty.setCurrentIndex(index)
+        # 「保留原始层级」由主窗口的那份隐藏控件持有状态（各类查找共用），这里只做同步
         self.cbxKeepSelf.blockSignals(True)
-        self.cbxRecursiveFind.setChecked(settings["recursive_find"])
-        self.cbxKeepSelf.setChecked(settings["keep_self"])
-        self.cbxRecursiveFind.blockSignals(False)
+        self.cbxKeepSelf.setChecked(self.__main.cbxKeepSelf.isChecked())
         self.cbxKeepSelf.blockSignals(False)
-        if self.__main.cbxRecursiveFind.isChecked() != settings["recursive_find"]:
-            self.__main.cbxRecursiveFind.setChecked(settings["recursive_find"])
-        if self.__main.cbxKeepSelf.isChecked() != settings["keep_self"]:
-            self.__main.cbxKeepSelf.setChecked(settings["keep_self"])
 
-    # 递归查找选项变化时同步主窗口并保存
-    def _on_recursive_find_toggled(self, checked: bool):
-        self.__main.cbxRecursiveFind.setChecked(checked)
-        user_config.save_advanced_find_settings({"recursive_find": bool(checked)})
-
-    # 保留原始层级选项变化时同步主窗口并保存
+    # 保留原始层级变化时同步主窗口（由主窗口负责写入 user_config）
     def _on_keep_self_toggled(self, checked: bool):
         self.__main.cbxKeepSelf.setChecked(checked)
-        user_config.save_advanced_find_settings({"keep_self": bool(checked)})
 
-    # 类型选择变化时保存
-    def _on_find_child_type_changed(self, index: int):
-        user_config.save_advanced_find_settings({"find_child_type": self.cbbFindChildType.currentText()})
+    # 类型勾选变化时保存
+    def _on_find_child_type_changed(self):
+        user_config.save_advanced_find_settings({"find_child_types": self.cbbFindChildType.checked_options()})
 
     # 按所选类型查找表格对象的子对象
     def _on_find_child_type(self):
-        type_text = self.cbbFindChildType.currentText()
-        user_config.save_advanced_find_settings({"find_child_type": type_text})
-        self.__main.find_children_by_type(type_text)
+        type_names = self.cbbFindChildType.checked_options()
+        user_config.save_advanced_find_settings({"find_child_types": type_names})
+        self.__main.find_children_by_type(type_names)
+
+    # 「找属性」下拉框选择变化时保存
+    def _on_find_property_changed(self, text: str):
+        user_config.save_advanced_find_settings({"find_property": text})
+
+    # 按所选属性查找表格对象引用到的对象
+    def _on_find_property(self):
+        property_name = self.cbbFindProperty.currentText()
+        user_config.save_advanced_find_settings({"find_property": property_name})
+        self.__main.find_by_property(property_name)

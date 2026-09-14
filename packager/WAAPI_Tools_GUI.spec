@@ -36,6 +36,11 @@ datas = [
 user_config_file = os.path.join(root, "user_config.json")
 if os.path.isfile(user_config_file):
     datas.append((user_config_file, "."))
+# 工程规范文件同理：工程目录与 exe 目录都没有时由
+# data/project_conventions.py 复制出来，作为工程规范的初始数据
+conventions_file = os.path.join(root, "ProjectConventions.json")
+if os.path.isfile(conventions_file):
+    datas.append((conventions_file, "."))
 binaries = qt_material_binaries
 hiddenimports = qt_material_hidden
 

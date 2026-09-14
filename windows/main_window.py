@@ -173,17 +173,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         advanced_settings = user_config.get_advanced_filter_settings()
         self.cbxCaseSensitive.setChecked(advanced_settings["case_sensitive"])
         self.cbxOnlyIncludedEnabled.setChecked(advanced_settings["only_included"])
-        # 恢复高级查找设置（递归查找 / 保留原始层级）
+        # 恢复查找开关（递归查找 / 保留原始层级，与高级查找窗口共用同一份持久化设置）
         advanced_find_settings = user_config.get_advanced_find_settings()
         self.cbxRecursiveFind.setChecked(advanced_find_settings["recursive_find"])
         self.cbxKeepSelf.setChecked(advanced_find_settings["keep_self"])
-        # 恢复「按属性」下拉框上次选择
-        main_window_settings = user_config.get_window_settings('main_window')
-        saved_property = main_window_settings.get('find_property')
-        if saved_property:
-            index = self.cbbFindProperty.findText(saved_property)
-            if index >= 0:
-                self.cbbFindProperty.setCurrentIndex(index)
         # 恢复表格/日志分隔条位置
         self._restore_splitter_settings()
         self.setup_triggers()
@@ -454,16 +447,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.cbbTableDisplayMode.blockSignals(False)
         self.cbbTableDisplayMode.currentIndexChanged.connect(self.on_table_display_mode_changed)
 
-    # 类型下拉框的可选项：全部类型 + 动态取自 WwiseObjectType 的所有值（筛选与高级查找共用）
+    # 类型下拉框的可选项：动态取自 WwiseObjectType 的所有值（筛选与高级查找共用）
     def get_filter_type_options(self) -> list[str]:
-        return ['全部类型'] + [member.value for member in sorted(WwiseObjectType, key=lambda item: item.value)]
+        return [member.value for member in sorted(WwiseObjectType, key=lambda item: item.value)]
 
-    # 类型筛选下拉框：全部类型 + 动态取自 WwiseObjectType 的所有值
+    # 类型筛选下拉框：可复选，一个都没勾时显示「全部类型」（即不按类型筛选）
     def _setup_type_filter_combo(self):
-        self.cbbFilterType.blockSignals(True)
-        self.cbbFilterType.clear()
-        self.cbbFilterType.addItems(self.get_filter_type_options())
-        self.cbbFilterType.blockSignals(False)
+        self.cbbFilterType.set_options(self.get_filter_type_options(), all_text='全部类型')
 
     # 绑定「极速模式」开关：默认勾选，只加载基础属性与启用状态
     def _setup_turbo_mode_checkbox(self):
@@ -554,8 +544,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.apply_table_filter()
 
     # 切换对象类型筛选时立即刷新表格（与「应用筛选」一致，并记入对象列表历史）
-    def _on_filter_type_changed(self, index: int):
-        if index < 0 or self._restoring_history:
+    def _on_filter_type_changed(self):
+        if self._restoring_history:
             return
         self.apply_table_filter(record_history=True)
 
@@ -602,11 +592,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnFindChildren.clicked.connect(self.find_children)
         self.btnFindReferences.clicked.connect(self.find_references)
         self.btnAdvancedFind.clicked.connect(self.open_advanced_find_window)
-        self.btnFindProperty.clicked.connect(self.find_by_property)
-        self.cbbFindProperty.currentTextChanged.connect(self._on_find_property_changed)
+        self.cbxRecursiveFind.toggled.connect(self._on_find_option_toggled)
+        self.cbxKeepSelf.toggled.connect(self._on_find_option_toggled)
         self.cbxCaseSensitive.toggled.connect(self._on_case_sensitive_changed)
         self.cbxOnlyIncludedEnabled.toggled.connect(self._on_only_included_toggled)
-        self.cbbFilterType.currentIndexChanged.connect(self._on_filter_type_changed)
+        self.cbbFilterType.selectionChanged.connect(self._on_filter_type_changed)
         self.btnApplyFilter.clicked.connect(self.apply_keyword_filter)
         self.btnAdvancedFilter.clicked.connect(self.open_advanced_filter_window)
         self.btnObjectHistoryBack.clicked.connect(self.object_history_back)
@@ -740,7 +730,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._restoring_history = True
         try:
             self.ledFilterKeyword.setText("")
-            self.cbbFilterType.setCurrentIndex(0)
+            self.cbbFilterType.clear_checked()
             self.cbxCaseSensitive.setChecked(False)
             self.cbxOnlyIncludedEnabled.setChecked(False)
         finally:
@@ -841,7 +831,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         return (
             self._clone_object_list(gv.active_objects),
             self.ledFilterKeyword.text(),
-            self.cbbFilterType.currentText(),
+            tuple(self.cbbFilterType.checked_options()),
             self.cbxCaseSensitive.isChecked(),
             self.cbxOnlyIncludedEnabled.isChecked(),
         )
@@ -882,7 +872,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         try:
             gv.active_objects = self._clone_object_list(objs)
             self.ledFilterKeyword.setText(kw)
-            self.cbbFilterType.setCurrentText(ft)
+            self.cbbFilterType.set_checked_options(ft)
             self.cbxCaseSensitive.setChecked(cs)
             self.cbxOnlyIncludedEnabled.setChecked(oi)
             self.table.refresh_table(True)
@@ -930,11 +920,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if total_count == 0:
             return
         self.table.filter_results(self.ledFilterKeyword.text(), self.cbxCaseSensitive.isChecked())
-        type_text = self.cbbFilterType.currentText()
-        if not type_text or type_text == "全部类型":
-            self.table.filter_by_type(None)
-        else:
-            self.table.filter_by_type(WwiseObjectType(type_text))
+        checked_types = self.cbbFilterType.checked_options()
+        self.table.filter_by_type({WwiseObjectType(name) for name in checked_types} if checked_types else None)
         self.table.filter_inclusion_only(self.cbxOnlyIncludedEnabled.isChecked())
         # 关键词/类型/启用等筛选全部执行完后，一次性输出筛选结果
         shown_count = sum(
@@ -1055,9 +1042,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.apply_table_filter()
         self._history_append_current_if_changed()
 
-    # 查找指定类型的子对象（高级查找窗口调用；遵循「递归查找」与「保留原始层级」设置）
-    def find_children_by_type(self, type_text: str):
-        target_type = None if not type_text or type_text == '全部类型' else WwiseObjectType(type_text)
+    # 查找指定类型的子对象，可传多个类型名（高级查找窗口调用；遵循「递归查找」与「保留原始层级」设置）
+    def find_children_by_type(self, type_names):
+        if isinstance(type_names, str):
+            type_names = [type_names]
+        target_types = {WwiseObjectType(name) for name in (type_names or []) if name and name != '全部类型'}
         visible_objects = self.get_visible_objects()
         if not visible_objects:
             Logger().warning('表格中没有可查找的对象')
@@ -1067,12 +1056,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         seen_ids = {obj.id for obj in found_objects}
         for obj in visible_objects:
             # 递归 + 指定类型时用按类型查后代的接口（单次 WAQL，比全量分页更快）
-            if target_type is not None and recursive:
-                children = waapi_utils.get_descendants_of_type(obj, target_type)
+            if target_types and recursive:
+                children = waapi_utils.get_descendants_of_type(obj, target_types)
             else:
                 children = waapi_utils.get_child_objects(obj, recursive)
             for child in children:
-                if target_type is not None and child.type != target_type:
+                if target_types and child.type not in target_types:
                     continue
                 if child.id in seen_ids:
                     continue
@@ -1110,9 +1099,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def open_advanced_find_window(self):
         AdvancedFindWindow(self).exec()
 
-    # 按属性查找：对表格内每个对象读取指定属性，属性返回对象引用的对象作为新的表格内容
-    def find_by_property(self):
-        property_name = self.cbbFindProperty.currentText().strip()
+    # 「递归查找 / 保留原始层级」是各类查找共用的开关，改动后写入 user_config
+    def _on_find_option_toggled(self, _checked: bool):
+        user_config.save_advanced_find_settings({
+            'recursive_find': self.cbxRecursiveFind.isChecked(),
+            'keep_self': self.cbxKeepSelf.isChecked(),
+        })
+
+    # 按属性查找：对表格内每个对象读取指定属性，属性返回对象引用的对象作为新的表格内容（高级查找窗口调用）
+    def find_by_property(self, property_name: str):
+        property_name = (property_name or '').strip()
         if not property_name:
             Logger().warning('请输入要查找的属性名称')
             return
@@ -1142,12 +1138,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         batch_processor.create_async(
             objects, process, f'查找属性 {property_name}', 'name', on_finished=finished
         )
-
-    # 「按属性」下拉框选择变化时写入 user_config（主窗口设置节点）
-    def _on_find_property_changed(self, text: str):
-        settings = dict(user_config.get_window_settings('main_window'))
-        settings['find_property'] = text
-        user_config.set_window_settings('main_window', settings)
 
     # 恢复表格/日志分隔条位置：两侧都可拖动，窗口变高时按比例一起变高
     def _restore_splitter_settings(self):
