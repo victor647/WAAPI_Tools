@@ -17,8 +17,6 @@
       "3P": "Player_3P"
     }
   },
-  "PlayPrefixInEvent": true,
-  "EventRefNotes": false,
   "ContainerSuffix": {
     "Random": "_\\d{2}$",
     "Sequence": "_[A-Z]$"
@@ -71,8 +69,7 @@
       "Vehicle": 25,
       "Voice": 19,
       "Weapon": 22
-    },
-    "EventRefDarkColor": true
+    }
   },
   "NameCaseConvention": {
     "Enabled": true,
@@ -83,6 +80,11 @@
     "FullNameInSound": false
   },
   "UnimplementedLanguages": [],
+  "EventConvention": {
+    "PlayPrefix": true,
+    "RefDarkColor": true,
+    "RefNotes": false
+  },
   "BankConvention": {
     "UseAutoDefinedBank": true,
     "SplitEventMedia": false

@@ -9,6 +9,10 @@ from ui.ProjectSettings_ui import Ui_ProjectSettings
 AI_MODE_KEYS = ("proxy", "official")
 AI_MODE_LABELS = ("代理模式", "官方 API 模式")
 
+# AI 修改策略下拉框：键与 user_config.MUTATION_POLICIES 对应
+AI_MUTATION_POLICY_KEYS = user_config.MUTATION_POLICIES
+AI_MUTATION_POLICY_LABELS = ("只读（不改工程）", "改动前弹窗确认", "直接执行（不询问）")
+
 # 角色表首列显示文案，内部键仍是 1P/2P/3P
 NET_ROLE_LABELS = {"1P": "1P（主角）", "2P": "2P（队友）", "3P": "3P（敌人）"}
 
@@ -29,6 +33,9 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.setupUi(self)
         self._on_ai_saved = on_ai_saved
         self._on_theme_applied = on_theme_applied
+        # 内存里还没有规范数据时先兜底加载，避免表格空白被当成空配置保存回去
+        if not project_conventions.conventions:
+            project_conventions.init()
         self.__conventions = dict(project_conventions.conventions or {})
         self.categoryMap.set_headers(["分类名", "缩写", "颜色值"])
         self.containerSuffix.set_headers(["容器类型", "后缀"])
@@ -44,6 +51,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.spbPageSize.setValue(user_config.get_tool_page_size())
         self.cbxPathDisplayCompact.setChecked(user_config.get_tool_path_display_compact())
         self.cbbAiMode.addItems(list(AI_MODE_LABELS))
+        self.cbbAiMutationPolicy.addItems(list(AI_MUTATION_POLICY_LABELS))
         self.cbbAiProvider.addItems([info["label"] for info in ai_utils.PROVIDERS.values()])
         self.setup_triggers()
         self.__load_values()
@@ -158,7 +166,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         languages = conventions.get("UnimplementedLanguages", [])
         self.iptLanguages.setText(";".join(str(item) for item in languages))
         self.cbxFullNameInSound.setChecked(project_conventions.use_full_name_in_sound())
-        self.cbxPlayPrefixInEvent.setChecked(bool(conventions.get("PlayPrefixInEvent", False)))
+        self.cbxPlayPrefixInEvent.setChecked(project_conventions.has_event_play_prefix())
         self.cbxEventRefNotes.setChecked(project_conventions.use_event_ref_notes())
 
     # 从 user_config.json 的 ai 节填充 AI 设置
@@ -166,6 +174,10 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         ai = user_config.get_ai_config()
         mode = ai.get("mode") if ai.get("mode") in AI_MODE_KEYS else AI_MODE_KEYS[0]
         self.cbbAiMode.setCurrentIndex(AI_MODE_KEYS.index(mode))
+        policy = ai.get("mutation_policy")
+        if policy not in AI_MUTATION_POLICY_KEYS:
+            policy = user_config.DEFAULT_CONFIG["ai"]["mutation_policy"]
+        self.cbbAiMutationPolicy.setCurrentIndex(AI_MUTATION_POLICY_KEYS.index(policy))
         provider_keys = list(ai_utils.PROVIDERS)
         provider = ai.get("provider") if ai.get("provider") in provider_keys else provider_keys[0]
         self.cbbAiProvider.setCurrentIndex(provider_keys.index(provider))
@@ -207,6 +219,11 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
             "api_key": self.iptAiApiKey.text(),
             "model": self.iptAiModel.text().strip(),
             "enable_script_tool": bool(self.cbxAiEnableScript.isChecked()),
+            "mutation_policy": (
+                AI_MUTATION_POLICY_KEYS[self.cbbAiMutationPolicy.currentIndex()]
+                if self.cbbAiMutationPolicy.currentIndex() >= 0
+                else defaults["mutation_policy"]
+            ),
             "max_context_objects": int(self.spnAiMaxContext.value()),
             "max_turns": int(self.spnAiMaxTurns.value()),
         }
@@ -238,7 +255,6 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         new_conventions["ColorConvention"] = {
             "Enabled": self.cbxEnableColor.isChecked(),
             "ColorMap": color_map,
-            "EventRefDarkColor": self.cbxEventRefDarkColor.isChecked(),
         }
         case_index = self.cbbNameCase.currentIndex()
         case_mode = (project_conventions.NAME_CASE_MODES[case_index]
@@ -260,7 +276,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         # 清理旧的顶层平铺字段
         for legacy_key in ("AcronymMap", "ColorMap", "EnableAcronym", "EnableColor",
                            "EnableNameCase", "EnablePathLength", "EnableAcronymColor",
-                           "FullNameInSound"):
+                           "FullNameInSound", "PlayPrefixInEvent", "EventRefNotes"):
             new_conventions.pop(legacy_key, None)
         new_conventions["ContainerSuffix"] = dict(self.containerSuffix.rows())
 
@@ -301,8 +317,12 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         ]
         new_conventions.pop("ImplementedLanguages", None)
         new_conventions["UnimplementedLanguages"] = languages
-        new_conventions["PlayPrefixInEvent"] = self.cbxPlayPrefixInEvent.isChecked()
-        new_conventions["EventRefNotes"] = self.cbxEventRefNotes.isChecked()
+        # Event 设置：事件命名前缀、引用对象深色、引用备注
+        new_conventions["EventConvention"] = {
+            "PlayPrefix": self.cbxPlayPrefixInEvent.isChecked(),
+            "RefDarkColor": self.cbxEventRefDarkColor.isChecked(),
+            "RefNotes": self.cbxEventRefNotes.isChecked(),
+        }
 
         if project_conventions.save_conventions(new_conventions):
             Logger().info("工程规范设置已保存")

@@ -370,7 +370,7 @@ class WaveformWidget(QWidget):
             freq = nyquist * step / 4
             line_y = int(PLOT_TOP + plot_height * (1 - step / 4))
             painter.drawLine(PLOT_LEFT, line_y, PLOT_LEFT + plot_width, line_y)
-            label = f'{freq / 1000:g}k' if freq >= 1000 else f'{int(freq)}'
+            label = f'{int(freq)}'
             painter.setPen(text_color)
             painter.drawText(0, line_y - 7, PLOT_LEFT - 4, 14, Qt.AlignmentFlag.AlignRight, label)
             painter.setPen(grid_color)

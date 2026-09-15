@@ -52,19 +52,6 @@
            </property>
           </widget>
          </item>
-         <item row="1" column="1">
-          <widget class="QCheckBox" name="cbxEventRefDarkColor">
-           <property name="text">
-            <string>Event 引用使用深色</string>
-           </property>
-           <property name="toolTip">
-            <string>启用后，「更新备注与颜色」等自动调整颜色的工具会把被 Event 播放（或被 SoundBank 包含）的对象改成同色系的深色版本，方便区分已挂事件的对象；关闭后这些对象保持普通分类色。</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
          <item row="0" column="2">
           <widget class="QCheckBox" name="cbxEnableNameCase">
            <property name="text">
@@ -125,29 +112,6 @@
            </property>
           </widget>
          </item>
-         <item row="0" column="5">
-          <widget class="QCheckBox" name="cbxPlayPrefixInEvent">
-           <property name="text">
-            <string>Event 以 Play_ 开头</string>
-           </property>
-           <property name="toolTip">
-            <string>独立开关，不受其它规范影响：开启后新建的 Play 事件名称统一带 Play_ 前缀。</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="5">
-          <widget class="QCheckBox" name="cbxEventRefNotes">
-           <property name="text">
-            <string>Event 与播放对象互为备注</string>
-           </property>
-           <property name="toolTip">
-            <string>开启后，自动更新备注的工具会把 Event 的播放对象写上「Played by Event [...]」、Event 写上对象路径（被 SoundBank 包含的对象写「Included by SoundBank [...]」）；关闭后这些工具不再改动 Notes。</string>
-           </property>
-           <property name="checked">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
          <item row="0" column="4" rowspan="2">
           <spacer name="regulationSpacer">
            <property name="orientation">
@@ -194,6 +158,64 @@
           </item>
           <item>
            <spacer name="bankSettingsSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="grpEventSettings">
+         <property name="title">
+          <string>Event设置</string>
+         </property>
+         <layout class="QHBoxLayout" name="eventSettingsLayout">
+          <item>
+           <widget class="QCheckBox" name="cbxPlayPrefixInEvent">
+            <property name="text">
+             <string>Event 以 Play_ 开头</string>
+            </property>
+            <property name="toolTip">
+             <string>独立开关，不受其它规范影响：开启后新建的 Play 事件名称统一带 Play_ 前缀。</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="cbxEventRefDarkColor">
+            <property name="text">
+             <string>Event 引用使用深色</string>
+            </property>
+            <property name="toolTip">
+             <string>仅在启用颜色规范时可用：开启后，「更新备注与颜色」等自动调整颜色的工具会把被 Event 播放（或被 SoundBank 包含）的对象改成同色系的深色版本，方便区分已挂事件的对象；关闭后这些对象保持普通分类色。</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="cbxEventRefNotes">
+            <property name="text">
+             <string>Event 与播放对象互为备注</string>
+            </property>
+            <property name="toolTip">
+             <string>开启后，自动更新备注的工具会把 Event 的播放对象写上「Played by Event [...]」、Event 写上对象路径（被 SoundBank 包含的对象写「Included by SoundBank [...]」）；关闭后这些工具不再改动 Notes。</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="eventSettingsSpacer">
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
             </property>
@@ -531,6 +553,16 @@
            </property>
           </widget>
          </item>
+         <item row="9" column="0">
+          <widget class="QLabel" name="lblAiMutationPolicy">
+           <property name="text">
+            <string>修改策略</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="1">
+          <widget class="QComboBox" name="cbbAiMutationPolicy"/>
+         </item>
         </layout>
        </item>
        <item>
@@ -539,7 +571,7 @@
           <bool>true</bool>
          </property>
          <property name="text">
-          <string>连接模式：代理模式走本地/公司代理地址；官方 API 模式按“服务提供方”直连（OpenAI / DeepSeek / 通义千问 / Kimi / 智谱 GLM / Gemini / Claude / 自定义）。Claude 使用 Anthropic 原生协议，必须填写模型名；其余厂商走 OpenAI 兼容协议。设置保存在 user_config.json 的 ai 节，修改后下一次发送指令生效，主窗口模型下拉框会在重启后同步。</string>
+          <string>连接模式：代理模式走本地/公司代理地址；官方 API 模式按“服务提供方”直连（OpenAI / DeepSeek / 通义千问 / Kimi / 智谱 GLM / Gemini / Claude / 自定义）。Claude 使用 Anthropic 原生协议，必须填写模型名；其余厂商走 OpenAI 兼容协议。修改策略：只读＝拒绝一切改动；改动前弹窗确认＝AI 要改工程时由你本人点确认；直接执行＝不再询问。设置保存在 user_config.json 的 ai 节，修改后下一次发送指令生效，主窗口模型下拉框会在重启后同步。</string>
          </property>
         </widget>
        </item>

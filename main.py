@@ -1,6 +1,8 @@
 import argparse
 import os
 import sys
+import threading
+import traceback
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
@@ -60,14 +62,50 @@ def run_app_loop(object_ids: list[str] | None = None, from_wwise: bool = False):
     return code
 
 
+# 退出前记录仍然存活的非守护线程（如 waapi 客户端的回调线程），便于排查退出卡住的问题
+def log_leftover_threads() -> None:
+    leftovers = [
+        thread.name for thread in threading.enumerate()
+        if thread is not threading.main_thread() and not thread.daemon
+    ]
+    if leftovers:
+        Logger().debug("退出时仍有非守护线程：" + ", ".join(leftovers))
+
+
+# 打包成无控制台的 exe 后，未捕获异常只会写到 stderr（为 None）而丢失，这里统一记入日志文件
+def install_exception_logging() -> None:
+    def log_uncaught(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            return
+        detail = "".join(traceback.format_exception(exc_type, exc_value, exc_tb)).rstrip()
+        # 这里已经带上完整堆栈，用 error 输出避免 logging 再追加一次当前异常堆栈
+        Logger().error(f"未捕获异常：\n{detail}")
+
+    sys.excepthook = log_uncaught
+    threading.excepthook = lambda args: log_uncaught(args.exc_type, args.exc_value, args.exc_traceback)
+
+
+# 冲刷输出流后强制结束进程：Qt 关闭后仍可能残留第三方库的非守护线程，
+# 走 sys.exit 会卡在解释器退出阶段，留下没有窗口的 python.exe
+def exit_process(code: int) -> None:
+    log_leftover_threads()
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except (ValueError, OSError):
+            pass
+    os._exit(code)
+
+
 if __name__ == '__main__':
+    install_exception_logging()
     try:
         object_ids, from_wwise = parse_args(sys.argv[1:])
         exit_code = run_app_loop(object_ids, from_wwise)
-        sys.exit(exit_code)
     except KeyboardInterrupt:
         Logger().info("Application interrupted by user")
-        sys.exit(0)
+        exit_code = 0
     except Exception as e:
         Logger().exception(e)
-        sys.exit(1)
+        exit_code = 1
+    exit_process(exit_code)

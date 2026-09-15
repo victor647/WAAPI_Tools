@@ -35,12 +35,16 @@ def _record_created(obj) -> None:
 
 
 def close_client():
-    WAAPIClient().disconnect()
+    # 未连接成功时单例里没有实例，此时无需（也无法）关闭，直接跳过
+    client = WAAPIClient.get_existing()
+    if client is not None:
+        client.disconnect()
 
 
 # 是否已连接到 Wwise（供业务层判断连接状态，避免直接依赖 WAAPIClient）
 def is_connected() -> bool:
-    return WAAPIClient().is_connected()
+    client = WAAPIClient.get_existing()
+    return bool(client and client.is_connected())
 
 
 # region Query

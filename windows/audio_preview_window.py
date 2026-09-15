@@ -6,12 +6,16 @@ from PySide6.QtCore import QLoggingCategory, Qt, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import QDialog, QWidget
 
-from libraries.utils.wwise import audio_source_utils
 from libraries.utils import user_config
+from libraries.utils import audio_utils
+from libraries.utils.wwise import audio_source_utils
 from ui.AudioPreview_ui import Ui_AudioPreview
 
 # 关闭 QtMultimedia ffmpeg 后端的媒体信息输出，避免打开文件时在控制台打印红色日志
 os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.*=false")
+
+# 实时响度表的统计窗口（毫秒）
+METER_WINDOW_MS = 400
 
 
 # 预览窗口模式
@@ -48,6 +52,8 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         self.__tail_silence_seconds = tail_silence_seconds
         self.__fade_in_seconds = fade_in_seconds
         self.__fade_out_seconds = fade_out_seconds
+        self.__audio_data = None
+        self.__sample_rate = 0
         self.__media_player = QMediaPlayer(self)
         self.__audio_output = QAudioOutput(self)
         self.__media_player.setAudioOutput(self.__audio_output)
@@ -88,6 +94,7 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         QLoggingCategory.setFilterRules("qt.multimedia.*=false")
         self.waveform.seek_callback = self.__media_player.setPosition
         self.__media_player.positionChanged.connect(self.waveform.set_position)
+        self.__media_player.positionChanged.connect(self.__update_loudness_meter)
         self.__media_player.playbackStateChanged.connect(self._on_playback_state_changed)
         self.__media_player.mediaStatusChanged.connect(self._on_media_status_changed)
 
@@ -108,14 +115,42 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         sound_file.close()
         self.waveform.set_audio(audio_data, sample_rate)
         self.waveform.set_duration(int(duration * 1000))
+        self.__audio_data = audio_data
+        self.__sample_rate = sample_rate
+        # 先按声道数初始化电平表，未播放时显示为下限
+        self.loudnessMeter.set_levels([audio_utils.MIN_LOUDNESS_DB] * max(1, channels))
         self.__apply_silence_markers(duration)
         file_size = format_file_size(os.path.getsize(self.__file_path))
+        loudness_db = audio_utils.calculate_loudness(
+            self.__file_path, threshold_db=audio_utils.LOUDNESS_SILENCE_THRESHOLD_DB
+        )
+        loudness_text = '无信号' if loudness_db <= audio_utils.MIN_LOUDNESS_DB else f'{loudness_db:.1f} dBFS'
         details_text = (f'时长 {duration:.2f}s   |   大小 {file_size}'
-                        f'   |   {channels} 声道   |   采样率 {int(sample_rate)} Hz')
+                        f'   |   {channels} 声道   |   采样率 {int(sample_rate)} Hz'
+                        f'   |   平均响度 {loudness_text}')
         self.lblInfo.setText(self.fontMetrics().elidedText(display_path, Qt.TextElideMode.ElideMiddle, 700))
         self.lblInfo.setToolTip(display_path)
         self.lblFileDetails.setText(details_text)
+        self.lblFileDetails.setToolTip(details_text)
         self.__media_player.setSource(QUrl.fromLocalFile(self.__file_path))
+
+    # 按播放位置取当前位置往前一小段音频，分声道计算并显示实时响度
+    def __update_loudness_meter(self, position_ms: int):
+        if self.__audio_data is None or self.__sample_rate <= 0:
+            return
+        end_sample = min(int(position_ms / 1000 * self.__sample_rate), len(self.__audio_data))
+        if end_sample <= 0:
+            self.loudnessMeter.reset()
+            return
+        start_sample = max(0, end_sample - int(METER_WINDOW_MS / 1000 * self.__sample_rate))
+        chunk = self.__audio_data[start_sample:end_sample]
+        if chunk.size == 0:
+            return
+        if chunk.ndim == 1:
+            channels = [chunk]
+        else:
+            channels = [chunk[:, index] for index in range(chunk.shape[1])]
+        self.loudnessMeter.set_levels([audio_utils.calculate_loudness_from_data(channel) for channel in channels])
 
     # SilenceTrim 模式下把头部/尾部静音转成黄色区域，把保留淡入淡出画成斜线
     def __apply_silence_markers(self, duration: float):
@@ -153,6 +188,7 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         self.__media_player.stop()
         self.__media_player.setPosition(0)
         self.waveform.set_position(0)
+        self.loudnessMeter.reset()
 
     # 播放状态改变时切换按钮文案
     def _on_playback_state_changed(self, state):
@@ -168,6 +204,7 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
             self.__media_player.stop()
             self.__media_player.setPosition(0)
             self.waveform.set_position(0)
+            self.loudnessMeter.reset()
 
     # 打开文件所在文件夹
     def open_containing_folder(self):

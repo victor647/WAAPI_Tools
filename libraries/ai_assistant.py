@@ -341,6 +341,96 @@ def _invoke_gui(runner, wait: bool = True):
     return _gui_invoker(runner, wait)
 
 
+# 危险操作的用户授权：由主窗口注入（弹窗确认），模型无法自行授权
+_confirm_sink: Callable[[dict], bool] | None = None
+# 本次任务内已获用户批准的工具名：同一工具只问一次，避免批量操作弹一屏确认框
+_approved_tools: set[str] = set()
+
+
+def set_confirm_sink(sink: Callable[[dict], bool] | None) -> None:
+    global _confirm_sink
+    _confirm_sink = sink
+
+
+def _reset_approvals() -> None:
+    _approved_tools.clear()
+
+
+# 工具说明/必填参数的统一查询：注册表优先，其余为 AI 助手本地工具
+_local_schemas: dict[str, dict] = {}
+
+
+def _local_schema(name: str) -> dict:
+    if not _local_schemas:
+        try:
+            schemas = build_tool_schemas()
+        except Exception as e:
+            # 预览/闸门不能因为取不到 schema 而把整个任务带崩
+            Logger().error(f"读取本地工具 schema 失败，危险操作将按普通工具处理：{e}")
+            return {}
+        for schema in schemas:
+            function = schema.get("function") or {}
+            _local_schemas[function.get("name") or ""] = function
+    return _local_schemas.get(name) or {}
+
+
+def _tool_required(name: str) -> list:
+    spec = tool_registry.get_tool(name)
+    if spec is not None:
+        return list(spec.parameters.get("required") or [])
+    return list((_local_schema(name).get("parameters") or {}).get("required") or [])
+
+
+def _tool_description(name: str) -> str:
+    spec = tool_registry.get_tool(name)
+    if spec is not None:
+        return spec.description
+    return _local_schema(name).get("description") or ""
+
+
+def _needs_user_approval(name: str) -> bool:
+    # 会改动工程的工具，或自身要求 confirmed 的工具（如 gui_run_action），都要过策略闸门
+    return _is_mutating_tool(name) or "confirmed" in _tool_required(name)
+
+
+# 修改策略的日志文案（取值见 user_config.MUTATION_POLICIES）
+MUTATION_POLICY_LABELS = {
+    "read_only": "只读（拒绝一切改动）",
+    "ask_before_changes": "改动前弹窗确认",
+    "allow_changes": "直接执行",
+}
+
+
+def _mutation_gate(name: str, arguments: dict) -> str | None:
+    # 返回 None 表示放行；否则返回回传给模型的说明，且本次调用不执行
+    if name == "run_wwise_script" and not user_config.get_ai_enable_script_tool():
+        return "脚本执行已在「设置 → AI 助手」中关闭；请改用现成工具（如 find_objects_by_property / aggregate_tool_chain）"
+    if not _needs_user_approval(name):
+        return None
+    policy = user_config.get_ai_mutation_policy()
+    if policy == "read_only":
+        return (
+            f"当前 AI 修改策略为「只读」，已拒绝执行会改动工程的 {name}。"
+            "需要修改时请用户在「设置 → AI 助手 → 修改策略」中调整。"
+        )
+    if policy == "ask_before_changes" and name not in _approved_tools:
+        try:
+            preview = tool_registry.describe_action(name, arguments)
+            preview["summary"] = preview.get("summary") or _tool_description(name).split("。")[0]
+        except Exception as e:
+            preview = {"tool": name, "summary": f"（自动预览失败：{e}）", "targets": []}
+        if _confirm_sink is None or not _confirm_sink(preview):
+            return (
+                f"用户未批准本次工程修改，{name} 未执行。"
+                "先用一句话说明将要改什么并征求用户同意，得到同意后再重新调用同一个工具。"
+            )
+        _approved_tools.add(name)
+    # 策略放行或用户已批准：由程序代用户补上 confirmed，模型不需要也不应该自己声明
+    if "confirmed" in _tool_required(name):
+        arguments["confirmed"] = True
+    return None
+
+
 def _resolve_special_token(token: str) -> list[str] | None:
     if token == "@table":
         return list(_table_object_ids)
@@ -1072,20 +1162,19 @@ def _serialize_for_model(value) -> str:
 
 
 
-def _execute_tool_call(name: str, raw_arguments: str, executed: list[dict]) -> str:
-    # 执行一次工具调用并返回回传给模型的结果文本
+def _parse_tool_arguments(raw_arguments) -> dict:
+    try:
+        arguments = json.loads(raw_arguments) if raw_arguments else {}
+    except ValueError:
+        return {}
+    return arguments if isinstance(arguments, dict) else {}
+
+
+def _execute_tool_call(name: str, arguments: dict, executed: list[dict]) -> str:
+    # 执行一次工具调用并返回回传给模型的结果文本（参数已解析、@token 已展开、策略闸门已放行）
     registry_spec = tool_registry.get_tool(name)
     if registry_spec is None and name not in TOOL_HANDLERS:
         return f"未知工具：{name}"
-    try:
-        arguments = json.loads(raw_arguments) if raw_arguments else {}
-        if not isinstance(arguments, dict):
-            arguments = {}
-    except ValueError:
-        arguments = {}
-    if name == "run_wwise_script" and not user_config.get_ai_enable_script_tool():
-        return "脚本执行已在「设置 → AI 助手」中关闭；请改用现成工具（如 find_objects_by_property / aggregate_tool_chain）"
-    arguments, _expanded_count = _expand_special_ids(arguments)
     try:
         if registry_spec is not None:
             # 注册表工具返回 JSON 兼容的结构化结果，统一转成文本回传给模型
@@ -1269,6 +1358,9 @@ def run_assistant(
     # 脚本执行期间同样响应中止请求
     tool_registry.set_execution_guard(lambda: bool(should_stop and should_stop()))
     set_table_context([obj.id for obj in objects])
+    _reset_approvals()
+    policy = user_config.get_ai_mutation_policy()
+    log(f"工程修改策略：{MUTATION_POLICY_LABELS.get(policy, policy)}")
     # 记录本次任务新建的对象，任务结束时把它们发送到表格
     waapi_utils.start_object_recording()
     _cleanup_stale_result_dirs()
@@ -1303,12 +1395,18 @@ def run_assistant(
                 for index, call in enumerate(tool_calls):
                     function = call.get("function") or {}
                     name = function.get("name") or ""
-                    arguments = function.get("arguments") or ""
-                    if _is_mutating_tool(name):
-                        _ensure_undo_open()
-                    tool_result = _execute_tool_call(name, arguments, result.executed_tools)
-                    if _is_mutating_tool(name):
-                        result.mutated = True
+                    arguments = _parse_tool_arguments(function.get("arguments") or "")
+                    arguments, _expanded_count = _expand_special_ids(arguments)
+                    blocked = _mutation_gate(name, arguments)
+                    if blocked is not None:
+                        # 策略拦截或用户未批准：不执行，也不占用撤销组
+                        tool_result = blocked
+                    else:
+                        if _is_mutating_tool(name):
+                            _ensure_undo_open()
+                        tool_result = _execute_tool_call(name, arguments, result.executed_tools)
+                        if _is_mutating_tool(name):
+                            result.mutated = True
                     log(
                         f"第 {turn} 轮调用工具 {name}（参数：{' '.join(str(arguments).split())[:120]}"
                         f"；返回：{' '.join(tool_result.split())[:120]}）"
@@ -1342,6 +1440,7 @@ def run_assistant(
         tool_registry.set_execution_guard(None)
         set_table_context([])
         set_table_sink(None)
+        set_confirm_sink(None)
         set_result_dir(None)
         if result_dir:
             shutil.rmtree(result_dir, ignore_errors=True)

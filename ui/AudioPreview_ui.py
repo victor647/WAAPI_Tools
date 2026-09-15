@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
     QHBoxLayout, QLabel, QPushButton, QSizePolicy,
     QSpacerItem, QVBoxLayout, QWidget)
 
+from libraries.widgets.loudness_meter_widget import LoudnessMeterWidget
 from libraries.widgets.waveform_widget import WaveformWidget
 
 class Ui_AudioPreview(object):
@@ -104,6 +105,8 @@ class Ui_AudioPreview(object):
 
         self.verticalLayout.addLayout(self.controlsRow)
 
+        self.waveformRow = QHBoxLayout()
+        self.waveformRow.setObjectName(u"waveformRow")
         self.waveform = WaveformWidget(AudioPreviewWindow)
         self.waveform.setObjectName(u"waveform")
         sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -113,7 +116,21 @@ class Ui_AudioPreview(object):
         self.waveform.setSizePolicy(sizePolicy)
         self.waveform.setMinimumSize(QSize(0, 180))
 
-        self.verticalLayout.addWidget(self.waveform)
+        self.waveformRow.addWidget(self.waveform)
+
+        self.loudnessMeter = LoudnessMeterWidget(AudioPreviewWindow)
+        self.loudnessMeter.setObjectName(u"loudnessMeter")
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.loudnessMeter.sizePolicy().hasHeightForWidth())
+        self.loudnessMeter.setSizePolicy(sizePolicy1)
+        self.loudnessMeter.setMinimumSize(QSize(76, 180))
+
+        self.waveformRow.addWidget(self.loudnessMeter)
+
+
+        self.verticalLayout.addLayout(self.waveformRow)
 
 
         self.retranslateUi(AudioPreviewWindow)

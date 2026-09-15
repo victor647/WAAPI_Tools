@@ -11,6 +11,12 @@ RETURN_FIELDS = {'return': ['id', 'name', 'type', 'path']}
 
 class WAAPIClient(metaclass=Singleton):
 
+    # 已经创建过的实例；未连接成功（构造抛异常）时返回 None，
+    # 供关闭连接、查询连接状态等场景使用，避免再次触发构造与连接异常
+    @classmethod
+    def get_existing(cls) -> "WAAPIClient | None":
+        return cls._instances.get(cls)
+
     def __init__(self, port: int=8080):
         self.client: WaapiClient = None
         self.port = port

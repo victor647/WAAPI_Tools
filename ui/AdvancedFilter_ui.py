@@ -16,8 +16,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QGroupBox,
-    QHBoxLayout, QPushButton, QRadioButton, QSizePolicy,
-    QSpacerItem, QVBoxLayout, QWidget)
+    QHBoxLayout, QRadioButton, QSizePolicy, QVBoxLayout,
+    QWidget)
 
 class Ui_AdvancedFilter(object):
     def setupUi(self, AdvancedFilterWindow):
@@ -78,20 +78,6 @@ class Ui_AdvancedFilter(object):
 
         self.verticalLayout.addWidget(self.grpLanguageFilter)
 
-        self.buttonRow = QHBoxLayout()
-        self.buttonRow.setObjectName(u"buttonRow")
-        self.buttonSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.buttonRow.addItem(self.buttonSpacer)
-
-        self.btnClose = QPushButton(AdvancedFilterWindow)
-        self.btnClose.setObjectName(u"btnClose")
-
-        self.buttonRow.addWidget(self.btnClose)
-
-
-        self.verticalLayout.addLayout(self.buttonRow)
-
 
         self.retranslateUi(AdvancedFilterWindow)
 
@@ -109,6 +95,5 @@ class Ui_AdvancedFilter(object):
         self.grpLanguageFilter.setTitle(QCoreApplication.translate("AdvancedFilter", u"\u8bed\u8a00\u7b5b\u9009", None))
         self.rbnLangAll.setText(QCoreApplication.translate("AdvancedFilter", u"\u5168\u90e8", None))
         self.rbnLangActive.setText(QCoreApplication.translate("AdvancedFilter", u"\u6309\u5f53\u524d\u8bed\u8a00\u7b5b\u9009", None))
-        self.btnClose.setText(QCoreApplication.translate("AdvancedFilter", u"\u5173\u95ed", None))
     # retranslateUi
 

@@ -44,7 +44,7 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 | 音频源与体积 | `get_audio_sources` / `calculate_audio_source_size` | 源文件路径、磁盘占用 |
 | 改名 / 备注 / 启用 / 颜色 | `rename_object` / `set_object_notes` / `set_object_inclusion` / `set_object_color` | |
 | 结构操作 | `create_parent` / `convert_to_type` / `split_underscore_to_folder` / `create_play_event` | |
-| 删除 | `delete_object`（需 `confirmed=true`） | AI 侧对应 `delete_objects` |
+| 删除 | `delete_object`（MCP 侧需 `confirmed=true`） | AI 侧对应 `delete_objects`，由软件按修改策略弹窗确认 |
 | 试听 | `play_sound` / `stop_sound` | 返回 `transport_id` |
 | 撤销 | `begin_undo_group` / `end_undo_group` / `undo` / `redo` | AI 批量任务会自动包撤销组 |
 
@@ -54,7 +54,7 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 - 大结果文件：`read_result_file` / `group_result_file`
 - 界面操作（等价于点按钮/菜单）：`gui_get_wwise_selection`、`gui_find_children`、`gui_find_parent`、
   `gui_set_filter`、`gui_open_window`、`gui_list_actions`、`gui_run_action`
-- 脚本：`run_wwise_script`（需设置里开启 `ai.enable_script_tool` 且传 `confirmed=true`；
+- 脚本：`run_wwise_script`（需设置里开启 `ai.enable_script_tool`；MCP 侧还要传 `confirmed=true`，AI 侧由修改策略处理；
   受限命名空间：可用 `tools_api` / `api_names` / `help()`，禁止 `import os/sys/subprocess/inspect`，
   循环与超时预算由 AST 注入）
 

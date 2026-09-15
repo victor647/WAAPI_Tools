@@ -34,6 +34,8 @@ DEFAULT_CONFIG = {
         "max_turns": 20,
         # 是否允许 AI 执行临时脚本（run_wwise_script）。默认关闭：IDE 调试器下可能不稳定
         "enable_script_tool": False,
+        # AI 修改策略：read_only=只读 / ask_before_changes=改动工程前弹窗让用户确认 / allow_changes=直接执行
+        "mutation_policy": "ask_before_changes",
     },
     "advanced_filter": {
         # 高级筛选窗口各选项的持久化状态
@@ -258,6 +260,15 @@ def get_ai_max_turns() -> int:
 
 def get_ai_enable_script_tool() -> bool:
     return bool(load_config()["ai"].get("enable_script_tool", DEFAULT_CONFIG["ai"]["enable_script_tool"]))
+
+
+# AI 修改策略取值：只读 / 改动前由用户确认 / 直接执行
+MUTATION_POLICIES = ("read_only", "ask_before_changes", "allow_changes")
+
+
+def get_ai_mutation_policy() -> str:
+    policy = load_config()["ai"].get("mutation_policy", DEFAULT_CONFIG["ai"]["mutation_policy"])
+    return policy if policy in MUTATION_POLICIES else DEFAULT_CONFIG["ai"]["mutation_policy"]
 
 
 def get_appearance_theme() -> str:

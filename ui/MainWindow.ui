@@ -556,6 +556,7 @@ Boss        包含 Boss
      <addaction name="actDeleteUnusedAKDFiles"/>
     </widget>
     <addaction name="mnuAudioOrganize"/>
+    <addaction name="actLoudnessAdjustment"/>
     <addaction name="separator"/>
     <addaction name="actAutoImport"/>
    </widget>
@@ -1029,6 +1030,11 @@ Boss        包含 Boss
   <action name="actSyncTrim">
    <property name="text">
     <string>同步裁剪</string>
+   </property>
+  </action>
+  <action name="actLoudnessAdjustment">
+   <property name="text">
+    <string>响度调整</string>
    </property>
   </action>
   <action name="actLocalizeLanguages">

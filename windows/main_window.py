@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import json
 import threading
 
 import clipboard
@@ -22,6 +23,7 @@ from table.wwise_object_table_gui import WwiseTableImpl
 from table.wwise_object_table import WwiseTableDisplayMode
 from table.wwise_table_headers import CHECK_BOX_COL, COMMON_HEADERS, ENABLE_COL, TABLE_DISPLAY_MODE_LABELS, PATH_COL
 from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSilenceTrimWindow
+from windows.loudness_adjustment_window import LoudnessAdjustmentWindow as LoudnessAdjustmentWindow
 from windows.advanced_filter_window import AdvancedFilterWindow as AdvancedFilterWindow
 from windows.advanced_find_window import AdvancedFindWindow as AdvancedFindWindow
 from windows.sync_trim_window import SyncTrimWindow as SyncTrimWindow
@@ -34,7 +36,7 @@ from windows.project_settings_window import ProjectSettingsWindow as ProjectSett
 from windows.media_size_window import MediaSizeWindow as MediaSizeWindow
 from windows.property_query_window import PropertyQueryWindow as PropertyQueryWindow
 from waapi import CannotConnectToWaapiException
-from PySide6.QtWidgets import QApplication, QDialog, QMainWindow, QMenu, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QDialog, QMainWindow, QMenu, QMessageBox, QTableWidgetItem
 from ui.MainWindow_ui import Ui_MainWindow
 from windows.export_object_list_window import ExportObjectListWindow as ExportObjectListWindow
 from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_utils, soundbank_utils, \
@@ -91,13 +93,14 @@ class AiChatWorker(QThread):
         # 请求中止：agent loop 会在每轮/每次网络请求等待期间响应
         self._stop_event.set()
 
-    def invoke_gui(self, runner, wait: bool = True):
-        # 把界面操作切到主线程执行；wait=False 用于"打开窗口给用户看"这类不等结果的操作
+    def invoke_gui(self, runner, wait: bool = True, timeout: float | None = 30):
+        # 把界面操作切到主线程执行；wait=False 用于"打开窗口给用户看"这类不等结果的操作；
+        # timeout=None 表示一直等（用户确认弹窗这类必须等用户操作）
         job = AiGuiJob(runner)
         self.gui_job_signal.emit(job)
         if not wait:
             return None
-        if not job.event.wait(30):
+        if not job.event.wait(timeout):
             raise TimeoutError("界面操作等待超时（可能被模态窗口阻塞）")
         if job.error is not None:
             raise job.error
@@ -105,10 +108,16 @@ class AiChatWorker(QThread):
 
     def run(self):
         try:
-            from libraries.ai_assistant import AIAgentStopped, run_assistant, set_gui_invoker, set_table_sink
+            from libraries.ai_assistant import (
+                AIAgentStopped, run_assistant, set_confirm_sink, set_gui_invoker, set_table_sink,
+            )
 
             set_table_sink(lambda ids, append: self.table_objects_signal.emit(list(ids), append))
             set_gui_invoker(self.invoke_gui)
+            # 危险操作的授权只能来自用户本人：模型无法自己声明 confirmed
+            set_confirm_sink(
+                lambda preview: bool(self.invoke_gui(lambda w: w.ai_confirm_mutation(preview), timeout=None))
+            )
             try:
                 result = run_assistant(
                     self._prompt,
@@ -119,6 +128,7 @@ class AiChatWorker(QThread):
             finally:
                 set_table_sink(None)
                 set_gui_invoker(None)
+                set_confirm_sink(None)
             if result.mutated:
                 refreshed = self._resolve_objects_after_ai()
                 self.objects_refreshed_signal.emit(refreshed, [obj.id for obj in self._objects])
@@ -182,6 +192,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_triggers()
         self._setup_action_help()
         self._setup_ai_assistant()
+        # 先按应用目录加载一次规范，未连接 Wwise 时也能拿到配置（连接成功后 check_wwise_connection 会按工程目录再加载）
+        project_conventions.init()
         self.check_wwise_connection()
         self.update_convention_action_states()
         self._update_history_buttons()
@@ -337,6 +349,45 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             job.error = e
         finally:
             job.event.set()
+
+    # AI 请求改动工程：在主线程弹窗，由用户本人决定是否放行（模型无法自行授权）
+    def ai_confirm_mutation(self, preview: dict) -> bool:
+        preview = preview if isinstance(preview, dict) else {}
+        targets = preview.get("targets") or []
+        lines = []
+        summary = str(preview.get("summary") or "").strip()
+        if summary:
+            lines.append(summary)
+        if targets:
+            lines.append("")
+            lines.append(f"影响对象（{len(targets)} 个）：")
+            lines.extend(f"  · {item.get('name')}（{item.get('type')}）" for item in targets[:10])
+            if len(targets) > 10:
+                lines.append(f"  … 其余 {len(targets) - 10} 个")
+        elif preview.get("target_count"):
+            lines.append("")
+            lines.append(f"影响对象：{preview['target_count']} 个（解析不出名称）")
+        other = preview.get("other_arguments") or {}
+        if other:
+            lines.append("")
+            lines.append(f"其它参数：{json.dumps(other, ensure_ascii=False)}")
+        lines.append("")
+        lines.append("允许本次任务执行该操作吗？（同一操作在本次任务内只询问一次）")
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("AI 助手请求修改工程")
+        box.setText("\n".join(lines))
+        allow_button = box.addButton("允许执行", QMessageBox.ButtonRole.AcceptRole)
+        deny_button = box.addButton("拒绝", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(deny_button)
+        box.exec()
+        allowed = box.clickedButton() is allow_button
+        if allowed:
+            Logger().info(f"用户已允许 AI 执行 {preview.get('tool')}（{len(targets) or preview.get('target_count') or 0} 个对象）")
+        else:
+            Logger().warning(f"用户拒绝了 AI 执行 {preview.get('tool')}")
+        return allowed
 
     # AI 打开软件功能窗口（键名见 gui_open_window 工具说明）
     def ai_open_window(self, window_key: str) -> str:
@@ -639,6 +690,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 源文件菜单
         self.actTrimAudioSilence.triggered.connect(self.open_audio_silence_trimmer_window)
         self.actSyncTrim.triggered.connect(self.open_sync_trim_window)
+        self.actLoudnessAdjustment.triggered.connect(self.open_loudness_adjustment_window)
         self.setup_batch_processor(self.actApplyEditsToOriginal, lambda index, obj: audio_source_utils.apply_source_edits(obj), WwiseObjectType.AudioSource)
         self.setup_batch_processor(self.actResetSourceEdits, lambda index, obj: audio_source_utils.reset_source_editor(obj), WwiseObjectType.AudioSource)
         self.setup_batch_processor(self.actRenameOriginalToWwise, lambda index, obj: audio_source_utils.rename_original_to_wwise(obj), WwiseObjectType.Sound)
@@ -1351,6 +1403,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         trim_window = SyncTrimWindow(sources)
         trim_window.show()
         trim_window.exec()
+
+    # 打开响度调整窗口，统一表格中所有 AudioSource 的响度
+    def open_loudness_adjustment_window(self):
+        target_objects = self.get_tool_target_objects(WwiseObjectType.AudioSource)
+        loudness_window = LoudnessAdjustmentWindow(target_objects)
+        loudness_window.show()
+        loudness_window.exec()
 
     # 打开媒体资源大小统计窗口（按每个对象逐项展示）
     def calculate_media_size(self):

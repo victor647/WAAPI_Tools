@@ -45,18 +45,16 @@ def find_dev_project_root():
             return parent
     raise RuntimeError("Project root not found")
 
+# 获取应用所在目录：打包后为 exe 所在目录，开发环境为仓库根目录（可写运行时文件放这里）
+def get_app_dir() -> str:
+    if is_bundled():
+        return os.path.dirname(sys.executable)
+    return str(find_dev_project_root())
+
+
 # 获取应用数据路径（用于存储可写文件，如配置文件）
 def get_app_data_path(filename: str = "") -> str:
-    # 获取应用数据目录路径（用于存储可写文件）
-    # 在打包环境中，返回exe文件所在目录
-    # 在开发环境中，返回项目根目录
-    if is_bundled():
-        # 打包环境：返回exe文件所在目录
-        base_path = os.path.dirname(sys.executable)
-    else:
-        # 开发环境：返回项目根目录
-        base_path = os.path.dirname(os.path.dirname(__file__))
-
+    base_path = get_app_dir()
     if filename:
         return combine_path(base_path, filename)
     return base_path

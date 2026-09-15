@@ -26,6 +26,11 @@ DEFAULT_NAME_CASE_MODE = 'title'
 DEFAULT_USE_AUTO_DEFINED_BANK = True
 DEFAULT_SPLIT_EVENT_MEDIA = False
 
+# Event 设置默认值：默认不加 Play_ 前缀、引用对象使用深色、Event 与播放对象互为备注
+DEFAULT_EVENT_PLAY_PREFIX = False
+DEFAULT_EVENT_REF_DARK_COLOR = True
+DEFAULT_EVENT_REF_NOTES = True
+
 
 def _app_dir() -> str:
     # 打包后为 exe 所在目录（可写），开发环境为仓库根目录
@@ -112,8 +117,8 @@ def save_conventions(new_conventions: dict) -> bool:
 # 初始化工程规范配置文件
 def init():
     global conventions, _conventions_path
-    project_directory = project_utils.get_project_directory()
-    json_path = _resolve_conventions_json_path(project_directory)
+    # 未连接 Wwise 时取不到工程目录，退回应用目录的规范文件，避免整个应用拿不到规范数据
+    json_path = get_conventions_path()
     if not json_path:
         json_path = _initialize_conventions_file()
     if json_path and os.path.exists(json_path):
@@ -163,18 +168,26 @@ def get_color_map() -> dict:
     return conventions.get('ColorMap') or {}
 
 
-# 被 Event 引用的对象是否使用同色系深色（仅影响自动调整颜色的工具）
+# Event 设置：被 Event 引用的对象是否使用同色系深色（仅影响自动调整颜色的工具）
 def use_dark_color_for_event_ref() -> bool:
-    section = _convention_section('ColorConvention')
-    if 'EventRefDarkColor' in section:
-        return bool(section['EventRefDarkColor'])
-    return True
+    section = _convention_section('EventConvention')
+    if 'RefDarkColor' in section:
+        return bool(section['RefDarkColor'])
+    # 旧配置把该项放在颜色规范里
+    legacy = _convention_section('ColorConvention')
+    if 'EventRefDarkColor' in legacy:
+        return bool(legacy['EventRefDarkColor'])
+    return DEFAULT_EVENT_REF_DARK_COLOR
 
 
-# Event 与播放对象是否互为备注（关闭后自动更新备注的工具不再改动 Notes）
+# Event 设置：Event 与播放对象是否互为备注（关闭后自动更新备注的工具不再改动 Notes）
 def use_event_ref_notes() -> bool:
+    section = _convention_section('EventConvention')
+    if 'RefNotes' in section:
+        return bool(section['RefNotes'])
+    # 旧配置把该项放在顶层
     if not conventions or 'EventRefNotes' not in conventions:
-        return True
+        return DEFAULT_EVENT_REF_NOTES
     return bool(conventions['EventRefNotes'])
 
 
@@ -363,11 +376,14 @@ def get_unimplemented_languages() -> list:
     return conventions['UnimplementedLanguages']
 
 
-# 事件是否以Play_开头
+# Event 设置：事件是否以 Play_ 开头（旧配置放在顶层 PlayPrefixInEvent）
 def has_event_play_prefix() -> bool:
+    section = _convention_section('EventConvention')
+    if 'PlayPrefix' in section:
+        return bool(section['PlayPrefix'])
     if not conventions or 'PlayPrefixInEvent' not in conventions:
-        return False
-    return conventions['PlayPrefixInEvent']
+        return DEFAULT_EVENT_PLAY_PREFIX
+    return bool(conventions['PlayPrefixInEvent'])
 
 
 # Bank 设置：是否使用自动定义的 Bank

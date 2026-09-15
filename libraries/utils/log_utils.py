@@ -9,8 +9,30 @@ def _waapi_mcp_mode() -> bool:
     return os.environ.get("WAAPI_MCP") == "1"
 
 
-def _console_print(line: str) -> None:
-    print(line, file=sys.stderr if _waapi_mcp_mode() else sys.stdout)
+# 运行日志文件：每次启动以 w 模式重写，放在应用目录（打包后为 exe 所在目录）
+# GUI 与 MCP 分开写日志文件，均放在应用目录，每次启动以 w 模式重写
+LOG_FILE_NAMES = {"gui": "gui_log.log", "mcp": "mcp_log.log"}
+
+
+# 当前进程属于哪种运行模式（MCP 以 stdio 提供服务，与 GUI 分开记日志）
+def log_mode() -> str:
+    return "mcp" if _waapi_mcp_mode() else "gui"
+
+
+def _log_dir() -> str:
+    # 延迟导入 path_utils：该模块顶部依赖本模块，避免循环导入
+    from libraries.utils import path_utils
+
+    return path_utils.get_app_dir()
+
+
+def _software_version() -> str:
+    try:
+        from globals.version import get_software_version
+
+        return get_software_version()
+    except Exception:
+        return ""
 
 # 日志窗口字体颜色：[颜色, 字号, 字重]
 _DARK_FONT_STYLES = {
@@ -92,30 +114,56 @@ class CustomFormatter(logging.Formatter):
 class ColorfulCMDLogger(object):
     def __init__(self):
         self.logger = logging.getLogger("FFSimpleTool")
-        # MCP stdio：仅 stderr，避免与 stdout 上的 JSON-RPC 混流
-        stream = sys.stderr if _waapi_mcp_mode() else None
-        self.console_handle = logging.StreamHandler(stream)
-        self.set_format_for_cmd()
-
-    def set_format_for_cmd(self):
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
+        self.console_handle = None
+
+    # 控制台句柄：IDE 里用带 ANSI 颜色的 stderr，普通命令行用不带颜色码的 stdout；
+    # MCP stdio 固定走 stderr（避免与 stdout 上的 JSON-RPC 混流），
+    # 打包成无控制台的 exe 时两个流都是 None，此时不注册控制台句柄，只写日志文件
+    def attach_console(self, use_color: bool) -> None:
+        stream = sys.stderr if (_waapi_mcp_mode() or use_color) else sys.stdout
+        if stream is None:
+            return
+        self.console_handle = logging.StreamHandler(stream)
         self.console_handle.setLevel(logging.DEBUG)
-        self.console_handle.setFormatter(CustomFormatter())
-        if not self.logger.handlers:
-            self.logger.addHandler(self.console_handle)
+        formatter = CustomFormatter() if use_color else logging.Formatter("%(message)s")
+        self.console_handle.setFormatter(formatter)
+        self.logger.addHandler(self.console_handle)
 
 
 # Logger: 在console和QTextItem中输出
 class Logger(object, metaclass=Singleton):
     def __init__(self):
         self.to_cmdline = True
-        self.colorful_cmd_logger = ColorfulCMDLogger().logger
+        self._console_logger = ColorfulCMDLogger()
+        self.colorful_cmd_logger = self._console_logger.logger
         # 在Pycharm中的Console中执行：带颜色；在exe中执行：不带颜色
         self.enable_colorful_cmdline = True if os.getenv("PYCHARM_HOSTED") else False
         self._log_window_stream = None
         self._status_bar_stream = None
         self._debug_mode = False
+        self.log_file_path = ""
+        self._console_logger.attach_console(self.enable_colorful_cmdline)
+        self._setup_file_log()
+
+    # 运行日志文件：每次启动重写一份，便于只看本次运行的完整输出
+    def _setup_file_log(self) -> None:
+        mode = log_mode()
+        path = os.path.join(_log_dir(), LOG_FILE_NAMES[mode])
+        try:
+            handler = logging.FileHandler(path, mode="w", encoding="utf-8")
+        except OSError as e:
+            self.info(f"无法写入日志文件 {path}：{e}")
+            return
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+        self.colorful_cmd_logger.addHandler(handler)
+        self.log_file_path = path
+        header = (f"===== WAAPI 工具集 {_software_version()} 启动 "
+                  f"{time.strftime('%Y-%m-%d %H:%M:%S')} ({mode.upper()}) =====\n")
+        handler.stream.write(header)
+        handler.stream.flush()
 
     # 在文本框中显示日志
     def set_log_window_stream(self, output_stream):
@@ -154,54 +202,40 @@ class Logger(object, metaclass=Singleton):
                            f"color:{color};\" >" + log_info + "</span>"
             self._log_window_stream(colored_text)
 
+    # 控制台与日志文件统一由 logging 句柄输出：控制台句柄缺失（无控制台的 exe）时只落日志文件
+    def _emit(self, log_info: str, level: int, exc_info: bool = False):
+        if not self.to_cmdline:
+            return
+        self.colorful_cmd_logger.log(level, log_info, exc_info=exc_info)
+
     # 用户主动查询的信息（浅紫色）
     def query(self, text: str):
         log_info = self._get_log_info(text, logging.INFO)
-        if self.to_cmdline:
-            if self.enable_colorful_cmdline:
-                self.colorful_cmd_logger.info(log_info)
-            else:
-                _console_print(log_info)
+        self._emit(log_info, logging.INFO)
         self.log_to_output_stream(log_info, "QUERY")
 
     # 提示日志（默认颜色）
     def info(self, text: str):
         log_info = self._get_log_info(text, logging.INFO)
-        if self.to_cmdline:
-            if self.enable_colorful_cmdline:
-                self.colorful_cmd_logger.info(log_info)
-            else:
-                _console_print(log_info)
+        self._emit(log_info, logging.INFO)
         self.log_to_output_stream(log_info, "INFO")
 
     # 警告日志（黄色）
     def warning(self, text: str):
         log_info = self._get_log_info(text, logging.WARNING)
-        if self.to_cmdline:
-            if self.enable_colorful_cmdline:
-                self.colorful_cmd_logger.warning(log_info)
-            else:
-                _console_print(log_info)
+        self._emit(log_info, logging.WARNING)
         self.log_to_output_stream(log_info, "WARNING")
 
     # 错误日志（红色）
     def error(self, text: str):
         log_info = self._get_log_info(text, logging.ERROR)
-        if self.to_cmdline:
-            if self.enable_colorful_cmdline:
-                self.colorful_cmd_logger.error(log_info)
-            else:
-                _console_print(log_info)
+        self._emit(log_info, logging.ERROR)
         self.log_to_output_stream(log_info, "ERROR")
 
     # 底层日志（深紫色）
     def debug(self, text: str):
         log_info = self._get_log_info(text, logging.DEBUG)
-        if self.to_cmdline:
-            if self.enable_colorful_cmdline:
-                self.colorful_cmd_logger.debug(log_info)
-            else:
-                _console_print(log_info)
+        self._emit(log_info, logging.DEBUG)
         # 仅Debug模式开启
         if self._debug_mode:
             self.log_to_output_stream(log_info, "DEBUG")
@@ -209,11 +243,7 @@ class Logger(object, metaclass=Singleton):
     # 故障日志（红色）
     def exception(self, text: str):
         log_info = self._get_log_info(text, logging.ERROR)
-        if self.to_cmdline:
-            if self.enable_colorful_cmdline:
-                self.colorful_cmd_logger.exception(log_info)
-            else:
-                _console_print(log_info)
+        self._emit(log_info, logging.ERROR, exc_info=True)
         self.log_to_output_stream(log_info, "EXCEPTION")
 
     # 状态栏日志

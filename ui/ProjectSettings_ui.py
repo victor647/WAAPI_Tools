@@ -50,12 +50,6 @@ class Ui_ProjectSettings(object):
 
         self.regulationSwitches.addWidget(self.cbxEnableColor, 0, 1, 1, 1)
 
-        self.cbxEventRefDarkColor = QCheckBox(self.tabNaming)
-        self.cbxEventRefDarkColor.setObjectName(u"cbxEventRefDarkColor")
-        self.cbxEventRefDarkColor.setChecked(True)
-
-        self.regulationSwitches.addWidget(self.cbxEventRefDarkColor, 1, 1, 1, 1)
-
         self.cbxEnableNameCase = QCheckBox(self.tabNaming)
         self.cbxEnableNameCase.setObjectName(u"cbxEnableNameCase")
         self.cbxEnableNameCase.setChecked(True)
@@ -80,17 +74,6 @@ class Ui_ProjectSettings(object):
         self.cbxFullNameInSound.setObjectName(u"cbxFullNameInSound")
 
         self.regulationSwitches.addWidget(self.cbxFullNameInSound, 1, 3, 1, 1)
-
-        self.cbxPlayPrefixInEvent = QCheckBox(self.tabNaming)
-        self.cbxPlayPrefixInEvent.setObjectName(u"cbxPlayPrefixInEvent")
-
-        self.regulationSwitches.addWidget(self.cbxPlayPrefixInEvent, 0, 5, 1, 1)
-
-        self.cbxEventRefNotes = QCheckBox(self.tabNaming)
-        self.cbxEventRefNotes.setObjectName(u"cbxEventRefNotes")
-        self.cbxEventRefNotes.setChecked(True)
-
-        self.regulationSwitches.addWidget(self.cbxEventRefNotes, 1, 5, 1, 1)
 
         self.regulationSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
@@ -120,6 +103,34 @@ class Ui_ProjectSettings(object):
 
 
         self.tabNamingLayout.addWidget(self.grpBankSettings)
+
+        self.grpEventSettings = QGroupBox(self.tabNaming)
+        self.grpEventSettings.setObjectName(u"grpEventSettings")
+        self.eventSettingsLayout = QHBoxLayout(self.grpEventSettings)
+        self.eventSettingsLayout.setObjectName(u"eventSettingsLayout")
+        self.cbxPlayPrefixInEvent = QCheckBox(self.grpEventSettings)
+        self.cbxPlayPrefixInEvent.setObjectName(u"cbxPlayPrefixInEvent")
+
+        self.eventSettingsLayout.addWidget(self.cbxPlayPrefixInEvent)
+
+        self.cbxEventRefDarkColor = QCheckBox(self.grpEventSettings)
+        self.cbxEventRefDarkColor.setObjectName(u"cbxEventRefDarkColor")
+        self.cbxEventRefDarkColor.setChecked(True)
+
+        self.eventSettingsLayout.addWidget(self.cbxEventRefDarkColor)
+
+        self.cbxEventRefNotes = QCheckBox(self.grpEventSettings)
+        self.cbxEventRefNotes.setObjectName(u"cbxEventRefNotes")
+        self.cbxEventRefNotes.setChecked(True)
+
+        self.eventSettingsLayout.addWidget(self.cbxEventRefNotes)
+
+        self.eventSettingsSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.eventSettingsLayout.addItem(self.eventSettingsSpacer)
+
+
+        self.tabNamingLayout.addWidget(self.grpEventSettings)
 
         self.wgtNamingContent = QWidget(self.tabNaming)
         self.wgtNamingContent.setObjectName(u"wgtNamingContent")
@@ -338,6 +349,16 @@ class Ui_ProjectSettings(object):
 
         self.aiForm.setWidget(8, QFormLayout.ItemRole.FieldRole, self.spnAiMaxTurns)
 
+        self.lblAiMutationPolicy = QLabel(self.tabAi)
+        self.lblAiMutationPolicy.setObjectName(u"lblAiMutationPolicy")
+
+        self.aiForm.setWidget(9, QFormLayout.ItemRole.LabelRole, self.lblAiMutationPolicy)
+
+        self.cbbAiMutationPolicy = QComboBox(self.tabAi)
+        self.cbbAiMutationPolicy.setObjectName(u"cbbAiMutationPolicy")
+
+        self.aiForm.setWidget(9, QFormLayout.ItemRole.FieldRole, self.cbbAiMutationPolicy)
+
 
         self.tabAiLayout.addLayout(self.aiForm)
 
@@ -425,10 +446,6 @@ class Ui_ProjectSettings(object):
 #if QT_CONFIG(tooltip)
         self.cbxEnableColor.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u542f\u7528\u540e\uff0c\u65b0\u5efa/\u590d\u5236\u5bf9\u8c61\u65f6\u6309\u300c\u5206\u7c7b\u547d\u540d\u4e0e\u989c\u8272\u300d\u8868\u7ed9\u5bf9\u8c61\u8bbe\u7f6e\u5bf9\u5e94\u7684 Wwise \u989c\u8272\u503c\uff1b\u5de5\u7a0b\u68c0\u67e5\u5de5\u5177\u4e2d\u7684\u300c\u989c\u8272\u4e0e\u5bf9\u8c61\u7c7b\u522b\u4e0d\u4e00\u81f4\u300d\u4e5f\u4f9d\u8d56\u6b64\u9879\u3002", None))
 #endif // QT_CONFIG(tooltip)
-        self.cbxEventRefDarkColor.setText(QCoreApplication.translate("ProjectSettings", u"Event \u5f15\u7528\u4f7f\u7528\u6df1\u8272", None))
-#if QT_CONFIG(tooltip)
-        self.cbxEventRefDarkColor.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u542f\u7528\u540e\uff0c\u300c\u66f4\u65b0\u5907\u6ce8\u4e0e\u989c\u8272\u300d\u7b49\u81ea\u52a8\u8c03\u6574\u989c\u8272\u7684\u5de5\u5177\u4f1a\u628a\u88ab Event \u64ad\u653e\uff08\u6216\u88ab SoundBank \u5305\u542b\uff09\u7684\u5bf9\u8c61\u6539\u6210\u540c\u8272\u7cfb\u7684\u6df1\u8272\u7248\u672c\uff0c\u65b9\u4fbf\u533a\u5206\u5df2\u6302\u4e8b\u4ef6\u7684\u5bf9\u8c61\uff1b\u5173\u95ed\u540e\u8fd9\u4e9b\u5bf9\u8c61\u4fdd\u6301\u666e\u901a\u5206\u7c7b\u8272\u3002", None))
-#endif // QT_CONFIG(tooltip)
         self.cbxEnableNameCase.setText(QCoreApplication.translate("ProjectSettings", u"\u542f\u7528\u540d\u79f0\u5927\u5c0f\u5199\u89c4\u8303", None))
 #if QT_CONFIG(tooltip)
         self.cbxEnableNameCase.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u542f\u7528\u540e\uff0c\u5de5\u7a0b\u68c0\u67e5\u4f1a\u6309\u4e0b\u9762\u9009\u62e9\u7684\u5927\u5c0f\u5199\u65b9\u5f0f\u6821\u9a8c\u5bf9\u8c61\u540d\u5206\u6bb5\uff08\u6309 _ \u6216\u7a7a\u683c\u5206\u8bcd\uff09\uff1b\u5173\u95ed\u540e\u300c\u4e0d\u7b26\u5408\u5927\u5c0f\u5199\u89c4\u8303\u300d\u68c0\u67e5\u9879\u4e0d\u53ef\u7528\u3002", None))
@@ -450,14 +467,6 @@ class Ui_ProjectSettings(object):
 #if QT_CONFIG(tooltip)
         self.cbxFullNameInSound.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u8def\u5f84\u957f\u5ea6\u89c4\u8303\u7684\u4e00\u90e8\u5206\uff0c\u4ec5\u5728\u542f\u7528\u8def\u5f84\u957f\u5ea6\u89c4\u8303\u65f6\u53ef\u7528\uff1a\u521b\u5efa Play \u4e8b\u4ef6\u65f6\uff0cSound \u8282\u70b9\u5373\u4f7f\u5e26 _ \u4e5f\u76f4\u63a5\u7528\u5b8c\u6574\u540d\u79f0\u4f5c\u4e3a\u4e8b\u4ef6\u540d\uff0c\u800c\u4e0d\u662f\u518d\u62fc\u4e00\u6b21\u4e0a\u6e38\u5c42\u7ea7\u540d\u79f0\u3002", None))
 #endif // QT_CONFIG(tooltip)
-        self.cbxPlayPrefixInEvent.setText(QCoreApplication.translate("ProjectSettings", u"Event \u4ee5 Play_ \u5f00\u5934", None))
-#if QT_CONFIG(tooltip)
-        self.cbxPlayPrefixInEvent.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u72ec\u7acb\u5f00\u5173\uff0c\u4e0d\u53d7\u5176\u5b83\u89c4\u8303\u5f71\u54cd\uff1a\u5f00\u542f\u540e\u65b0\u5efa\u7684 Play \u4e8b\u4ef6\u540d\u79f0\u7edf\u4e00\u5e26 Play_ \u524d\u7f00\u3002", None))
-#endif // QT_CONFIG(tooltip)
-        self.cbxEventRefNotes.setText(QCoreApplication.translate("ProjectSettings", u"Event \u4e0e\u64ad\u653e\u5bf9\u8c61\u4e92\u4e3a\u5907\u6ce8", None))
-#if QT_CONFIG(tooltip)
-        self.cbxEventRefNotes.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u5f00\u542f\u540e\uff0c\u81ea\u52a8\u66f4\u65b0\u5907\u6ce8\u7684\u5de5\u5177\u4f1a\u628a Event \u7684\u64ad\u653e\u5bf9\u8c61\u5199\u4e0a\u300cPlayed by Event [...]\u300d\u3001Event \u5199\u4e0a\u5bf9\u8c61\u8def\u5f84\uff08\u88ab SoundBank \u5305\u542b\u7684\u5bf9\u8c61\u5199\u300cIncluded by SoundBank [...]\u300d\uff09\uff1b\u5173\u95ed\u540e\u8fd9\u4e9b\u5de5\u5177\u4e0d\u518d\u6539\u52a8 Notes\u3002", None))
-#endif // QT_CONFIG(tooltip)
         self.grpBankSettings.setTitle(QCoreApplication.translate("ProjectSettings", u"Bank\u8bbe\u7f6e", None))
         self.cbxAutoDefinedBank.setText(QCoreApplication.translate("ProjectSettings", u"\u4f7f\u7528\u81ea\u52a8\u5b9a\u4e49\u7684Bank", None))
 #if QT_CONFIG(tooltip)
@@ -466,6 +475,19 @@ class Ui_ProjectSettings(object):
         self.cbxSplitEventMedia.setText(QCoreApplication.translate("ProjectSettings", u"Bank\u62c6\u5206Event\u548cMedia", None))
 #if QT_CONFIG(tooltip)
         self.cbxSplitEventMedia.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u4ec5\u5728\u5173\u95ed\u300c\u4f7f\u7528\u81ea\u52a8\u5b9a\u4e49\u7684Bank\u300d\u65f6\u53ef\u7528\uff1a\u5f00\u542f\u540e SoundBank \u5206\u914d\u5de5\u5177\u4f1a\u4e3a\u6bcf\u4e2a\u77e9\u9635\u7ec4\u5408\u521b\u5efa _Event \u4e0e _Media \u4e24\u4e2a Bank\uff08\u5206\u522b\u5305\u542b\u4e8b\u4ef6\u7ed3\u6784\u4e0e\u5a92\u4f53\uff09\uff0c\u5173\u95ed\u65f6\u53ea\u521b\u5efa\u4e00\u4e2a\u540c\u65f6\u5305\u542b\u5168\u90e8\u5185\u5bb9\u7684 Bank\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.grpEventSettings.setTitle(QCoreApplication.translate("ProjectSettings", u"Event\u8bbe\u7f6e", None))
+        self.cbxPlayPrefixInEvent.setText(QCoreApplication.translate("ProjectSettings", u"Event \u4ee5 Play_ \u5f00\u5934", None))
+#if QT_CONFIG(tooltip)
+        self.cbxPlayPrefixInEvent.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u72ec\u7acb\u5f00\u5173\uff0c\u4e0d\u53d7\u5176\u5b83\u89c4\u8303\u5f71\u54cd\uff1a\u5f00\u542f\u540e\u65b0\u5efa\u7684 Play \u4e8b\u4ef6\u540d\u79f0\u7edf\u4e00\u5e26 Play_ \u524d\u7f00\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.cbxEventRefDarkColor.setText(QCoreApplication.translate("ProjectSettings", u"Event \u5f15\u7528\u4f7f\u7528\u6df1\u8272", None))
+#if QT_CONFIG(tooltip)
+        self.cbxEventRefDarkColor.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u4ec5\u5728\u542f\u7528\u989c\u8272\u89c4\u8303\u65f6\u53ef\u7528\uff1a\u5f00\u542f\u540e\uff0c\u300c\u66f4\u65b0\u5907\u6ce8\u4e0e\u989c\u8272\u300d\u7b49\u81ea\u52a8\u8c03\u6574\u989c\u8272\u7684\u5de5\u5177\u4f1a\u628a\u88ab Event \u64ad\u653e\uff08\u6216\u88ab SoundBank \u5305\u542b\uff09\u7684\u5bf9\u8c61\u6539\u6210\u540c\u8272\u7cfb\u7684\u6df1\u8272\u7248\u672c\uff0c\u65b9\u4fbf\u533a\u5206\u5df2\u6302\u4e8b\u4ef6\u7684\u5bf9\u8c61\uff1b\u5173\u95ed\u540e\u8fd9\u4e9b\u5bf9\u8c61\u4fdd\u6301\u666e\u901a\u5206\u7c7b\u8272\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.cbxEventRefNotes.setText(QCoreApplication.translate("ProjectSettings", u"Event \u4e0e\u64ad\u653e\u5bf9\u8c61\u4e92\u4e3a\u5907\u6ce8", None))
+#if QT_CONFIG(tooltip)
+        self.cbxEventRefNotes.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u5f00\u542f\u540e\uff0c\u81ea\u52a8\u66f4\u65b0\u5907\u6ce8\u7684\u5de5\u5177\u4f1a\u628a Event \u7684\u64ad\u653e\u5bf9\u8c61\u5199\u4e0a\u300cPlayed by Event [...]\u300d\u3001Event \u5199\u4e0a\u5bf9\u8c61\u8def\u5f84\uff08\u88ab SoundBank \u5305\u542b\u7684\u5bf9\u8c61\u5199\u300cIncluded by SoundBank [...]\u300d\uff09\uff1b\u5173\u95ed\u540e\u8fd9\u4e9b\u5de5\u5177\u4e0d\u518d\u6539\u52a8 Notes\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.lblCategoryHeader.setText(QCoreApplication.translate("ProjectSettings", u"\u5206\u7c7b\u547d\u540d\u4e0e\u989c\u8272\uff08\u5206\u7c7b\u540d \u2192 \u7f29\u5199 / Wwise \u989c\u8272\u503c\uff09", None))
         self.lblContainerHeader.setText(QCoreApplication.translate("ProjectSettings", u"\u5bb9\u5668\u5b50\u8282\u70b9\u540e\u7f00\uff08\u6b63\u5219\u8868\u8fbe\u5f0f\uff09", None))
@@ -502,7 +524,8 @@ class Ui_ProjectSettings(object):
         self.cbxAiEnableScript.setText(QCoreApplication.translate("ProjectSettings", u"\u5141\u8bb8 AI \u6267\u884c\u4e34\u65f6\u811a\u672c\uff08run_wwise_script\uff1bIDE \u8c03\u8bd5\u5668\u4e0b\u53ef\u80fd\u4e0d\u7a33\u5b9a\uff0c\u9ed8\u8ba4\u5173\u95ed\uff09", None))
         self.lblAiMaxContext.setText(QCoreApplication.translate("ProjectSettings", u"\u5355\u6b21\u6700\u5927\u5bf9\u8c61\u6570", None))
         self.lblAiMaxTurns.setText(QCoreApplication.translate("ProjectSettings", u"\u6700\u5927\u5bf9\u8bdd\u8f6e\u6570", None))
-        self.lblAiHint.setText(QCoreApplication.translate("ProjectSettings", u"\u8fde\u63a5\u6a21\u5f0f\uff1a\u4ee3\u7406\u6a21\u5f0f\u8d70\u672c\u5730/\u516c\u53f8\u4ee3\u7406\u5730\u5740\uff1b\u5b98\u65b9 API \u6a21\u5f0f\u6309\u201c\u670d\u52a1\u63d0\u4f9b\u65b9\u201d\u76f4\u8fde\uff08OpenAI / DeepSeek / \u901a\u4e49\u5343\u95ee / Kimi / \u667a\u8c31 GLM / Gemini / Claude / \u81ea\u5b9a\u4e49\uff09\u3002Claude \u4f7f\u7528 Anthropic \u539f\u751f\u534f\u8bae\uff0c\u5fc5\u987b\u586b\u5199\u6a21\u578b\u540d\uff1b\u5176\u4f59\u5382\u5546\u8d70 OpenAI \u517c\u5bb9\u534f\u8bae\u3002\u8bbe\u7f6e\u4fdd\u5b58\u5728 user_config.json \u7684 ai \u8282\uff0c\u4fee\u6539\u540e\u4e0b\u4e00\u6b21\u53d1\u9001\u6307\u4ee4\u751f\u6548\uff0c\u4e3b\u7a97\u53e3\u6a21\u578b\u4e0b\u62c9\u6846\u4f1a\u5728\u91cd\u542f\u540e\u540c\u6b65\u3002", None))
+        self.lblAiMutationPolicy.setText(QCoreApplication.translate("ProjectSettings", u"\u4fee\u6539\u7b56\u7565", None))
+        self.lblAiHint.setText(QCoreApplication.translate("ProjectSettings", u"\u8fde\u63a5\u6a21\u5f0f\uff1a\u4ee3\u7406\u6a21\u5f0f\u8d70\u672c\u5730/\u516c\u53f8\u4ee3\u7406\u5730\u5740\uff1b\u5b98\u65b9 API \u6a21\u5f0f\u6309\u201c\u670d\u52a1\u63d0\u4f9b\u65b9\u201d\u76f4\u8fde\uff08OpenAI / DeepSeek / \u901a\u4e49\u5343\u95ee / Kimi / \u667a\u8c31 GLM / Gemini / Claude / \u81ea\u5b9a\u4e49\uff09\u3002Claude \u4f7f\u7528 Anthropic \u539f\u751f\u534f\u8bae\uff0c\u5fc5\u987b\u586b\u5199\u6a21\u578b\u540d\uff1b\u5176\u4f59\u5382\u5546\u8d70 OpenAI \u517c\u5bb9\u534f\u8bae\u3002\u4fee\u6539\u7b56\u7565\uff1a\u53ea\u8bfb\uff1d\u62d2\u7edd\u4e00\u5207\u6539\u52a8\uff1b\u6539\u52a8\u524d\u5f39\u7a97\u786e\u8ba4\uff1dAI \u8981\u6539\u5de5\u7a0b\u65f6\u7531\u4f60\u672c\u4eba\u70b9\u786e\u8ba4\uff1b\u76f4\u63a5\u6267\u884c\uff1d\u4e0d\u518d\u8be2\u95ee\u3002\u8bbe\u7f6e\u4fdd\u5b58\u5728 user_config.json \u7684 ai \u8282\uff0c\u4fee\u6539\u540e\u4e0b\u4e00\u6b21\u53d1\u9001\u6307\u4ee4\u751f\u6548\uff0c\u4e3b\u7a97\u53e3\u6a21\u578b\u4e0b\u62c9\u6846\u4f1a\u5728\u91cd\u542f\u540e\u540c\u6b65\u3002", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabAi), QCoreApplication.translate("ProjectSettings", u"AI \u52a9\u624b", None))
         self.lblTheme.setText(QCoreApplication.translate("ProjectSettings", u"\u754c\u9762\u4e3b\u9898", None))
         self.cbxPathDisplayCompact.setText(QCoreApplication.translate("ProjectSettings", u"\u8868\u683c\u8def\u5f84\u663e\u793a\u5173\u952e\u8bcd\u53bb\u91cd\u540e\u7684\u7b80\u5199", None))

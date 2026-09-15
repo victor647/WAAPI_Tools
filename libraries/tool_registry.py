@@ -113,6 +113,40 @@ def execute_tool(name: str, arguments: dict) -> Any:
     return spec.handler(arguments)
 
 
+def describe_action(name: str, arguments: dict) -> dict:
+    # 危险操作预览：执行前告诉上层/用户这次调用会动哪些对象、做什么，用于请求用户确认
+    spec = _TOOLS.get(name)
+    arguments = arguments if isinstance(arguments, dict) else {}
+    object_ids = []
+    for key in ("object_id", "object_ids"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value:
+            object_ids.append(value)
+        elif isinstance(value, list):
+            object_ids.extend(item for item in value if isinstance(item, str) and item)
+    targets = []
+    # 只为确认框展示解析少量对象名，避免确认前做几十次 WAAPI 调用
+    for object_id in object_ids[:20]:
+        try:
+            info = waapi_utils.get_full_info_from_obj_id(object_id)
+        except Exception:
+            info = None
+        if info is not None and info.is_valid:
+            targets.append({"id": info.id, "name": info.name, "type": info.type.value, "path": info.path})
+    # 描述只取第一句，避免长说明撑爆确认框
+    summary = spec.description.split("。")[0] if spec else ""
+    return {
+        "tool": name,
+        "summary": summary,
+        "target_count": len(object_ids),
+        "targets": targets,
+        "other_arguments": {
+            key: value for key, value in arguments.items()
+            if key not in ("object_id", "object_ids", "confirmed")
+        },
+    }
+
+
 def _require_object_ids(args: dict) -> list[str]:
     # 入参统一支持 object_ids 数组（个别情况容忍单个字符串）
     value = args.get("object_ids")

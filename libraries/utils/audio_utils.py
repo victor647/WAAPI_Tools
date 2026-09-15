@@ -3,23 +3,82 @@ import soundfile
 import math
 import numpy
 
-# 计算音频的RMS
-def calculate_loudness(file_path, block_size=65536):
+# RMS 响度的下限（无信号时的返回值）
+MIN_LOUDNESS_DB = -96
+
+# 响度分析默认的 buffer 大小（采样点数）
+LOUDNESS_BUFFER_SAMPLES = 1024
+
+# 响度分析时视为静音的响度门限（dBFS）
+LOUDNESS_SILENCE_THRESHOLD_DB = -60
+
+
+# 由平均功率换算 RMS 响度（dBFS）
+def _power_to_decibel(power: float) -> float:
+    if power <= 0:
+        return MIN_LOUDNESS_DB
+    return 10 * math.log10(power)
+
+
+# 由平方和与采样数换算 RMS 响度（dBFS）
+def _rms_to_decibel(sum_sq: float, count: int) -> float:
+    if count == 0:
+        return MIN_LOUDNESS_DB
+    return _power_to_decibel(sum_sq / count)
+
+
+# 计算音频的RMS；threshold_db 为空时统计整段音频，否则按 buffer 门限求平均响度
+def calculate_loudness(file_path, block_size=65536, threshold_db: float = None,
+                       buffer_samples: int = LOUDNESS_BUFFER_SAMPLES):
+    if threshold_db is None:
+        return _calculate_overall_loudness(file_path, block_size)
+    return _calculate_buffered_loudness(file_path, block_size, threshold_db, buffer_samples)
+
+
+# 计算一段音频数据的 RMS 响度（dBFS）
+def calculate_loudness_from_data(audio_data) -> float:
+    data = numpy.asarray(audio_data, dtype="float64")
+    if data.size == 0:
+        return MIN_LOUDNESS_DB
+    return _power_to_decibel(numpy.sum(data ** 2) / data.size)
+
+
+# 整段 RMS：跳过完全静音的读取块，避免静音部分拉低音量
+def _calculate_overall_loudness(file_path, block_size: int) -> float:
     sum_sq = 0.0
     count = 0
     with soundfile.SoundFile(file_path) as f:
         for block in f.blocks(blocksize=block_size, dtype="float32"):
             value = numpy.sum(block ** 2)
-            # 忽略静音区域，避免静音部分拉低音量
             if value > 0:
                 sum_sq += value
                 count += block.size
-    if count == 0:
-        return -96
-    rms = numpy.sqrt(sum_sq / count)
-    if rms == 0:
-        return -96
-    return 20 * math.log10(rms)
+    return _rms_to_decibel(sum_sq, count)
+
+
+# 按 buffer 门限求平均响度：每 buffer_samples 个采样点（各声道对齐）单独求功率，
+# 剔除响度低于 threshold_db 的静音 buffer，再对保留 buffer 的功率取平均并换算成响度
+def _calculate_buffered_loudness(file_path, block_size: int, threshold_db: float, buffer_samples: int) -> float:
+    buffer_power = []
+    pending = numpy.empty(0, dtype="float32")
+    with soundfile.SoundFile(file_path) as f:
+        buffer_size = max(1, buffer_samples * max(1, f.channels))
+        for block in f.blocks(blocksize=block_size, dtype="float32"):
+            data = block.reshape(-1)
+            if pending.size > 0:
+                data = numpy.concatenate((pending, data))
+            full_size = data.size - data.size % buffer_size
+            for start in range(0, full_size, buffer_size):
+                chunk = data[start:start + buffer_size]
+                buffer_power.append(numpy.sum(chunk ** 2) / chunk.size)
+            pending = data[full_size:]
+    if pending.size > 0:
+        # 末尾不足一个 buffer 的采样点单独统计
+        buffer_power.append(numpy.sum(pending ** 2) / pending.size)
+    kept = [power for power in buffer_power if _power_to_decibel(power) >= threshold_db]
+    if not kept:
+        return MIN_LOUDNESS_DB
+    return _power_to_decibel(sum(kept) / len(kept))
 
 # 把分贝转换成0-1的值
 def decibel_to_linear(decibel: float) -> float:

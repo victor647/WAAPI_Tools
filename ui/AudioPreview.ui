@@ -136,28 +136,53 @@
     </layout>
    </item>
    <item>
-    <widget class="WaveformWidget" name="waveform">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>180</height>
-      </size>
-     </property>
-    </widget>
+    <layout class="QHBoxLayout" name="waveformRow">
+     <item>
+      <widget class="WaveformWidget" name="waveform">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>180</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="LoudnessMeterWidget" name="loudnessMeter">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>76</width>
+         <height>180</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
   </layout>
  </widget>
  <customwidgets>
-  <customwidget>
+ <customwidget>
    <class>WaveformWidget</class>
    <extends>QWidget</extends>
    <header>libraries.widgets.waveform_widget</header>
+  </customwidget>
+  <customwidget>
+   <class>LoudnessMeterWidget</class>
+   <extends>QWidget</extends>
+   <header>libraries.widgets.loudness_meter_widget</header>
   </customwidget>
  </customwidgets>
  <resources/>

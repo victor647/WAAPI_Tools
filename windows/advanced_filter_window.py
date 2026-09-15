@@ -23,7 +23,6 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
         self.rbnEventNo.toggled.connect(self._on_event_ref_changed)
         self.rbnLangAll.toggled.connect(self._on_language_changed)
         self.rbnLangActive.toggled.connect(self._on_language_changed)
-        self.btnClose.clicked.connect(self.accept)
 
     # 打开时从 user_config 恢复上次保存的选项，并让复选框设置即时生效于主窗口
     def __sync_from_main(self):
