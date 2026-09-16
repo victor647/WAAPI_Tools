@@ -20,6 +20,8 @@ class WAAPIClient(metaclass=Singleton):
     def __init__(self, port: int=8080):
         self.client: WaapiClient = None
         self.port = port
+        # 是否已经处于撤销组内（Wwise 不支持撤销组嵌套，嵌套时要复用外层组）
+        self.undo_group_open = False
         # 底层 websocket 客户端不支持并发调用；界面线程、批处理线程与 AI 线程共用同一连接
         self._call_lock = threading.RLock()
         self.connect()
@@ -1080,17 +1082,23 @@ class WAAPIClient(metaclass=Singleton):
     def begin_undo_group(self, action: str) -> bool:
         if not self.client:
             return False
+        # 已在撤销组内时不再嵌套开启，本次改动归入外层组（例如 AI 任务里触发的工具动作）
+        if self.undo_group_open:
+            Logger().debug(f'WAAPI - Undo group already open, join [{action}]')
+            return False
         self.client.call('ak.wwise.core.undo.beginGroup')
+        self.undo_group_open = True
         Logger().debug(f'WAAPI - Begin undo group [{action}]')
         return True
 
     # 结束记录操作
     def end_undo_group(self, action: str) -> bool:
-        if not self.client:
+        if not self.client or not self.undo_group_open:
             return False
         try:
             end_args = {'displayName': 'WAAPI - ' + action}
             self.client.call('ak.wwise.core.undo.endGroup', end_args)
+            self.undo_group_open = False
             Logger().debug(f'WAAPI - End undo group [{action}]')
             return True
         except Exception as e:

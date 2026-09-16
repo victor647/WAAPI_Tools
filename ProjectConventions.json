@@ -7,7 +7,7 @@
     },
     "BusSuffix": {
       "1P": "_1P",
-      "2P": "_2P",
+      "2P": "_3P",
       "3P": "_3P"
     },
     "SwitchGroup": "SW_Player",

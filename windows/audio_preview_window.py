@@ -6,7 +6,7 @@ from PySide6.QtCore import QLoggingCategory, Qt, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import QDialog, QWidget
 
-from libraries.utils import user_config
+from libraries.utils import path_utils, user_config
 from libraries.utils import audio_utils
 from libraries.utils.wwise import audio_source_utils
 from ui.AudioPreview_ui import Ui_AudioPreview
@@ -100,7 +100,9 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
 
     # 读取音频并生成波形
     def __load_audio(self):
-        display_path = audio_source_utils.to_originals_relative_path(self.__file_path)
+        display_path = path_utils.get_display_path(
+            audio_source_utils.to_originals_relative_path(self.__file_path)
+        )
         if not os.path.exists(self.__file_path):
             self.lblInfo.setText(f"文件不存在：{display_path}")
             self.lblInfo.setToolTip(display_path)

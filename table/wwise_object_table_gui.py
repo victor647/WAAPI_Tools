@@ -9,7 +9,7 @@ from PySide6.QtCore import QModelIndex, Qt
 
 from libraries.utils import path_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import common_utils, transport_utils, waapi_utils
+from libraries.utils.wwise import common_utils, event_utils, transport_utils, waapi_utils
 from libraries.wwise_object import WwiseObjectType
 from table.wwise_table_context_menu import add_common_object_actions
 from table.wwise_object_table import WwiseObjectTable, WwiseTableDisplayMode
@@ -134,15 +134,20 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
 
         self._run_batch(objs, proc, "改变类型", "name", on_finished=finished)
 
+    # 通过 WAAPI Transport 播放该行对象：Event 行直接播，其它对象先反查播放它的 Event
     def play_in_wwise(self, item: QModelIndex):
         row_data = self.data[self.get_source_row(item)]
-        event = row_data.wwise_info.event_obj
-        if event:
-            Logger().info(f"正在通过Wwise播放：{event.name}")
-            self.stop_in_wwise()
-            self.wwise_transport_id = transport_utils.play_sound(event)
-        else:
-            Logger().error(f"AudioEvent不存在：{row_data.wwise_info.event_name}，播放失败！")
+        obj = row_data.wwise_object
+        event = obj if obj.type == WwiseObjectType.Event else event_utils.find_play_event(obj)
+        if not event or not event.is_valid:
+            Logger().error(f"未找到播放 {row_data.name} 的 Event，播放失败！")
+            return
+        self.stop_in_wwise()
+        self.wwise_transport_id = transport_utils.play_sound(event)
+        if self.wwise_transport_id == -1:
+            Logger().error(f"Wwise 播放失败：{event.name}")
+            return
+        Logger().info(f"正在通过Wwise播放：{event.name}")
 
     def stop_in_wwise(self):
         if self.wwise_transport_id != -1:

@@ -8,8 +8,8 @@ ACTION_HELP = {
     "actExportObjectList": "把表格当前对象导出为文件：单列导出 TXT，多列导出 CSV。",
     "actImportObjectList": "从 CSV 导入对象列表：文件需包含“路径”列，按路径在工程中解析后填入表格。",
     # 编辑
-    "actUndo": "撤销上一步 Wwise 中的操作。",
-    "actRedo": "重做被撤销的 Wwise 操作。",
+    "actUndo": "撤销上一步操作；工具执行的改动整批算一组，菜单项会显示该组对应的工具名。",
+    "actRedo": "重做被撤销的操作；菜单项显示将要点回复的那个工具撤销组。",
     "actDeleteObjects": "删除表格当前对象（危险：删除后无法通过本工具恢复）。",
     # 通用-命名
     "actRenameToShort": "把对象名改成去掉父级重复前缀后的最简名称。",
@@ -21,7 +21,7 @@ ACTION_HELP = {
     "actChangeToLowerCase": "把对象名改为全小写。",
     "actChangeToUpperCase": "把对象名改为全大写。",
     "actAutoSetColor": "按工程约定的分类颜色表给对象设置颜色；被 Event 播放或被 SoundBank 包含的对象会同时处理（含深色标记）。",
-    "actAutoAddNotes": "按 Event / SoundBank 引用关系自动写备注（Played by Event [...]、Included by SoundBank [...]）；只新增/覆盖，不删除已有备注。",
+    "actAutoAddNotes": "按 Event / SoundBank 引用关系自动写备注（Played by Event [...]、Included by SoundBank [...]）。",
     # 通用-创建父级/结构
     "actCreateActorMixer": "在对象上方插入一层 ActorMixer 父级并移入。",
     "actCreateBlendContainer": "在对象上方插入一层 Blend Container 父级并移入。",
@@ -37,7 +37,8 @@ ACTION_HELP = {
     # 源文件
     "actApplyEditsToOriginal": "把 Source Editor 中的裁剪/淡变写回磁盘 wav（会直接改动源文件）。",
     "actResetSourceEdits": "重置对象的裁剪/淡变等 Source 编辑参数。",
-    "actTrimAudioSilence": "打开“裁剪头尾静音”窗口，需要对应源文件存在。",
+    "actTrimAudioSilence": "裁剪音频的头部和尾部的静音，节省包体空间。",
+    "actLoudnessAdjustment": "调整或统一所选音频的响度，可调整源文件和Wwise中设置。",
     "actAutoImport": "按 Originals 约定路径自动为对象导入 wav 文件。",
     "actRenameOriginalToWwise": "把磁盘 wav 文件名改成与 Wwise 对象一致（磁盘改名）。",
     "actTidyOriginalFolders": "自动归类整理 Originals 下的子文件夹并更新引用。",

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LoudnessDetail</class>
+ <widget class="QDialog" name="LoudnessDetail">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1040</width>
+    <height>520</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>760</width>
+    <height>360</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>响度调整明细</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="lblTitle">
+     <property name="text">
+      <string>音频文件</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="lblReferences">
+     <property name="text">
+      <string>引用对象</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="tblDetails">
+     <property name="editTriggers">
+      <set>QAbstractItemView::DoubleClicked</set>
+     </property>
+     <property name="alternatingRowColors">
+      <bool>true</bool>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectRows</enum>
+     </property>
+     <column>
+      <property name="text">
+       <string>对象</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>类型</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>路径</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Volume</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>MakeupGain</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>OutputBusVolume</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>BusVolume</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>小计</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="lblSummary">
+     <property name="text">
+      <string>汇总</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

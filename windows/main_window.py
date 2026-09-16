@@ -43,6 +43,19 @@ from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_ut
     localization_utils, project_utils, event_utils, container_utils, migration_utils, waapi_utils, mixing_utils
 from libraries.utils import ai_utils, io_utils, path_utils, user_config
 
+# 「撤销/重做」菜单项最多显示多少个工具撤销组名
+UNDO_GROUP_NAME_LIMIT = 20
+
+
+# 关闭主窗口之外的其它顶层窗口（预览、各工具窗口等）。
+# 残留的可见窗口会让 Qt 事件循环不退出，主窗口关掉后进程还挂在后台。
+def close_child_windows(main_window) -> None:
+    # 用 allWidgets + isWindow：带父级的对话框（如挂在主窗口上的预览窗口）也是窗口，同样要关
+    for widget in QApplication.allWidgets():
+        if widget is main_window or not widget.isWindow() or not widget.isVisible():
+            continue
+        widget.close()
+
 
 # AI 模型列表后台拉取线程：避免启动时在界面线程发 HTTP 请求
 class AiModelListWorker(QThread):
@@ -172,6 +185,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.table = WwiseTableImpl(self.tblWwiseObjects)
         self._object_history: list[tuple] = []
         self._history_index: int = -1
+        # 工具执行产生的撤销组名（按时间顺序）与当前指针，用于「撤销/重做」菜单项显示具体操作
+        self._undo_group_names: list[str] = []
+        self._undo_group_position: int = 0
         self._restoring_history: bool = False
         self.__eventFilterBase = None
         self.__languageFilterBase = None
@@ -658,8 +674,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actExportObjectList.triggered.connect(self.export_object_list)
         self.actProjectSettings.triggered.connect(self.open_project_settings_window)
         # 编辑菜单
-        self.actUndo.triggered.connect(waapi_utils.undo)
-        self.actRedo.triggered.connect(waapi_utils.redo)
+        self.actUndo.triggered.connect(self.undo_last_group)
+        self.actRedo.triggered.connect(self.redo_last_group)
 
         self.setup_batch_processor(self.actDeleteObjects, lambda index, obj: waapi_utils.delete_object(obj), expand=False)
         # 通用菜单（改变类型为仅表格类型列右键）
@@ -768,14 +784,45 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             obj_func(index, obj)
             return True
 
-        action.triggered.connect(
-            lambda: batch_processor.create_async(
-                self.collect_tool_targets(target_types, expand),
-                proc,
-                action.text(),
-                "name",
-            )
-        )
+        def run_tool():
+            objects = self.collect_tool_targets(target_types, expand)
+            if not objects:
+                Logger().warning(f"「{action.text()}」没有可处理的对象")
+                return
+            # 一次工具执行记为一个撤销组，名字用于「撤销/重做」菜单项显示具体操作
+            self.add_undo_group_name(action.text())
+            batch_processor.create_async(objects, proc, action.text(), "name", undo_group=action.text())
+
+        action.triggered.connect(run_tool)
+
+    # 记录一次工具撤销组名；新操作会丢弃重做分支，与撤销栈行为一致
+    def add_undo_group_name(self, name: str):
+        del self._undo_group_names[self._undo_group_position:]
+        self._undo_group_names.append(name)
+        if len(self._undo_group_names) > UNDO_GROUP_NAME_LIMIT:
+            del self._undo_group_names[0]
+        self._undo_group_position = len(self._undo_group_names)
+        self.update_undo_action_texts()
+
+    # 按当前指针刷新「撤销/重做」菜单项文案（指针处没有对应组时显示纯动作名）
+    def update_undo_action_texts(self):
+        undo_name = self._undo_group_names[self._undo_group_position - 1] if self._undo_group_position > 0 else ""
+        redo_name = (self._undo_group_names[self._undo_group_position]
+                     if self._undo_group_position < len(self._undo_group_names) else "")
+        self.actUndo.setText(f"撤销 {undo_name}".strip())
+        self.actRedo.setText(f"重做 {redo_name}".strip())
+
+    # 撤销上一个工具撤销组
+    def undo_last_group(self):
+        if waapi_utils.undo() and self._undo_group_position > 0:
+            self._undo_group_position -= 1
+        self.update_undo_action_texts()
+
+    # 重做下一个工具撤销组
+    def redo_last_group(self):
+        if waapi_utils.redo() and self._undo_group_position < len(self._undo_group_names):
+            self._undo_group_position += 1
+        self.update_undo_action_texts()
 
     # 重置筛选
     def reset_filter(self, apply_filter: bool = True):
@@ -1484,6 +1531,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 关闭进度条窗口
         if gv.progress_bar:
             gv.progress_bar.close()
+        # 关闭所有子窗口（预览、工具窗口等），保证进程能完全退出
+        close_child_windows(self)
         # 关闭WAAPI连接
         try:
             waapi_utils.close_client()
@@ -1491,3 +1540,5 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             Logger().error(f"关闭WAAPI连接时出错: {e}")
         Logger().debug("应用程序已关闭")
         event.accept()
+        # 即使有窗口拒绝了 close，也让事件循环退出，避免进程留在后台
+        QApplication.quit()

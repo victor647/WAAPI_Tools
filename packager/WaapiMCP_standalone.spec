@@ -72,7 +72,36 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     # MCP 是无界面服务：libraries.utils.io_utils 已改为惰性加载 Qt，这里整体排除 Qt 系
-    excludes=["PySide6", "shiboken6", "PyQt6", "qt_material", "clipboard"],
+    # 额外排除项说明：
+    #   sitecustomize / usercustomize / datalore / backend_interagg / pydevd：
+    #     PyCharm 会把这些辅助模块注入 sys.path（Matplotlib 后端、Scientific 显示、调试器），
+    #     PyInstaller 的 hook-site 会把 sitecustomize 当作隐藏导入，从而顺着
+    #     sitecustomize → matplotlib、datalore.display → pandas → matplotlib / pytest
+    #     把几十 MB 与运行无关的包打进 _internal。这里显式排除，保证在任何 IDE 环境下打包都干净。
+    #   matplotlib / mpl_toolkits / pandas / PIL / pytest：MCP 侧完全用不到（音频分析只用 numpy + soundfile）。
+    #   tzdata：pydantic 只是 import zoneinfo，只有在字段注解为 ZoneInfo 时才会真正构造
+    #     时区对象；本工程的 MCP 工具签名全部是 dict/str/float 等基础类型，没有任何
+    #     ZoneInfo 注解或时区名解析，所以 Windows 上不需要 tzdata 的 IANA 时区库。
+    #     若以后新增了带 ZoneInfo 注解的 MCP 工具，需要把 "tzdata" 从这里去掉。
+    excludes=[
+        "PySide6",
+        "shiboken6",
+        "PyQt6",
+        "qt_material",
+        "clipboard",
+        "sitecustomize",
+        "usercustomize",
+        "datalore",
+        "backend_interagg",
+        "pydevd",
+        "matplotlib",
+        "mpl_toolkits",
+        "pandas",
+        "PIL",
+        "pytest",
+        "_pytest",
+        "tzdata",
+    ],
     noarchive=False,
     optimize=0,
 )

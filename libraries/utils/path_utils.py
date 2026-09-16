@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from libraries.utils.log_utils import Logger
+from libraries.utils import user_config
 
 # 检测是否运行在PyInstaller打包的环境中
 def is_bundled() -> bool:
@@ -177,3 +178,46 @@ def _filesystem_move_file(src: str, dst: str) -> bool:
 # 移动文件；覆盖只读目标时会先去掉只读
 def move_file(src: str, dst: str) -> bool:
     return _filesystem_move_file(src, dst)
+
+
+# 路径缩写：按 _ 拆出的字段只要在路径前面的任意节点出现过就用 ... 代替，只保留新字段；
+# 最后一级完整保留。所有界面显示路径的地方都走这里，不要再各自实现一套。
+def compact_path(path: str) -> str:
+    if not isinstance(path, str) or not path:
+        return path
+    separator = "\\" if "\\" in path else "/"
+    parts = path.split(separator)
+    seen_tokens: set[str] = set()
+    compact_parts = []
+    for part in parts:
+        if not part:
+            compact_parts.append(part)
+            continue
+        leading_underscores = len(part) - len(part.lstrip("_"))
+        tokens = part[leading_underscores:].split("_")
+        # 先按历史出现情况判断，再记录本节点字段
+        flags = [token in seen_tokens for token in tokens]
+        seen_tokens.update(token for token in tokens if token)
+        compact = "_" * leading_underscores
+        pending_elided = False
+        for token, was_seen in zip(tokens, flags):
+            if was_seen:
+                pending_elided = True
+                continue
+            if compact and not pending_elided:
+                compact += "_"
+            elif pending_elided:
+                compact += "..." if not compact.endswith("...") else ""
+                pending_elided = False
+            compact += token
+        if pending_elided:
+            compact += "..." if not compact.endswith("...") else ""
+        compact_parts.append(compact)
+    return separator.join(compact_parts)
+
+
+# 界面里显示的路径文本：按 user_config 的「路径显示简写」开关决定是否缩写
+def get_display_path(path: str) -> str:
+    if user_config.get_tool_path_display_compact():
+        return compact_path(path)
+    return path

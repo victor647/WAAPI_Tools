@@ -54,7 +54,18 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     # GUI 使用 PySide6；排除本机可能同时安装的其它 Qt 绑定，避免 PyInstaller 报多绑定冲突
-    excludes=["PyQt6", "PyQt5"],
+    # 同时排除 PyCharm 等 IDE 注入的辅助模块：sitecustomize 会被 PyInstaller 的 hook-site
+    # 当作隐藏导入，从而顺着 sitecustomize → matplotlib、datalore.display → pandas 把
+    # 几十 MB 无关的包（matplotlib / pandas / PIL / pytest）打进 _internal
+    excludes=[
+        "PyQt6",
+        "PyQt5",
+        "sitecustomize",
+        "usercustomize",
+        "datalore",
+        "backend_interagg",
+        "pydevd",
+    ],
     noarchive=False,
     optimize=0,
 )

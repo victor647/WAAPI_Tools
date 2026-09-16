@@ -325,6 +325,12 @@ def end_undo_group(action: str) -> bool:
     return WAAPIClient().end_undo_group(action)
 
 
+# 是否已经处于撤销组内（工具批量执行前判断，避免嵌套开启）
+def is_undo_group_open() -> bool:
+    client = WAAPIClient.get_existing()
+    return bool(client and client.undo_group_open)
+
+
 def undo() -> bool:
     return WAAPIClient().undo()
 

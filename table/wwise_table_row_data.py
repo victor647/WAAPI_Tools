@@ -2,13 +2,10 @@ from data.design_info import DesignInfo
 from data import project_conventions
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_row_data import TableRowData
-from libraries.utils import user_config
+from libraries.utils import path_utils
 from libraries.utils.wwise import common_utils, audio_source_utils, localization_utils, event_utils, soundbank_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_table_headers import *
-
-
-PATH_DISPLAY_LIMIT = 64
 
 # Wwise EventAction 的 ActionType 数值 → 展示名（已取官方显示名路径末尾的名称）
 ACTION_TYPE_NAMES = {
@@ -109,54 +106,10 @@ class WwiseTableRowData(TableRowData):
     def reference_count(self) -> int:
         return len(waapi_utils.get_object_references(self.wwise_object))
 
-    @staticmethod
-    def get_path_display_text(path: str) -> str:
-        if not isinstance(path, str) or len(path) <= PATH_DISPLAY_LIMIT:
-            return path
-        separator = "\\" if "\\" in path else "/"
-        parts = path.split(separator)
-        # 末尾的对象名不做缩写，保证最后一级完整可读
-        for index, part in enumerate(parts):
-            if index == len(parts) - 1:
-                continue
-            suffix = part.rsplit("_", 1)[-1]
-            parts[index] = f"...{suffix}" if suffix != part else part
-        return separator.join(parts)
-
-    # 缩写路径：按 _ 拆出的字段只要在路径前面的任意节点出现过就用 ... 代替，只保留新字段
+    # 缩写路径（实现统一放在 libraries/utils/path_utils.compact_path，窗口显示不要另写一套）
     @staticmethod
     def get_path_compact_text(path: str) -> str:
-        if not isinstance(path, str) or not path:
-            return path
-        separator = "\\" if "\\" in path else "/"
-        parts = path.split(separator)
-        seen_tokens: set[str] = set()
-        compact_parts = []
-        for part in parts:
-            if not part:
-                compact_parts.append(part)
-                continue
-            leading_underscores = len(part) - len(part.lstrip("_"))
-            tokens = part[leading_underscores:].split("_")
-            # 先按历史出现情况判断，再记录本节点字段
-            flags = [token in seen_tokens for token in tokens]
-            seen_tokens.update(token for token in tokens if token)
-            compact = "_" * leading_underscores
-            pending_elided = False
-            for token, was_seen in zip(tokens, flags):
-                if was_seen:
-                    pending_elided = True
-                    continue
-                if compact and not pending_elided:
-                    compact += "_"
-                elif pending_elided:
-                    compact += "..." if not compact.endswith("...") else ""
-                    pending_elided = False
-                compact += token
-            if pending_elided:
-                compact += "..." if not compact.endswith("...") else ""
-            compact_parts.append(compact)
-        return separator.join(compact_parts)
+        return path_utils.compact_path(path)
 
     def set_path_cell(self, column: int, path: str):
         self.set_cell_value(column, self.get_path_text(path), path)
@@ -164,9 +117,7 @@ class WwiseTableRowData(TableRowData):
     # 按「路径显示简写」设置返回路径显示文本（关闭时显示完整路径）
     @staticmethod
     def get_path_text(path: str) -> str:
-        if user_config.get_tool_path_display_compact():
-            return WwiseTableRowData.get_path_compact_text(path)
-        return path
+        return path_utils.get_display_path(path)
 
     # 筛选时决定需要筛选的条目
     def get_searched_properties(self) -> list[str]:
