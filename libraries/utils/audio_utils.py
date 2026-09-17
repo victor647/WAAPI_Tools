@@ -4,6 +4,8 @@ import math
 import numpy
 from enum import Enum
 
+from libraries.utils import user_config
+
 # RMS 响度的下限（无信号时的返回值）
 MIN_LOUDNESS_DB = -96
 
@@ -57,7 +59,10 @@ def _rms_to_decibel(sum_sq: float, count: int) -> float:
 
 # 计算音频的RMS；threshold_db 为空时统计整段音频，否则按 buffer 门限求平均响度
 def calculate_loudness(file_path, block_size=65536, threshold_db: float = None,
-                       buffer_samples: int = LOUDNESS_BUFFER_SAMPLES):
+                       buffer_samples: int = None):
+    # 分块大小可在「设置 - 工具行为」里配置，未显式传入时读配置
+    if buffer_samples is None:
+        buffer_samples = user_config.get_tool_loudness_buffer_samples()
     if threshold_db is None:
         return _calculate_overall_loudness(file_path, block_size)
     return _calculate_buffered_loudness(file_path, block_size, threshold_db, buffer_samples)
@@ -132,14 +137,21 @@ def calculate_lufs(file_path) -> float:
     hop_size = max(1, int(round(block_size * (1.0 - LUFS_SHORT_BLOCK_OVERLAP))))
     weights = _channel_weights(channels)
     # 各分块的能量：按声道权重求平均
-    block_powers = []
-    for start in range(0, max(1, weighted.shape[0] - block_size + 1), hop_size):
-        block = weighted[start:start + block_size]
-        if block.shape[0] < block_size:
-            break
-        channel_power = numpy.mean(block ** 2, axis=0)
-        block_powers.append(float(numpy.sum(channel_power * weights) / numpy.sum(weights)))
+    if weighted.shape[0] < block_size:
+        # 短于一个 400ms 分块（短语音、音效）：整段当作一个分块，
+        # 否则一个分块都凑不齐，会被误判成「无信号」
+        block_powers = [_block_power(weighted, weights)]
+    else:
+        block_powers = []
+        for start in range(0, weighted.shape[0] - block_size + 1, hop_size):
+            block_powers.append(_block_power(weighted[start:start + block_size], weights))
     return _gated_lufs(block_powers)
+
+
+# 一个分块的能量（先按声道求均方，再按声道权重加权平均）
+def _block_power(block, weights) -> float:
+    channel_power = numpy.mean(block ** 2, axis=0)
+    return float(numpy.sum(channel_power * weights) / numpy.sum(weights))
 
 
 # 各声道的能量权重：单/双声道为 1，5.1 及以上按 BS.1770 表 3（LFE 不参与）

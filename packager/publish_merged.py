@@ -49,7 +49,7 @@ COPY_RETRY_ATTEMPTS = 4
 COPY_RETRY_DELAY_SECONDS = 0.5
 
 sys.path.insert(0, str(_PACKAGER_DIR))
-from build_meta import commit_build, prepare_build, staged_minor  # noqa: E402
+from build_meta import commit_build, prepare_build, staged_version  # noqa: E402
 
 
 class PublishLockedError(RuntimeError):
@@ -263,15 +263,15 @@ def main() -> int:
     print(f"源 MCP: {mcp_d}", flush=True)
 
     copy_skill = not args.no_skill
-    # 版本号只在成功发布时递增一次；dry-run 或 --no-version 不参与
+    # 发布号只在成功发布时递增一次；dry-run 或 --no-version 不参与
     meta = None
     if not args.dry_run and not args.no_version:
-        prev_staged = staged_minor()
+        prev_staged = staged_version()
         meta = prepare_build()
-        if prev_staged is not None and prev_staged != meta["minor"]:
+        if prev_staged is not None and prev_staged != meta["version"]:
             print(
-                f"构建产物内嵌版本为 V{meta['major']}.{prev_staged}，"
-                f"本次将发布 V{meta['major']}.{meta['minor']}，"
+                f"构建产物内嵌版本为 {prev_staged}，"
+                f"本次将发布 {meta['version']}，"
                 "看起来没有重新打包或该构建已发布过。",
                 file=sys.stderr,
             )

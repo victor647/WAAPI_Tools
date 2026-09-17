@@ -15,11 +15,14 @@ from PySide6.QtWidgets import (
 
 import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
+from libraries.table_view.table_number_item import NumberTableItem
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from libraries.utils import audio_utils, path_utils, theme_utils, user_config
+from libraries.utils import audio_utils, io_utils, path_utils, theme_utils, user_config
+from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import audio_source_utils, mixing_utils
+from libraries.utils.wwise import audio_source_utils, mixing_utils, project_utils
+from libraries.utils.wwise import waapi_utils
 from table.wwise_table_context_menu import select_row_objects
 from ui.LoudnessAdjustment_ui import Ui_LoudnessAdjustment
 from windows.audio_preview_window import AudioPreviewWindow
@@ -74,6 +77,8 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
     def setup_triggers(self):
         self.btnImportFiles.clicked.connect(self.import_files)
         self.btnImportFolder.clicked.connect(self.import_folder)
+        self.btnExportList.clicked.connect(self.export_list)
+        self.btnImportList.clicked.connect(self.import_list)
         self.btnAnalyzeSample.clicked.connect(self.analyze_sample_loudness)
         self.btnAnalyzeObject.clicked.connect(self.analyze_object_adjustment)
         self.btnAnalyzeAll.clicked.connect(self.analyze_all)
@@ -88,12 +93,35 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         self.tblAudioList.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tblAudioList.customContextMenuRequested.connect(self.show_entry_context_menu)
         self.tblAudioList.itemDoubleClicked.connect(self.on_row_double_clicked)
+        # 表格支持按列排序：排序会移动行，排序后要重新对齐条目记录的行号
+        self.tblAudioList.setSortingEnabled(True)
+        self.tblAudioList.horizontalHeader().sortIndicatorChanged.connect(self.sync_entry_rows)
+
+    # 排序后表格行会变，按 COL_CHECK 里存的条目 key 重新刷新每个条目的行号
+    def sync_entry_rows(self, *_args):
+        entry_by_key = {entry['key']: entry for entry in self.__entries}
+        for row in range(self.tblAudioList.rowCount()):
+            key_item = self.tblAudioList.item(row, COL_CHECK)
+            key = key_item.data(Qt.ItemDataRole.UserRole) if key_item is not None else None
+            entry = entry_by_key.get(key)
+            if entry is not None:
+                entry['row'] = row
+
+    # 某一行的条目（按 COL_CHECK 里存的 key 取，排序后行号会变）
+    def get_entry_at_row(self, row: int):
+        item = self.tblAudioList.item(row, COL_CHECK)
+        key = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        return self.get_entry_by_key(key)
+
+    # 按 key 取条目（批处理结果回填时用，避免依赖会随排序变化的行号）
+    def get_entry_by_key(self, key):
+        return next((entry for entry in self.__entries if entry['key'] == key), None)
 
     # 双击：音量调整两列等同右键「详细」，其它列在 Wwise 中选中对应对象
     def on_row_double_clicked(self, item: QTableWidgetItem):
-        if not 0 <= item.row() < len(self.__entries):
+        entry = self.get_entry_at_row(item.row())
+        if entry is None:
             return
-        entry = self.__entries[item.row()]
         if item.column() in (COL_OBJECT_GAIN, COL_BUS_GAIN):
             chain = DetailChain.Object if item.column() == COL_OBJECT_GAIN else DetailChain.Bus
             self.show_entry_detail(entry, chain)
@@ -103,10 +131,12 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
     # 表格行右键菜单：路径列给复制 / 预览，音量调整列给详细
     def show_entry_context_menu(self, position):
         item = self.tblAudioList.itemAt(position)
-        if item is None or not 0 <= item.row() < len(self.__entries):
+        if item is None:
             return
         row = item.row()
-        entry = self.__entries[row]
+        entry = self.get_entry_at_row(row)
+        if entry is None:
+            return
         menu = QMenu(self)
         copy_action = preview_action = detail_action = None
         if item.column() == COL_PATH:
@@ -120,16 +150,15 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         if copy_action is not None and chosen == copy_action:
             clipboard.copy(entry['path'])
         elif preview_action is not None and chosen == preview_action:
-            self.preview_entry(row)
+            self.preview_entry(entry)
         elif detail_action is not None and chosen == detail_action:
             # 在对象列点详细只看对象链路，在总线列点详细只看总线链路
             chain = DetailChain.Object if item.column() == COL_OBJECT_GAIN else DetailChain.Bus
             self.show_entry_detail(entry, chain)
 
     # 打开该行音频的波形预览窗口
-    def preview_entry(self, row: int):
-        if 0 <= row < len(self.__entries):
-            AudioPreviewWindow(self.__entries[row]['path'], self).show()
+    def preview_entry(self, entry: dict):
+        AudioPreviewWindow(entry['path'], self).show()
 
     # 打开该行的音量调整明细窗口（逐级列出指定链路上每个属性的调整值）
     def show_entry_detail(self, entry: dict, chain: DetailChain):
@@ -170,6 +199,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
 
     # 主线程：把重算结果写回表格
     def on_refresh_finished(self):
+        self.sync_entry_rows()
         for index, entry in enumerate(self.__analysis_items):
             gains = self.__analysis_results[index].get('gains')
             if not gains:
@@ -177,7 +207,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             self.__fill_gain_cells(entry, gains)
             self.__update_loudness_cells(entry)
         self.refresh_status_column()
-        self.tblAudioList.resizeColumnsToContents()
+        resize_table_and_window(self.tblAudioList, self)
 
     # 读取持久化的目标响度与宽容度
     def load_user_settings(self):
@@ -231,8 +261,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
     # 是否已有批处理在运行（避免并发批处理覆盖 gv.batch_processor）
     @staticmethod
     def is_busy() -> bool:
-        processor = gv.batch_processor
-        return bool(processor) and getattr(processor, 'isRunning', lambda: False)()
+        return batch_processor.is_busy()
 
     # 从主窗口对象解析源文件并加入表格（不做任何分析，音量调整由「分析对象调整」负责）
     def populate_sources(self):
@@ -261,6 +290,14 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         resolved = [result for result in self.__scanned_paths if result]
         if not resolved:
             Logger().warning('没有找到任何源文件')
+            QMessageBox.warning(
+                self,
+                '响度调整',
+                f'{len(self.__active_objects)} 个 AudioSource 都没有解析出可用的源文件：\n'
+                '对象的原始 wav 可能没有导入、已被移动，或工程路径读取失败。\n\n'
+                '可以先在主窗口双击进 Wwise 确认这些对象的源文件状态，'
+                '或者用「导入文件 / 导入文件夹」直接处理磁盘上的音频。',
+            )
             return
         # 同一个音频文件可能被多个 Wwise 对象引用，这里按路径汇总成列表
         objects = {}
@@ -278,6 +315,52 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             return
         added = self.append_files(selected[0])
         Logger().info(f'导入完成，新增 {len(added)} 个音频文件')
+
+    # 导出列表：有 Wwise 对象的按工程相对路径（originalRelativeFilePath）导出，
+    # 手工导入、没有 Wwise 对象的音频才用绝对路径
+    def export_list(self):
+        if not self.__entries:
+            Logger().warning('表格中没有可导出的音频')
+            return
+        lines = []
+        for entry in self.__entries:
+            relative_path = audio_source_utils.to_originals_relative_path(entry['path']) \
+                if entry['wwise_objects'] else entry['path']
+            # 相对路径转换失败（不在 Originals 下）时退回绝对路径
+            lines.append(relative_path if not os.path.isabs(relative_path) else entry['path'])
+        io_utils.export_to_txt(lines, 'WAAPI_Tools_AudioList')
+        Logger().info(f'已导出 {len(lines)} 条音频路径')
+
+    # 导入列表：相对路径按工程 Originals 目录还原，并尽量找回引用该文件的 Wwise 对象
+    def import_list(self):
+        if self.is_busy():
+            return
+        lines = io_utils.import_from_txt()
+        if not lines:
+            return
+        originals_folder = project_utils.get_originals_folder()
+        paths = []
+        objects = {}
+        missing = []
+        for line in lines:
+            text = str(line).strip()
+            if not text:
+                continue
+            absolute_path = text if os.path.isabs(text) else os.path.join(originals_folder, text)
+            if not os.path.exists(absolute_path):
+                missing.append(text)
+                continue
+            paths.append(absolute_path)
+            if not os.path.isabs(text):
+                # 相对路径来自工程：顺便把引用该文件的 AudioSource 挂上，音量调整列才能用
+                sources = waapi_utils.find_audio_sources_by_original_path(text)
+                if sources:
+                    objects[os.path.normcase(os.path.abspath(absolute_path))] = sources
+        added = self.append_files(paths, objects)
+        Logger().info(f'导入列表完成，新增 {len(added)} 个音频文件'
+                      + (f'，{len(missing)} 条路径不存在已跳过' if missing else ''))
+        if missing:
+            Logger().warning('以下路径在磁盘上不存在：\n' + '\n'.join(missing[:10]))
 
     # 导入文件夹里的所有音频文件（异步 + 进度条）
     def import_folder(self):
@@ -335,6 +418,8 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             check_item.setCheckState(
                 Qt.CheckState.Checked if self.cbxSelectAll.isChecked() else Qt.CheckState.Unchecked
             )
+            # 存一份条目 key：排序后据此把行号重新对回条目
+            check_item.setData(Qt.ItemDataRole.UserRole, key)
             self.tblAudioList.setItem(row, COL_CHECK, check_item)
             display_path = path_utils.get_display_path(
                 audio_source_utils.to_originals_relative_path(absolute_path)
@@ -363,8 +448,10 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
                 'limited': False,
             })
             added_paths.append(absolute_path)
+        # 排序开启时插入行后行序可能变化，统一重新对齐一次
+        self.sync_entry_rows()
         self.__sync_gain_columns()
-        self.tblAudioList.resizeColumnsToContents()
+        resize_table_and_window(self.tblAudioList, self)
         return added_paths
 
     # 表格里没有任何来自 Wwise 的音频时（导入文件/文件夹模式），隐藏 Wwise 调整相关的列
@@ -373,14 +460,16 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         for column in (COL_OBJECT_GAIN, COL_BUS_GAIN, COL_FINAL_LOUDNESS):
             self.tblAudioList.setColumnHidden(column, not has_wwise_source)
 
-    # 返回所有勾选行的数据
+    # 返回所有勾选行的数据（按 key 映射，排序后依然正确）
     def get_selected_entries(self) -> list:
         entries = []
         for row in range(self.tblAudioList.rowCount()):
             check_item = self.tblAudioList.item(row, COL_CHECK)
-            if row < len(self.__entries) and check_item is not None \
-                    and check_item.checkState() == Qt.CheckState.Checked:
-                entries.append(self.__entries[row])
+            if check_item is None or check_item.checkState() != Qt.CheckState.Checked:
+                continue
+            entry = self.get_entry_at_row(row)
+            if entry is not None:
+                entries.append(entry)
         return entries
 
     # 全选 checkbox：勾选则全部选中，取消则全部取消
@@ -461,6 +550,8 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
 
     # 主线程：把分析结果填入表格
     def on_analysis_finished(self):
+        # 排序开启时行序可能已变，先按 key 重新对齐行号
+        self.sync_entry_rows()
         analyzed_count = 0
         failed_count = 0
         missing_object_count = 0
@@ -494,7 +585,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         if missing_object_count:
             Logger().warning(f'{missing_object_count} 个音频没有对应的 Wwise 对象，未计算音量调整')
         self.refresh_status_column()
-        self.tblAudioList.resizeColumnsToContents()
+        resize_table_and_window(self.tblAudioList, self)
         Logger().info(f'分析完成，共 {len(self.__analysis_items)} 个音频，其中 {analyzed_count} 个测量到响度')
 
     # 主线程：把每个引用对象的调整值汇总到两列；取值不一致时显示引用对象数量
@@ -505,11 +596,13 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         entry['object_gain'] = object_gain
         entry['bus_gain'] = bus_gain
         count = len(gains)
-        object_item = QTableWidgetItem(
-            self.__format_gain(object_gain) if object_gain is not None else f'{count} 个对象'
+        object_item = NumberTableItem(
+            self.__format_gain(object_gain) if object_gain is not None else f'{count} 个对象',
+            object_gain,
         )
-        bus_item = QTableWidgetItem(
-            self.__format_gain(bus_gain) if bus_gain is not None else f'{count} 个对象'
+        bus_item = NumberTableItem(
+            self.__format_gain(bus_gain) if bus_gain is not None else f'{count} 个对象',
+            bus_gain,
         )
         # 增益用主题的 success 色、减益用 danger 色
         for item, value in ((object_item, object_gain), (bus_item, bus_gain)):
@@ -560,19 +653,26 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
     def __update_loudness_cells(self, entry: dict):
         # 还没测到响度时保留原有文本（可能是「分析中…」或「分析失败」）
         if entry['loudness'] is not None:
-            self.tblAudioList.setItem(entry['row'], COL_LOUDNESS, QTableWidgetItem(
-                self.__format_loudness(entry['loudness'])
+            self.tblAudioList.setItem(entry['row'], COL_LOUDNESS, NumberTableItem(
+                self.__format_loudness(entry['loudness']), entry['loudness']
             ))
-        self.tblAudioList.setItem(entry['row'], COL_FINAL_LOUDNESS, QTableWidgetItem(
-            self.__format_final_loudness(entry)
+        self.tblAudioList.setItem(entry['row'], COL_FINAL_LOUDNESS, NumberTableItem(
+            self.__format_final_loudness(entry), self.__final_loudness(entry)
         ))
 
-    # 最终响度的数值：实测响度 + 对象链路偏移 + 总线链路偏移；任一项缺失时返回 None
+    # 该行已知的链路增益合计（对象 + 总线）；未做对象调整分析或取值不唯一时返回 None
     @staticmethod
-    def __final_loudness(entry: dict):
+    def __gain_total(entry: dict):
         if entry['loudness'] is None or entry['object_gain'] is None or entry['bus_gain'] is None:
             return None
-        return entry['loudness'] + entry['object_gain'] + entry['bus_gain']
+        return entry['object_gain'] + entry['bus_gain']
+
+    # 最终响度的数值：实测响度 + 对象链路偏移 + 总线链路偏移；任一项缺失时返回 None
+    def __final_loudness(self, entry: dict):
+        gain_total = self.__gain_total(entry)
+        if gain_total is None:
+            return None
+        return entry['loudness'] + gain_total
 
     # 状态判定用的响度：分析过对象调整就用最终响度，否则退回实测响度
     # （只调文件响度、不看 Wwise 调整时，也要能给出状态）
@@ -643,15 +743,21 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         for entry in selected:
             if entry['loudness'] is None:
                 continue
+            gain_total = self.__gain_total(entry)
+            # 目标响度是「最终响度」口径：分析过对象调整时把链路增益算进去，
+            # 没分析过（或取值不唯一）时只看文件本身，保证状态列与这里判定一致
+            effective_loudness = entry['loudness'] if gain_total is None \
+                else entry['loudness'] + gain_total
             if entry['loudness'] > audio_utils.MIN_LOUDNESS_DB \
-                    and abs(target - entry['loudness']) <= tolerance:
-                # 已在目标响度的宽容度范围内，不做处理
+                    and abs(target - effective_loudness) <= tolerance:
                 skipped_count += 1
                 continue
             items.append({
+                'key': entry['key'],
                 'row': entry['row'],
                 'path': entry['path'],
                 'loudness': entry['loudness'],
+                'gain_total': gain_total or 0.0,
                 'target': target,
             })
         if skipped_count:
@@ -673,6 +779,8 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         file_path = entry['path']
         current = entry['loudness']
         target = entry['target']
+        # 目标是最终响度，链路增益由 Wwise 侧负责，文件只需要补到「目标 - 链路增益」
+        file_target = target - entry.get('gain_total', 0.0)
         if current <= audio_utils.MIN_LOUDNESS_DB:
             # 完全静音的音频没有可调整的信号
             self.__adjust_results[index] = {'entry': entry, 'status': '完全静音'}
@@ -682,7 +790,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             samplerate = sound_file.samplerate
             subtype = sound_file.subtype
         peak = float(numpy.max(numpy.abs(data))) if data.size else 0.0
-        applied_gain = target - current
+        applied_gain = file_target - current
         limited = False
         if peak > 0 and applied_gain > 0:
             # 提升响度时限制增益，保证峰值不超过上限，避免削波
@@ -705,12 +813,15 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
 
     # 主线程：更新表格并提示被限制的音频
     def on_adjust_finished(self):
+        self.sync_entry_rows()
         limited_entries = []
         adjusted_count = 0
         for result in self.__adjust_results:
             if result is None:
                 continue
-            entry = self.__entries[result['entry']['row']]
+            entry = self.get_entry_by_key(result['entry'].get('key'))
+            if entry is None:
+                continue
             new_loudness = result.get('new_loudness')
             if new_loudness is None:
                 continue
@@ -722,7 +833,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             if result['limited']:
                 limited_entries.append(result)
         self.refresh_status_column()
-        self.tblAudioList.resizeColumnsToContents()
+        resize_table_and_window(self.tblAudioList, self)
         Logger().info(f'响度调整完成，共处理 {adjusted_count} 个音频')
         if limited_entries:
             self.__show_limited_message(limited_entries)

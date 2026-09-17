@@ -124,6 +124,7 @@ class WwiseObjectTable(TableFacade):
         obj_name: str = "",
         on_finished=None,
         on_interrupted=None,
+        exclusive: bool = True,
     ):
         raise NotImplementedError
 
@@ -191,6 +192,8 @@ class WwiseObjectTable(TableFacade):
             "获取音频信息",
             "name",
             on_finished=self.on_table_filled,
+            # 表格刷新是工具执行过程中也要能跑的只读批处理，不参与「同时只允许一个批处理」的限制
+            exclusive=False,
         )
 
     def read_common_data(self, row_data: WwiseTableRowData):
@@ -211,9 +214,9 @@ class WwiseObjectTable(TableFacade):
             wanted = set(obj_types)
         found_count = 0
         for row in range(self.model.rowCount()):
-            if not self.table_view.isRowHidden(row):
+            if not self.is_row_hidden(row):
                 if wanted is not None and self.data[row].type not in wanted:
-                    self.table_view.setRowHidden(row, True)
+                    self.set_row_hidden(row, True)
                 else:
                     found_count += 1
         return found_count
@@ -222,13 +225,13 @@ class WwiseObjectTable(TableFacade):
         if not self.table_view or not only_included:
             return
         for row in range(self.model.rowCount()):
-            if self.table_view.isRowHidden(row):
+            if self.is_row_hidden(row):
                 continue
             if not common_utils.is_object_included(
                 self.data[row].wwise_object,
                 inclusion_cache=self._inclusion_cache,
             ):
-                self.table_view.setRowHidden(row, True)
+                self.set_row_hidden(row, True)
 
     def add_row_data(self, row: int, data: WwiseObject):
         if not data:

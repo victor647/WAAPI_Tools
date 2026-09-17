@@ -1,11 +1,14 @@
 from libraries.utils.wwise import audio_source_utils, event_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
+# 非本地化语言名：语言筛选时这类对象始终保留
+SFX_LANGUAGE_NAME = 'SFX'
+
 
 # 获取音频源文件语言
 def get_sound_language(source: WwiseObject):
     if source.type != WwiseObjectType.AudioSource and source.type != WwiseObjectType.Sound:
-        return 'SFX'
+        return SFX_LANGUAGE_NAME
     # audioSource:language 属于 AudioFileSource；对 Sound 需取其首个音频源子对象查询
     if source.type == WwiseObjectType.Sound:
         for child in waapi_utils.get_child_objects(source):
@@ -13,11 +16,19 @@ def get_sound_language(source: WwiseObject):
                 source = child
                 break
         else:
-            return 'SFX'
+            return SFX_LANGUAGE_NAME
     language = waapi_utils.get_referenced_object(source, 'audioSource:language')
     if language is None:
-        return 'SFX'
+        return SFX_LANGUAGE_NAME
     return language.name
+
+
+# 「按当前语言筛选」时该对象是否应被排除：SFX 等非本地化对象始终保留，只排除其它语言的本地化对象
+def is_filtered_out_by_language(obj: WwiseObject, active_language: str) -> bool:
+    language = get_sound_language(obj)
+    if language == SFX_LANGUAGE_NAME:
+        return False
+    return language != active_language
 
 # 获取默认语言
 def get_default_language():
@@ -35,7 +46,7 @@ def get_all_language_names():
     language_list = waapi_utils.get_language_list()
     for language in language_list:
         name = language.name
-        if name != 'SFX' and name != 'External' and name != 'Mixed':
+        if name != SFX_LANGUAGE_NAME and name != 'External' and name != 'Mixed':
             language_names.append(name)
     return language_names
 
@@ -52,7 +63,7 @@ def is_localized(root: WwiseObject) -> bool:
             return False
 
         if obj.type == WwiseObjectType.Sound:
-            return get_sound_language(obj) != 'SFX'
+            return get_sound_language(obj) != SFX_LANGUAGE_NAME
 
         if obj.type == WwiseObjectType.Event:
             for target in event_utils.get_event_targets(obj):

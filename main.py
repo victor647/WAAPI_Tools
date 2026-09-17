@@ -90,6 +90,9 @@ def install_exception_logging() -> None:
 def exit_process(code: int) -> None:
     log_leftover_threads()
     for stream in (sys.stdout, sys.stderr):
+        # 打包成无控制台的 exe 时这两个流是 None，直接跳过
+        if stream is None or not hasattr(stream, "flush"):
+            continue
         try:
             stream.flush()
         except (ValueError, OSError):
@@ -99,6 +102,9 @@ def exit_process(code: int) -> None:
 
 if __name__ == '__main__':
     install_exception_logging()
+    # 把 print()/第三方库的输出也收进日志文件（控制台仍可见）
+    from libraries.utils.log_utils import install_output_capture
+    install_output_capture()
     try:
         object_ids, from_wwise = parse_args(sys.argv[1:])
         exit_code = run_app_loop(object_ids, from_wwise)

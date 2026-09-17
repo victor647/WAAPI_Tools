@@ -48,7 +48,7 @@ class Ui_AudioSilenceTrimmer(object):
         self.spbCutThreshold.setObjectName(u"spbCutThreshold")
         self.spbCutThreshold.setMinimum(-96)
         self.spbCutThreshold.setMaximum(0)
-        self.spbCutThreshold.setValue(-48)
+        self.spbCutThreshold.setValue(-60)
 
         self.horizontalLayout.addWidget(self.spbCutThreshold)
 

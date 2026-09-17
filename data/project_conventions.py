@@ -31,6 +31,47 @@ DEFAULT_EVENT_PLAY_PREFIX = False
 DEFAULT_EVENT_REF_DARK_COLOR = True
 DEFAULT_EVENT_REF_NOTES = True
 
+# 默认工程规范：任何位置都没有规范文件时用它生成一份（打包环境优先用随包携带的 ProjectConventions.json）
+DEFAULT_CONVENTIONS = {
+    "NetRole": {
+        "Suffix": {"1P": "_1P", "2P": "_2P", "3P": "_3P"},
+        "BusSuffix": {"1P": "_1P", "2P": "_2P", "3P": "_3P"},
+        "SwitchGroup": "SW_Player",
+        "SwitchValues": {"1P": "Player_1P", "2P": "Player_2P", "3P": "Player_3P"},
+    },
+    "ContainerSuffix": {"Random": "_\\d{2}$", "Sequence": "_[A-Z]$"},
+    "AcronymConvention": {
+        "Enabled": False,
+        "AcronymMap": {
+            "Ability": "ABL", "Action": "ACT", "Ambience": "AMB", "Character": "CHR", "Cutscene": "CTS",
+            "Enemy": "ENM", "Foley": "FLY", "Interface": "UI", "Music": "BGM", "Object": "OBJ",
+            "Player": "PLR", "Plugin": "DSP", "Scene": "SCE", "Setting": "SET", "Skill": "SKL",
+            "Spatial": "SPL", "Timeline": "TML", "Vehicle": "VCL", "Voice": "VO", "Weapon": "WPN",
+        },
+    },
+    "ColorConvention": {
+        "Enabled": False,
+        "ColorMap": {
+            "Ability": 24, "Action": 21, "Ambience": 17, "Character": 20, "Cutscene": 16,
+            "Enemy": 23, "Foley": 21, "Interface": 15, "Music": 26, "Object": 18,
+            "Player": 20, "Plugin": 14, "Scene": 17, "Setting": 14, "Skill": 24,
+            "Spatial": 14, "Timeline": 16, "Vehicle": 25, "Voice": 19, "Weapon": 22,
+        },
+    },
+    "NameCaseConvention": {"Enabled": True, "Mode": DEFAULT_NAME_CASE_MODE},
+    "PathLengthConvention": {"Enabled": False, "FullNameInSound": False},
+    "UnimplementedLanguages": [],
+    "EventConvention": {
+        "PlayPrefix": DEFAULT_EVENT_PLAY_PREFIX,
+        "RefDarkColor": DEFAULT_EVENT_REF_DARK_COLOR,
+        "RefNotes": DEFAULT_EVENT_REF_NOTES,
+    },
+    "BankConvention": {
+        "UseAutoDefinedBank": DEFAULT_USE_AUTO_DEFINED_BANK,
+        "SplitEventMedia": DEFAULT_SPLIT_EVENT_MEDIA,
+    },
+}
+
 
 def _app_dir() -> str:
     # 打包后为 exe 所在目录（可写），开发环境为仓库根目录
@@ -54,11 +95,11 @@ def _bundled_conventions_path() -> str:
 
 
 def _initialize_conventions_file() -> str:
-    # 工程目录与应用目录都没有规范文件时，用打包内置副本初始化出一份可写文件；
-    # 复制失败（例如目录只读）则本次直接使用内置副本
+    # 工程目录与应用目录都没有规范文件时，在应用目录生成一份：
+    # 优先用打包内置副本，开发环境没有内置副本则写出代码里的默认规范
     bundled = _bundled_conventions_path()
     if not bundled:
-        return ""
+        return _write_default_conventions()
     target = os.path.join(_app_dir(), os.path.basename(bundled))
     try:
         shutil.copyfile(bundled, target)
@@ -69,13 +110,30 @@ def _initialize_conventions_file() -> str:
         return bundled
 
 
+# 没有任何模板可用时写出的默认规范（开发环境首次运行；打包时会以随包携带的那份为准）
+def _write_default_conventions() -> str:
+    directory = _app_dir()
+    if not directory:
+        return ""
+    target = os.path.join(directory, CONVENTIONS_FILE_NAME)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(DEFAULT_CONVENTIONS, f, ensure_ascii=False, indent=2)
+        Logger().info(f"已生成默认工程规范文件: {target}")
+        return target
+    except OSError as e:
+        Logger().warning(f"生成默认工程规范文件失败，本次使用内置默认规范: {target} ({e})")
+        return ""
+
+
 def _resolve_conventions_json_path(project_directory: str) -> str | None:
-    # 依次查找：Wwise 工程目录、应用目录（exe 目录或仓库根目录），最后兜底当前工作目录
-    directories = [directory for directory in (project_directory, _app_dir()) if directory]
-    directories.append("")
-    for directory in directories:
+    # 依次查找：Wwise 工程目录、应用目录（exe 目录或 main.py 所在目录）
+    for directory in (project_directory, _app_dir()):
+        if not directory:
+            continue
         for name in CONVENTIONS_FILE_NAMES:
-            p = os.path.join(directory, name) if directory else name
+            p = os.path.join(directory, name)
             if os.path.isfile(p):
                 return p
     return None
@@ -126,6 +184,8 @@ def init():
             conventions = json.load(f)
         # 记住实际读取的文件（只读的内置副本除外，保存时另行寻找可写位置）
         _conventions_path = "" if json_path == _bundled_conventions_path() else json_path
+        Logger().debug(f"工程规范已加载：{json_path}（缩写 {len(get_acronym_map())} 条，"
+                       f"颜色 {len(get_color_map())} 条，容器后缀 {len(conventions.get('ContainerSuffix') or {})} 条）")
 
 
 # 规范配置节点：新结构为 <X>Convention 子节点（Enabled + 数据表），兼容旧的顶层平铺字段

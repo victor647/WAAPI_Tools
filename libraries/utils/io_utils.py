@@ -55,6 +55,15 @@ def import_from_csv():
     return list(csv.reader(file))
 
 
+# 从txt文件导入（每行一条数据）
+def import_from_txt():
+    file_path = _get_qfiledialog().getOpenFileName(filter='TXT(*.txt)')
+    if file_path[0] == '':
+        return None
+    file = open(file_path[0], mode='r', encoding='utf-8')
+    return [line.rstrip('\n') for line in file]
+
+
 # 从xml或WorkUnit文件导入
 def import_from_xml(extension='xml'):
     file_path = _get_qfiledialog().getOpenFileName(filter=f'XML(*.{extension})')

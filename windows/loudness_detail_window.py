@@ -6,6 +6,7 @@ from PySide6.QtGui import QBrush
 from PySide6.QtWidgets import QDialog, QMenu, QTableWidgetItem
 
 from libraries.utils import audio_utils, path_utils, theme_utils
+from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, mixing_utils, waapi_utils
 from table.wwise_table_context_menu import add_common_object_actions, connect_double_click_select
@@ -94,7 +95,7 @@ class LoudnessDetailWindow(QDialog, Ui_LoudnessDetail):
             # 多个对象引用同一文件时，用小计行标出这一段属于哪个对象
             subtotal_label = f'小计（{wwise_object.name}）' if multiple else '小计'
             self.__fill_chain(wwise_object, subtotal_label, details)
-        self.tblDetails.resizeColumnsToContents()
+        resize_table_and_window(self.tblDetails, self)
         self.__sync_chain_columns()
         self.__update_summary()
         self.setup_triggers()
@@ -216,7 +217,7 @@ class LoudnessDetailWindow(QDialog, Ui_LoudnessDetail):
                 update_value_item(subtotal_item, self.__chain_offset(chain))
                 subtotal_item.setText(f'{subtotal_item.text()} dB')
         self.__updating = False
-        self.tblDetails.resizeColumnsToContents()
+        resize_table_and_window(self.tblDetails, self)
         self.__update_summary()
 
     # 一组层级里某个属性的合计；这些层级都没有该属性时返回 None

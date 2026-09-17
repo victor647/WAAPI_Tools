@@ -1,6 +1,7 @@
 # JSON/dict 层 WAAPI：入参出参均为 dict 或原生值；供 MCP 与 WAAPI 门面共用。
 import os.path
 import threading
+import time
 from waapi import WaapiClient
 from libraries.singleton import Singleton
 from libraries.utils.log_utils import Logger
@@ -8,6 +9,43 @@ from libraries.utils import user_config
 from libraries.utils.wwise import project_utils
 
 RETURN_FIELDS = {'return': ['id', 'name', 'type', 'path']}
+
+
+# 日志用的参数摘要：长字符串/大列表只留长度，避免一行日志爆长
+def _summarize_value(value, depth: int = 0) -> str:
+    if isinstance(value, str):
+        return value if len(value) <= 80 else value[:60] + f"...({len(value)}字符)"
+    if isinstance(value, dict):
+        if depth >= 2:
+            return "{...}"
+        items = list(value.items())[:8]
+        body = ", ".join(f"{key}={_summarize_value(item, depth + 1)}" for key, item in items)
+        suffix = f", ...共{len(value)}项" if len(value) > len(items) else ""
+        return "{" + body + suffix + "}"
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)
+        if len(items) <= 6:
+            return "[" + ", ".join(_summarize_value(item, depth + 1) for item in items) + "]"
+        return f"[{len(items)}项：{', '.join(_summarize_value(i, depth + 1) for i in items[:3])}, ...]"
+    return str(value)
+
+
+def _describe_call_args(args: tuple, kwargs: dict) -> str:
+    parts = [_summarize_value(value) for value in args if value is not None]
+    parts.extend(f"{key}={_summarize_value(value)}" for key, value in kwargs.items())
+    return " ".join(parts)
+
+
+def _describe_call_result(result) -> str:
+    if result is None:
+        return "None"
+    if isinstance(result, list):
+        return f"{len(result)} 条"
+    if isinstance(result, dict):
+        body = ", ".join(f"{key}={_summarize_value(value, 1)}" for key, value in list(result.items())[:6])
+        return "{" + body + "}"
+    return _summarize_value(result)
+
 
 class WAAPIClient(metaclass=Singleton):
 
@@ -39,8 +77,25 @@ class WAAPIClient(metaclass=Singleton):
         lock = self._call_lock
 
         def locked_call(*args, **kwargs):
+            topic = str(args[0]) if args else "?"
+            summary = _describe_call_args(args[1:], kwargs)
+            started = time.perf_counter()
+            failure = None
             with lock:
-                return original_call(*args, **kwargs)
+                try:
+                    result = original_call(*args, **kwargs)
+                except Exception as e:
+                    failure = e
+                    result = None
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            if failure is not None:
+                # 记录失败调用的主题、参数与耗时，便于对着日志排查
+                Logger().trace(f"WAAPI 失败 {topic} {summary} [{elapsed_ms:.0f}ms] "
+                               f"{type(failure).__name__}: {failure}", console=False)
+                raise failure
+            Logger().trace(f"WAAPI {topic} {summary} [{elapsed_ms:.0f}ms] -> {_describe_call_result(result)}",
+                           console=False)
+            return result
 
         self.client.call = locked_call
 

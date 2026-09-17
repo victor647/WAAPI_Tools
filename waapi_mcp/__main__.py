@@ -23,6 +23,9 @@ from waapi import CannotConnectToWaapiException
 
 def main() -> None:
     # 进程主入口：创建全局 WaapiClient，然后启动 FastMCP 的 stdio 传输
+    # 把 print/stderr 一并收进 mcp_log.log（MCP 模式下不接管 stdout，避免污染 JSON-RPC）
+    from libraries.utils.log_utils import install_output_capture
+    install_output_capture()
     print(f"WAAPI Tools {get_software_version()}", file=sys.stderr)
     # 第二步：与 Wwise 建立 WebSocket（WAAPI 模块内 WaapiClient）
     try:

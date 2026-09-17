@@ -308,8 +308,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 读取输入并启动后台 AI 对话线程
     def _on_ai_send(self):
-        if self._ai_worker and self._ai_worker.isRunning():
-            Logger().warning("AI 正在处理中，请等待当前任务完成")
+        if self.is_busy():
+            Logger().warning(self.busy_message("发送 AI 指令"))
             return
         prompt = self.ledAiPrompt.text().strip()
         if not prompt:
@@ -529,12 +529,39 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开工程规范设置窗口
     def open_project_settings_window(self):
-        settings_window = ProjectSettingsWindow(
-            on_ai_saved=self._reload_ai_model_from_settings,
-            on_theme_applied=self.apply_app_theme,
+        self.open_tool_window(
+            "设置",
+            lambda: ProjectSettingsWindow(
+                on_ai_saved=self._reload_ai_model_from_settings,
+                on_theme_applied=self.apply_app_theme,
+            ),
         )
-        settings_window.exec()
         self.update_convention_action_states()
+
+    # 工具窗口统一入口：记录打开/关闭，便于从日志还原用户操作路径
+    def open_tool_window(self, name: str, builder: Callable):
+        # 上一个批处理没跑完时不打开新工具窗口，避免两个批处理同时改工程
+        if self.is_busy():
+            Logger().warning(self.busy_message(f"打开{name}"))
+            return
+        Logger().info(f"打开工具窗口：{name}")
+        window = builder()
+        window.show()
+        window.exec()
+        Logger().info(f"关闭工具窗口：{name}")
+
+    # 是否有任务正在运行（工具批处理或 AI 任务）：同一时间只允许一个
+    def is_busy(self) -> bool:
+        ai_worker = getattr(self, "_ai_worker", None)
+        return batch_processor.is_busy() or bool(ai_worker and ai_worker.isRunning())
+
+    # 统一的「有任务正在运行」提示
+    def busy_message(self, action: str = "") -> str:
+        ai_worker = getattr(self, "_ai_worker", None)
+        if ai_worker and ai_worker.isRunning():
+            prefix = f"「{action}」未执行：" if action else ""
+            return f"{prefix}AI 任务正在运行，请等它结束后再试"
+        return batch_processor.busy_message(action)
 
     # 按工程规范开关刷新菜单项可用状态
     def update_convention_action_states(self):
@@ -771,6 +798,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # AI 助手输入栏
         self.btnAiSend.clicked.connect(self._on_ai_send)
         self.btnAiStop.clicked.connect(self._on_ai_stop)
+        self.btnClearLog.clicked.connect(self.clear_log_window)
         self.ledAiPrompt.returnPressed.connect(self._on_ai_send)
         # 用户选择/输入模型后立即持久化到 user_config.json，避免每次启动回到第一个
         self.cbbAiModel.activated.connect(lambda _index: self._persist_ai_model())
@@ -785,12 +813,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return True
 
         def run_tool():
+            # 同一时间只允许一个批处理：上一个工具没跑完就不允许再开新任务
+            if self.is_busy():
+                Logger().warning(self.busy_message(action.text()))
+                return
             objects = self.collect_tool_targets(target_types, expand)
             if not objects:
                 Logger().warning(f"「{action.text()}」没有可处理的对象")
                 return
             # 一次工具执行记为一个撤销组，名字用于「撤销/重做」菜单项显示具体操作
             self.add_undo_group_name(action.text())
+            Logger().info(f"执行工具「{action.text()}」：{len(objects)} 个目标对象")
+            Logger().trace(f"{action.text()} 目标对象：" + "；".join(batch_processor.BatchProcessor.object_label(obj)
+                                                                for obj in objects), console=False)
             batch_processor.create_async(objects, proc, action.text(), "name", undo_group=action.text())
 
         action.triggered.connect(run_tool)
@@ -856,10 +891,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.lblWwiseConnection.setText(f'已连接到Wwise{version}')
                     if version and version < 2021:
                         Logger().warning(f'Wwise {version} 低于本工具最低支持版本 2021，部分功能可能不可用')
-                    Logger().debug(f"Wwise已成功连接到{project_path}")
+                    Logger().info(f"Wwise 已连接：{project_path}（版本 {version}）")
                 else:
                     Logger().error(f"Wwise未连接，请打开Wwise工程后重试")
                 project_conventions.init()
+                # 工程目录里可能放着该工程自己的用户配置，连接后重新解析一次
+                user_config.reload_config()
         except CannotConnectToWaapiException:
             Logger().warning("无法连接到Wwise，请确认Wwise工程已打开！")
             self.on_wwise_connection_changed(False)
@@ -1064,6 +1101,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def get_tool_target_objects(self, target_types) -> list[WwiseObject]:
         return self.collect_tool_targets(target_types)
 
+    # 采集不到目标对象时给出可操作的提示，避免工具窗口打开后一片空白却没有反馈
+    def warn_no_target_objects(self, tool_name: str):
+        Logger().warning(f'没有找到可用于「{tool_name}」的 AudioSource 对象')
+        QMessageBox.warning(
+            self,
+            tool_name,
+            f'没有找到可用于「{tool_name}」的 AudioSource 对象。\n\n'
+            '请检查：\n'
+            '· 设置里的「工具执行前自动获取子对象」是否被关闭'
+            '（关闭时只处理表格中本身就是 AudioSource 的行）\n'
+            '· 表格当前的筛选（关键字 / 高级筛选）是否把含音频源的行过滤掉了\n'
+            '· 高级筛选中是否开启了「按当前语言筛选」，把非当前语言的音频源排除了\n'
+            '· 表格里的对象（如 Event、SoundBank、Bus 等）本身不含 AudioSource 子对象',
+        )
+
     # 统一的工具执行前对象采集：按「工具执行前自动获取子对象」决定是否展开子级，
     # 可按目标类型筛选（target_types 为 None 表示不筛类型），并遵循高级筛选的语言设置
     def collect_tool_targets(self, target_types=None, expand: bool = None) -> list[WwiseObject]:
@@ -1091,7 +1143,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if (
                     language_filter_active
                     and obj.type in (WwiseObjectType.Sound, WwiseObjectType.AudioSource)
-                    and localization_utils.get_sound_language(obj) != active_language
+                    and localization_utils.is_filtered_out_by_language(obj, active_language)
                 ):
                     return
                 seen_ids.add(obj.id)
@@ -1196,7 +1248,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开高级查找窗口
     def open_advanced_find_window(self):
-        AdvancedFindWindow(self).exec()
+        self.open_tool_window("高级查找", lambda: AdvancedFindWindow(self))
 
     # 「递归查找 / 保留原始层级」是各类查找共用的开关，改动后写入 user_config
     def _on_find_option_toggled(self, _checked: bool):
@@ -1270,7 +1322,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         gv.active_objects = [
             obj
             for obj in self.get_visible_objects()
-            if localization_utils.get_sound_language(obj) == active_language
+            if not localization_utils.is_filtered_out_by_language(obj, active_language)
         ]
         self.show_obj_list()
 
@@ -1306,7 +1358,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开高级筛选窗口
     def open_advanced_filter_window(self):
-        AdvancedFilterWindow(self).exec()
+        self.open_tool_window("高级筛选", lambda: AdvancedFilterWindow(self))
 
     # 复制对象的路径
     def copy_object_path(self, item: QTableWidgetItem):
@@ -1420,43 +1472,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开模板批量替换窗口
     def open_template_replace_window(self):
-        replace_window = TemplateReplacer(self)
-        replace_window.show()
-        replace_window.exec()
+        self.open_tool_window("模板替换", lambda: TemplateReplacer(self))
 
     # 打开读表重命名窗口
     def open_table_rename_window(self):
-        rename_window = TableRenamer(self)
-        rename_window.show()
-        rename_window.exec()
+        self.open_tool_window("读表重命名", lambda: TableRenamer(self))
 
     # 打开音频末尾静音裁剪窗口
     def open_audio_silence_trimmer_window(self):
         target_objects = self.get_tool_target_objects(WwiseObjectType.AudioSource)
-        trim_window = AudioSilenceTrimWindow(target_objects)
-        trim_window.show()
-        trim_window.exec()
+        if not target_objects:
+            self.warn_no_target_objects('静音裁剪')
+            return
+        self.open_tool_window("静音裁剪", lambda: AudioSilenceTrimWindow(target_objects))
 
     # 打开同步裁剪窗口，列出主窗口表格中的所有 AudioSource 及其裁剪信息
     def open_sync_trim_window(self):
-        sources = [
-            row.wwise_object
-            for row in self.table.data
-            if row.wwise_object.type == WwiseObjectType.AudioSource
-        ]
+        # 该工具按源文件工作：固定展开子级拿全 AudioSource，用户不必先「查找子对象」
+        sources = self.collect_tool_targets(WwiseObjectType.AudioSource, expand=True)
         if not sources:
-            Logger().warning('当前表格中没有 AudioSource 对象')
+            self.warn_no_target_objects('同步裁剪')
             return
-        trim_window = SyncTrimWindow(sources)
-        trim_window.show()
-        trim_window.exec()
+        self.open_tool_window("同步裁剪", lambda: SyncTrimWindow(sources))
 
     # 打开响度调整窗口，统一表格中所有 AudioSource 的响度
     def open_loudness_adjustment_window(self):
         target_objects = self.get_tool_target_objects(WwiseObjectType.AudioSource)
-        loudness_window = LoudnessAdjustmentWindow(target_objects)
-        loudness_window.show()
-        loudness_window.exec()
+        if not target_objects:
+            self.warn_no_target_objects('响度调整')
+            return
+        self.open_tool_window("响度调整", lambda: LoudnessAdjustmentWindow(target_objects))
 
     # 打开媒体资源大小统计窗口（按每个对象逐项展示）
     def calculate_media_size(self):
@@ -1464,9 +1509,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not objects:
             Logger().warning('表格中没有可统计的对象')
             return
-        media_window = MediaSizeWindow(objects)
-        media_window.show()
-        media_window.exec()
+        self.open_tool_window("媒体资源大小统计", lambda: MediaSizeWindow(objects))
 
     # 打开属性查询窗口，对表格可见对象批量读取指定属性
     def open_property_query_window(self):
@@ -1474,9 +1517,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not objects:
             Logger().warning('表格中没有可查询的对象')
             return
-        query_window = PropertyQueryWindow(objects)
-        query_window.show()
-        query_window.exec()
+        self.open_tool_window("属性查询", lambda: PropertyQueryWindow(objects))
 
     # 添加列表对象到选中的Bank中
     def add_to_selected_bank(self):
@@ -1487,9 +1528,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开Bank的列表分配窗口
     def open_bank_assignment_matrix_window(self):
-        matrix_window = BankAssignmentMatrix(self)
-        matrix_window.show()
-        matrix_window.exec()
+        self.open_tool_window("Bank分配矩阵", lambda: BankAssignmentMatrix(self))
 
     # 替换对象上的RTPC
     def copy_rtpc_from_selection(self):
@@ -1500,9 +1539,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开工程检查窗口
     def open_project_validation_window(self):
-        validate_window = ProjectValidation(self)
-        validate_window.show()
-        validate_window.exec()
+        self.open_tool_window("工程检查", lambda: ProjectValidation(self))
 
     # 添加日志，确保自动定位到最新
     def add_log(self, line):
@@ -1511,6 +1548,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.txeOutputLogs.append(line)
         self.txeOutputLogs.setTextCursor(cursor)
         self.txeOutputLogs.ensureCursorVisible()
+
+    # 清空日志窗口内容；只动界面文本，日志文件（gui_log.log / mcp_log.log）不受影响
+    def clear_log_window(self):
+        self.txeOutputLogs.clear()
 
 
     # 窗口关闭事件处理

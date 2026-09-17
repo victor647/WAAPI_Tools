@@ -28,6 +28,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         obj_name: str = "",
         on_finished=None,
         on_interrupted=None,
+        exclusive: bool = True,
     ):
         batch_processor.create_async(
             objects,
@@ -36,6 +37,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
             obj_name,
             on_finished=on_finished,
             on_interrupted=on_interrupted,
+            exclusive=exclusive,
         )
 
     def init_table_view(self):

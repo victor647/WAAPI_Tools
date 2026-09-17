@@ -51,6 +51,8 @@ class AdvancedFindWindow(QDialog, Ui_AdvancedFind):
         type_names = self.cbbFindChildType.checked_options()
         user_config.save_advanced_find_settings({"find_child_types": type_names})
         self.__main.find_children_by_type(type_names)
+        # 查找动作已经作用到主窗口，直接关闭本窗口
+        self.accept()
 
     # 「找属性」下拉框选择变化时保存
     def _on_find_property_changed(self, text: str):
@@ -61,3 +63,5 @@ class AdvancedFindWindow(QDialog, Ui_AdvancedFind):
         property_name = self.cbbFindProperty.currentText()
         user_config.save_advanced_find_settings({"find_property": property_name})
         self.__main.find_by_property(property_name)
+        # 查找动作已经作用到主窗口，直接关闭本窗口
+        self.accept()

@@ -537,6 +537,11 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_ai.addWidget(self.btnAiStop)
 
+        self.btnClearLog = QPushButton(self.centralwidget)
+        self.btnClearLog.setObjectName(u"btnClearLog")
+
+        self.horizontalLayout_ai.addWidget(self.btnClearLog)
+
 
         self.verticalLayout_3.addLayout(self.horizontalLayout_ai)
 
@@ -879,6 +884,10 @@ class Ui_MainWindow(object):
         self.ledAiPrompt.setPlaceholderText(QCoreApplication.translate("MainWindow", u"\u8f93\u5165\u6307\u4ee4\u8ba9 AI \u5904\u7406\u8868\u683c\u4e2d\u7684\u5bf9\u8c61\uff0c\u4f8b\u5982\uff1a\u628a\u5217\u8868\u91cc\u6240\u6709 Sound \u6539\u4e3a\u5168\u5c0f\u5199\u547d\u540d\uff08Enter \u53d1\u9001\uff09", None))
         self.btnAiSend.setText(QCoreApplication.translate("MainWindow", u"\u53d1\u9001\u7ed9 AI", None))
         self.btnAiStop.setText(QCoreApplication.translate("MainWindow", u"\u505c\u6b62", None))
+#if QT_CONFIG(tooltip)
+        self.btnClearLog.setToolTip(QCoreApplication.translate("MainWindow", u"\u6e05\u7a7a\u4e0b\u65b9\u65e5\u5fd7\u7a97\u53e3\u7684\u5185\u5bb9\uff1b\u65e5\u5fd7\u6587\u4ef6\uff08gui_log.log / mcp_log.log\uff09\u4e0d\u53d7\u5f71\u54cd\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.btnClearLog.setText(QCoreApplication.translate("MainWindow", u"\u6e05\u7a7a\u65e5\u5fd7", None))
         self.mnuAudioSource.setTitle(QCoreApplication.translate("MainWindow", u"\u6e90\u6587\u4ef6", None))
         self.mnuAudioEdit.setTitle(QCoreApplication.translate("MainWindow", u"\u526a\u8f91", None))
         self.mnuAudioOrganize.setTitle(QCoreApplication.translate("MainWindow", u"\u6574\u7406", None))

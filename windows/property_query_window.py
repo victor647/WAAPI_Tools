@@ -6,6 +6,7 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QDialog, QMessageBox, QTableWidgetItem
 
 from libraries.multi_thread import batch_processor
+from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import waapi_utils
 from libraries.wwise_object import WwiseObject
@@ -53,7 +54,7 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         self.lblObjectCount.setText(f'表格内共 {len(self.__objects)} 个对象')
         # 打开窗口就先把对象列表铺进表格，属性列留空，点「查询」后再补值
         self._render_object_rows()
-        self.tblPropertyResults.resizeColumnsToContents()
+        resize_table_and_window(self.tblPropertyResults, self)
         self.tblPropertyResults.setSortingEnabled(True)
 
     def setup_triggers(self):
@@ -198,7 +199,7 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
                 else:
                     value_text = ''
                 self.tblPropertyResults.setItem(index, column, QTableWidgetItem(value_text))
-        self.tblPropertyResults.resizeColumnsToContents()
+        resize_table_and_window(self.tblPropertyResults, self)
         # 数据写完后才开启表头排序，避免填充过程中行被反复重排
         self.tblPropertyResults.setSortingEnabled(True)
         self._notify_missing_properties()

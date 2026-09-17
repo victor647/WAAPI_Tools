@@ -37,6 +37,20 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnExportList">
+       <property name="text">
+        <string>导出列表</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnImportList">
+       <property name="text">
+        <string>导入列表</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QLabel" name="lblAnalyze">
        <property name="text">
         <string>分析</string>
@@ -247,12 +261,12 @@
      </column>
      <column>
       <property name="text">
-       <string>对象音量调整</string>
+       <string>对象调整</string>
       </property>
      </column>
      <column>
       <property name="text">
-       <string>总线音量调整</string>
+       <string>总线调整</string>
       </property>
      </column>
      <column>

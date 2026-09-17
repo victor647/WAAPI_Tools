@@ -11,6 +11,7 @@ from libraries.table_view.table_severity_delegate import SeverityTableDelegate
 from table.wwise_table_context_menu import add_common_object_actions
 from table.wwise_table_row_data import WwiseTableRowData
 from libraries.utils import audio_utils, user_config
+from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, audio_source_utils, soundbank_utils, localization_utils, event_utils, \
     container_utils, waapi_utils, mixing_utils
@@ -283,7 +284,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         # 收尾：补写剩余问题行并清理收集缓存
         self._flush_pending_problems()
         self.__pendingProblems = []
-        self.tblValidationResults.resizeColumnsToContents()
+        resize_table_and_window(self.tblValidationResults, self)
         problem_count = len(self.problematicObjects)
         if problem_count == 0:
             text = '在工程中未发现任何问题！'

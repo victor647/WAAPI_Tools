@@ -8,6 +8,7 @@ from libraries.multi_thread import batch_processor
 from libraries.utils.wwise import waapi_utils
 from libraries.wwise_object import WwiseObjectType
 from libraries.utils import io_utils, user_config
+from libraries.utils.qt_utils import resize_table_and_window
 
 
 # 通过读表批量重命名工具
@@ -74,7 +75,7 @@ class TableRenamer(QDialog, Ui_RenameByTable):
 
     # 读表完成后自动设置宽度
     def on_read_finished(self):
-        self.tblConfigItems.resizeColumnsToContents()
+        resize_table_and_window(self.tblConfigItems, self)
 
     # 逐行读表
     def parse_csv_line(self, data):

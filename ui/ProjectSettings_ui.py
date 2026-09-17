@@ -236,6 +236,29 @@ class Ui_ProjectSettings(object):
 
         self.tabToolsLayout.addLayout(self.pageSizeRow)
 
+        self.loudnessBufferRow = QHBoxLayout()
+        self.loudnessBufferRow.setObjectName(u"loudnessBufferRow")
+        self.lblLoudnessBuffer = QLabel(self.tabTools)
+        self.lblLoudnessBuffer.setObjectName(u"lblLoudnessBuffer")
+
+        self.loudnessBufferRow.addWidget(self.lblLoudnessBuffer)
+
+        self.spbLoudnessBuffer = QSpinBox(self.tabTools)
+        self.spbLoudnessBuffer.setObjectName(u"spbLoudnessBuffer")
+        self.spbLoudnessBuffer.setMinimum(128)
+        self.spbLoudnessBuffer.setMaximum(65536)
+        self.spbLoudnessBuffer.setSingleStep(128)
+        self.spbLoudnessBuffer.setValue(1024)
+
+        self.loudnessBufferRow.addWidget(self.spbLoudnessBuffer)
+
+        self.loudnessBufferSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.loudnessBufferRow.addItem(self.loudnessBufferSpacer)
+
+
+        self.tabToolsLayout.addLayout(self.loudnessBufferRow)
+
         self.lblLanguagesHeader = QLabel(self.tabTools)
         self.lblLanguagesHeader.setObjectName(u"lblLanguagesHeader")
 
@@ -503,6 +526,13 @@ class Ui_ProjectSettings(object):
 #endif // QT_CONFIG(tooltip)
 #if QT_CONFIG(tooltip)
         self.spbPageSize.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ed8\u8ba4 500\uff0c\u53ef\u8c03\u8303\u56f4 50-5000\u3002\u5bf9\u8c61\u6570\u91cf\u5f88\u5927\u7684\u5de5\u7a0b\u5efa\u8bae\u4fdd\u6301 500 \u5de6\u53f3\uff0c\u907f\u514d\u5355\u6b21\u8bf7\u6c42\u8d85\u65f6\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.lblLoudnessBuffer.setText(QCoreApplication.translate("ProjectSettings", u"\u54cd\u5ea6\u5206\u6790\u5206\u5757\u91c7\u6837\u70b9", None))
+#if QT_CONFIG(tooltip)
+        self.lblLoudnessBuffer.setToolTip(QCoreApplication.translate("ProjectSettings", u"RMS \u54cd\u5ea6\u5206\u6790\u65f6\u6bcf\u4e2a buffer \u7684\u91c7\u6837\u70b9\u6570\uff1a\u6bcf buffer \u5355\u72ec\u6c42\u529f\u7387\uff0c\u5254\u9664\u4f4e\u4e8e\u95e8\u9650\u7684\u9759\u97f3 buffer \u540e\u518d\u53d6\u5e73\u5747\u3002\u5206\u5757\u8d8a\u5927\u8d8a\u63a5\u8fd1\u6574\u4f53\u54cd\u5ea6\uff0c\u8d8a\u5c0f\u5bf9\u9759\u97f3\u6bb5\u66f4\u654f\u611f\u3002", None))
+#endif // QT_CONFIG(tooltip)
+#if QT_CONFIG(tooltip)
+        self.spbLoudnessBuffer.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ed8\u8ba4 1024\uff0c\u53ef\u8c03\u8303\u56f4 128-65536\u3002\u54cd\u5ea6\u8c03\u6574\u3001\u9759\u97f3\u88c1\u526a\u3001\u97f3\u9891\u9884\u89c8\u7684\u54cd\u5ea6\u663e\u793a\u5171\u7528\u8be5\u503c\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.lblLanguagesHeader.setText(QCoreApplication.translate("ProjectSettings", u"\u672a\u63a5\u5165\u8bed\u8a00\uff08\u7528\u5206\u53f7\u5206\u9694\uff09", None))
 #if QT_CONFIG(tooltip)

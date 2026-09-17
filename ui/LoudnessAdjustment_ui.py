@@ -40,6 +40,16 @@ class Ui_LoudnessAdjustment(object):
 
         self.toolsRow.addWidget(self.btnImportFolder)
 
+        self.btnExportList = QPushButton(LoudnessAdjustment)
+        self.btnExportList.setObjectName(u"btnExportList")
+
+        self.toolsRow.addWidget(self.btnExportList)
+
+        self.btnImportList = QPushButton(LoudnessAdjustment)
+        self.btnImportList.setObjectName(u"btnImportList")
+
+        self.toolsRow.addWidget(self.btnImportList)
+
         self.lblAnalyze = QLabel(LoudnessAdjustment)
         self.lblAnalyze.setObjectName(u"lblAnalyze")
 
@@ -171,6 +181,8 @@ class Ui_LoudnessAdjustment(object):
         LoudnessAdjustment.setWindowTitle(QCoreApplication.translate("LoudnessAdjustment", u"\u54cd\u5ea6\u8c03\u6574", None))
         self.btnImportFiles.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5bfc\u5165\u6587\u4ef6", None))
         self.btnImportFolder.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5bfc\u5165\u6587\u4ef6\u5939", None))
+        self.btnExportList.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5bfc\u51fa\u5217\u8868", None))
+        self.btnImportList.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5bfc\u5165\u5217\u8868", None))
         self.lblAnalyze.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5206\u6790", None))
         self.btnAnalyzeSample.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u539f\u59cb\u6837\u672c", None))
         self.btnAnalyzeObject.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5bf9\u8c61\u8c03\u6574", None))
@@ -192,9 +204,9 @@ class Ui_LoudnessAdjustment(object):
         ___qtablewidgetitem2 = self.tblAudioList.horizontalHeaderItem(2)
         ___qtablewidgetitem2.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u54cd\u5ea6", None))
         ___qtablewidgetitem3 = self.tblAudioList.horizontalHeaderItem(3)
-        ___qtablewidgetitem3.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5bf9\u8c61\u97f3\u91cf\u8c03\u6574", None))
+        ___qtablewidgetitem3.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u5bf9\u8c61\u8c03\u6574", None))
         ___qtablewidgetitem4 = self.tblAudioList.horizontalHeaderItem(4)
-        ___qtablewidgetitem4.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u603b\u7ebf\u97f3\u91cf\u8c03\u6574", None))
+        ___qtablewidgetitem4.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u603b\u7ebf\u8c03\u6574", None))
         ___qtablewidgetitem5 = self.tblAudioList.horizontalHeaderItem(5)
         ___qtablewidgetitem5.setText(QCoreApplication.translate("LoudnessAdjustment", u"\u6700\u7ec8\u54cd\u5ea6", None))
         ___qtablewidgetitem6 = self.tblAudioList.horizontalHeaderItem(6)

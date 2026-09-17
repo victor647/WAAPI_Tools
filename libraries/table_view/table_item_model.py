@@ -1,4 +1,5 @@
 import globals.global_delegates as gd
+from typing import Callable
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QModelIndex
 from PySide6.QtWidgets import QStyledItemDelegate, QApplication, QStyle, QWidget, QTableView
@@ -146,8 +147,33 @@ class TableItemModel(QStandardItemModel):
 
 # 自定义排序代理模型，支持按数值排序而不是文本排序
 class AudioTableSortProxyModel(QSortFilterProxyModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pinned_bottom_count: int = 0
+        self.pinned_bottom_checker: Callable[[QModelIndex], bool] | None = None
+
+    def is_pinned_bottom(self, index: QModelIndex) -> bool:
+        if not index.isValid():
+            return False
+        if self.pinned_bottom_checker and self.pinned_bottom_checker(index):
+            return True
+        if self.pinned_bottom_count > 0:
+            source_model = self.sourceModel()
+            if source_model:
+                if index.row() >= source_model.rowCount() - self.pinned_bottom_count:
+                    return True
+        return False
 
     def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        left_pinned = self.is_pinned_bottom(left)
+        right_pinned = self.is_pinned_bottom(right)
+        if left_pinned and right_pinned:
+            is_asc = (self.sortOrder() == Qt.SortOrder.AscendingOrder)
+            return (left.row() < right.row()) if is_asc else (left.row() > right.row())
+        if left_pinned != right_pinned:
+            is_asc = (self.sortOrder() == Qt.SortOrder.AscendingOrder)
+            return not is_asc if left_pinned else is_asc
+
         # 重写比较方法，优先使用 UserRole 中的数值进行排序
         # 获取UserRole中的数值（如果存在）
         left_value = left.data(Qt.ItemDataRole.UserRole)

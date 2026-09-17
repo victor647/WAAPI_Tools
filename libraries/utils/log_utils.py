@@ -1,5 +1,6 @@
 import os
 import sys
+import io
 import logging
 import time
 from libraries.singleton import Singleton
@@ -33,6 +34,50 @@ def _software_version() -> str:
         return get_software_version()
     except Exception:
         return ""
+
+
+# 把 print() / 第三方库写到 stdout、stderr 的内容一并收进日志文件；
+# 原流仍照常输出（开发环境控制台不受影响），打包成无控制台的 exe 时只写文件
+class _StreamTee(io.TextIOBase):
+
+    def __init__(self, stream, prefix: str = ""):
+        self._stream = stream
+        self._prefix = prefix
+        self._pending = ""
+
+    @property
+    def encoding(self):
+        return getattr(self._stream, "encoding", None) or "utf-8"
+
+    def write(self, text):
+        if self._stream is not None:
+            self._stream.write(text)
+        self._pending += text
+        while "\n" in self._pending:
+            line, self._pending = self._pending.split("\n", 1)
+            if line.strip():
+                Logger().trace(f"{self._prefix}{line}", console=False)
+        return len(text)
+
+    def flush(self):
+        if self._pending.strip():
+            Logger().trace(f"{self._prefix}{self._pending.strip()}", console=False)
+            self._pending = ""
+        if self._stream is not None:
+            self._stream.flush()
+
+    def isatty(self):
+        return False
+
+
+# 安装输出捕获：MCP 的 stdout 走 JSON-RPC 协议，只接管 stderr
+def install_output_capture() -> None:
+    names = (("stderr", "[stderr] "),) if _waapi_mcp_mode() else (("stdout", ""), ("stderr", "[stderr] "))
+    for name, prefix in names:
+        stream = getattr(sys, name, None)
+        if isinstance(stream, _StreamTee):
+            continue
+        setattr(sys, name, _StreamTee(stream, prefix))
 
 # 日志窗口字体颜色：[颜色, 字号, 字重]
 _DARK_FONT_STYLES = {
@@ -144,6 +189,7 @@ class Logger(object, metaclass=Singleton):
         self._status_bar_stream = None
         self._debug_mode = False
         self.log_file_path = ""
+        self._file_only_logger = logging.getLogger("FFSimpleTool.file")
         self._console_logger.attach_console(self.enable_colorful_cmdline)
         self._setup_file_log()
 
@@ -159,9 +205,20 @@ class Logger(object, metaclass=Singleton):
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
         self.colorful_cmd_logger.addHandler(handler)
+        # 第二个日志器只挂文件句柄：WAAPI 调用流水等只想进文件的内容走它
+        self._file_only_logger = logging.getLogger("FFSimpleTool.file")
+        self._file_only_logger.handlers.clear()
+        self._file_only_logger.setLevel(logging.DEBUG)
+        self._file_only_logger.propagate = False
+        self._file_only_logger.addHandler(handler)
         self.log_file_path = path
-        header = (f"===== WAAPI 工具集 {_software_version()} 启动 "
-                  f"{time.strftime('%Y-%m-%d %H:%M:%S')} ({mode.upper()}) =====\n")
+        header = (
+            f"===== WAAPI 工具集 {_software_version()} 启动 "
+            f"{time.strftime('%Y-%m-%d %H:%M:%S')} ({mode.upper()}) =====\n"
+            f"Python {sys.version.split()[0]} | {'打包环境' if getattr(sys, 'frozen', False) else '开发环境'} "
+            f"| 工作目录 {os.getcwd()}\n"
+            f"日志文件 {path}\n"
+        )
         handler.stream.write(header)
         handler.stream.flush()
 
@@ -240,6 +297,15 @@ class Logger(object, metaclass=Singleton):
         if self._debug_mode:
             self.log_to_output_stream(log_info, "DEBUG")
 
+    # 明细日志：写日志文件（console=False 时只写文件），始终不显示在日志窗口
+    # 用于批量逐对象处理记录、WAAPI 调用流水等排查用信息
+    def trace(self, text: str, console: bool = True):
+        log_info = self._get_log_info(text, logging.DEBUG)
+        if not console:
+            self._file_only_logger.debug(log_info)
+            return
+        self._emit(log_info, logging.DEBUG)
+
     # 故障日志（红色）
     def exception(self, text: str):
         log_info = self._get_log_info(text, logging.ERROR)
@@ -248,4 +314,5 @@ class Logger(object, metaclass=Singleton):
 
     # 状态栏日志
     def status(self, text: str):
-        self._status_bar_stream(text)
+        if self._status_bar_stream:
+            self._status_bar_stream(text)

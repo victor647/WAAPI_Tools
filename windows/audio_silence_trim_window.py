@@ -4,6 +4,7 @@ import clipboard
 import soundfile
 
 from libraries.utils import audio_utils, user_config
+from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.wwise import audio_source_utils, waapi_utils
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
@@ -61,7 +62,7 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         # 等窗口出现后再异步读取主窗口对象背后的源文件，避免呼出前阻塞
         if len(self.__activeObjects) > 0:
             QTimer.singleShot(0, self.populate_from_main_window)
-        self.tblFileList.resizeColumnsToContents()
+        resize_table_and_window(self.tblFileList, self)
 
     def setup_triggers(self):
         self.btnImportFiles.clicked.connect(self.import_files)
@@ -195,7 +196,18 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         for file_path in self.__resolvedFilePaths:
             self.add_file(file_path)
         self.tblFileList.repaint()
-        self.tblFileList.resizeColumnsToContents()
+        resize_table_and_window(self.tblFileList, self)
+        if self.tblFileList.rowCount() == 0:
+            # 表格还是空的说明源文件都没解析出来，给出提示避免用户以为是卡住了
+            Logger().warning('没有解析到可裁剪的源文件')
+            QMessageBox.warning(
+                self,
+                '静音裁剪',
+                f'{len(self.__activeObjects)} 个对象下都没有解析出可用的源文件：\n'
+                '对象的原始 wav 可能没有导入、已被移动，或工程路径读取失败。\n\n'
+                '可以先在主窗口双击进 Wwise 确认这些对象的源文件状态，'
+                '或者用「导入文件 / 导入文件夹」直接处理磁盘上的音频。',
+            )
 
     # 表格行右键菜单：预览对应音频文件的波形
     def show_file_context_menu(self, position):
@@ -265,7 +277,7 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
     # 文件夹导入完成后刷新显示
     def on_folder_import_finished(self):
         self.tblFileList.repaint()
-        self.tblFileList.resizeColumnsToContents()
+        resize_table_and_window(self.tblFileList, self)
         Logger().info(f'文件夹导入完成，共 {len(self.__filePaths)} 个音频文件')
 
     # 添加单个文件回调

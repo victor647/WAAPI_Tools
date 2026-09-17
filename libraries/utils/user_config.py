@@ -15,6 +15,8 @@ DEFAULT_CONFIG = {
         "page_size": 500,
         # 表格「路径」列是否使用简写显示；关闭时显示完整路径
         "path_display_compact": True,
+        # RMS 响度分析的分块采样点数（每 buffer 单独求功率后按门限取平均）
+        "loudness_buffer_samples": 1024,
     },
     "window_settings": {},
     "ai": {
@@ -51,7 +53,7 @@ DEFAULT_CONFIG = {
         "recursive_find": True,
         "keep_self": False,
         # 查找特定类型子对象时勾选的类型（空列表即全部类型）
-        "find_child_types": [],
+        "find_child_types": ["AudioFileSource"],
         # 「找属性」下拉框上次选择的属性名
         "find_property": "Attenuation",
     },
@@ -62,6 +64,8 @@ DEFAULT_CONFIG = {
 }
 
 _config_cache = None
+# 实际读取/写入的配置文件路径（解析一次后记住，避免读写落到不同文件）
+_config_path = ""
 
 
 def _find_repo_root() -> str:
@@ -77,11 +81,39 @@ def _find_repo_root() -> str:
         current = parent
 
 
-def get_config_path() -> str:
-    # 打包后配置文件放在 exe 所在目录，开发环境放在仓库根目录
+# 应用目录：打包后为 exe 所在目录，开发环境为 main.py 所在（仓库根）目录
+def _app_dir() -> str:
     if getattr(sys, "frozen", False):
-        return os.path.join(os.path.dirname(sys.executable), CONFIG_FILE_NAME)
-    return os.path.join(_find_repo_root(), CONFIG_FILE_NAME)
+        return os.path.dirname(sys.executable)
+    return _find_repo_root()
+
+
+# 解析已存在的配置文件：Wwise 工程目录优先，其次应用目录（exe / main.py 同目录）
+def resolve_config_path() -> str | None:
+    try:
+        # 延迟导入：project_utils → waapi_utils → waapi_client 顶部依赖本模块
+        from libraries.utils.wwise import project_utils
+
+        project_directory = project_utils.get_project_directory()
+    except Exception:
+        project_directory = ""
+    for directory in (project_directory, _app_dir()):
+        if not directory:
+            continue
+        candidate = os.path.join(directory, CONFIG_FILE_NAME)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def get_config_path() -> str:
+    # 优先返回本次实际使用的文件；还没解析过或文件已被删除时重新解析；
+    # 都找不到时落到应用目录（首次写入会在那里创建）
+    global _config_path
+    if _config_path and os.path.isfile(_config_path):
+        return _config_path
+    _config_path = resolve_config_path() or os.path.join(_app_dir(), CONFIG_FILE_NAME)
+    return _config_path
 
 
 def _bundled_config_path() -> str:
@@ -95,11 +127,11 @@ def _bundled_config_path() -> str:
 
 
 def _initialize_config_file() -> str:
-    # 首次运行（exe 目录尚无 user_config.json）时把内置副本复制为用户的初始配置；
-    # 复制失败（例如目录只读）时本次直接读取内置副本
+    # 任何位置都没有用户配置时，在应用目录生成一份：优先用打包内置副本，
+    # 开发环境没有内置副本则直接写出代码里的默认配置
     bundled = _bundled_config_path()
     if not bundled:
-        return ""
+        return _write_default_config()
     user_path = get_config_path()
     try:
         os.makedirs(os.path.dirname(user_path), exist_ok=True)
@@ -110,6 +142,19 @@ def _initialize_config_file() -> str:
     except OSError as e:
         Logger().warning(f"写入用户配置文件失败，本次直接读取内置配置: {user_path} ({e})")
         return bundled
+
+
+def _write_default_config() -> str:
+    user_path = get_config_path()
+    try:
+        os.makedirs(os.path.dirname(user_path), exist_ok=True)
+        with open(user_path, "w", encoding="utf-8") as f:
+            json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
+        Logger().info(f"已生成默认用户配置文件: {user_path}")
+        return user_path
+    except OSError as e:
+        Logger().warning(f"生成默认用户配置文件失败，本次使用内置默认值: {user_path} ({e})")
+        return ""
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -123,13 +168,15 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def _load_from_disk() -> dict:
+    global _config_path
     config = _deep_merge(DEFAULT_CONFIG, {})
     path = get_config_path()
     if not os.path.isfile(path):
-        # exe 目录还没有用户配置时，用打包内置的副本初始化
+        # 任何位置都没有用户配置时，用内置副本或代码默认值在应用目录初始化一份
         path = _initialize_config_file()
         if not path:
             return config
+    _config_path = path
     try:
         with open(path, "r", encoding="utf-8") as f:
             disk_config = json.load(f)
@@ -145,7 +192,20 @@ def load_config() -> dict:
     global _config_cache
     if _config_cache is None:
         _config_cache = _load_from_disk()
+        Logger().debug(f"用户配置已加载：{get_config_path()}")
     return _config_cache
+
+
+# 连接 Wwise 之后重新解析配置文件：工程目录里的配置此时才可能出现，需要改用它
+def reload_config() -> None:
+    global _config_cache, _config_path
+    previous = _config_path
+    _config_path = resolve_config_path() or ""
+    if _config_path and _config_path != previous:
+        _config_cache = None
+        Logger().info(f"已切换到工程目录的用户配置：{_config_path}")
+    elif previous and not _config_path:
+        _config_path = previous
 
 
 def get_tool_auto_fetch_children() -> bool:
@@ -180,6 +240,21 @@ def get_tool_path_display_compact() -> bool:
 def set_tool_path_display_compact(enabled: bool) -> None:
     config = load_config()
     config.setdefault("tools", {})["path_display_compact"] = bool(enabled)
+    _write_config(config)
+
+
+# 响度分析的分块采样点数：限制在 128~65536，避免过小噪声大、过大退化成整体响度
+def get_tool_loudness_buffer_samples() -> int:
+    try:
+        value = int(load_config()["tools"].get("loudness_buffer_samples", 1024))
+    except (TypeError, ValueError):
+        value = 1024
+    return max(128, min(65536, value))
+
+
+def set_tool_loudness_buffer_samples(samples: int) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["loudness_buffer_samples"] = max(128, min(65536, int(samples)))
     _write_config(config)
 
 

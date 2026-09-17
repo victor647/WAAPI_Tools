@@ -520,6 +520,16 @@ Boss        包含 Boss
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QPushButton" name="btnClearLog">
+        <property name="toolTip">
+         <string>清空下方日志窗口的内容；日志文件（gui_log.log / mcp_log.log）不受影响。</string>
+        </property>
+        <property name="text">
+         <string>清空日志</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </item>
    </layout>

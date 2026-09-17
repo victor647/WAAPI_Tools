@@ -3,19 +3,33 @@ from PySide6.QtWidgets import QTableView, QAbstractItemView, QHeaderView
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_item_model import TableItemModel, AudioTableSortProxyModel, AudioTableItemDelegate, \
     INCLUSION_COL
-from typing import Type
+from typing import Callable, Type
 from libraries.table_view.table_row_data import TableRowData
 from libraries.utils.log_utils import Logger
 
 
 # TableView 装饰类；table_view 为 None 时仅保留 model / proxy，供无界面（如 MCP）批处理使用
 class TableFacade(object):
-    def __init__(self, table_view: QTableView | None = None, item_model_class: Type[TableItemModel] | None = None):
+    def __init__(
+        self,
+        table_view: QTableView | None = None,
+        item_model_class: Type[TableItemModel] | None = None,
+        headers: list[str] | None = None,
+        sorting_enabled: bool = True,
+        pinned_bottom_count: int = 0,
+        pinned_bottom_checker: Callable[[QModelIndex], bool] | None = None,
+    ):
         self.table_view = table_view
+        self.sorting_enabled = sorting_enabled
+        self.pinned_bottom_count = pinned_bottom_count
+        self.pinned_bottom_checker = pinned_bottom_checker
+        self.custom_headers = list(headers) if headers is not None else None
         model_cls = item_model_class or TableItemModel
         parent = table_view.parent() if table_view else None
         self.model = model_cls(parent)
         self.proxy_model = AudioTableSortProxyModel(parent)
+        self.proxy_model.pinned_bottom_count = pinned_bottom_count
+        self.proxy_model.pinned_bottom_checker = pinned_bottom_checker
         self.proxy_model.setSourceModel(self.model)
         self.item_delegate: AudioTableItemDelegate | None = None
         if table_view:
@@ -23,6 +37,8 @@ class TableFacade(object):
             self.item_delegate = AudioTableItemDelegate(self.table_view)
             self.table_view.setItemDelegate(self.item_delegate)
         self.header_list = []
+        if self.custom_headers is not None:
+            self.refresh_headers()
         if table_view:
             self.init_table_view()
 
@@ -40,7 +56,7 @@ class TableFacade(object):
     def active_data(self):
         active_data = []
         for row in range(self.model.rowCount()):
-            if self.table_view and self.table_view.isRowHidden(row):
+            if self.is_row_hidden(row):
                 continue
             active_data.append(self.data[row])
         return active_data
@@ -50,17 +66,52 @@ class TableFacade(object):
         source_index = self.proxy_model.mapToSource(index)
         return source_index.row()
 
+    # 源模型行在当前视图中的隐藏状态（兼容排序/过滤后的视图行映射）
+    def is_row_hidden(self, source_row: int) -> bool:
+        if not self.table_view:
+            return False
+        if self.proxy_model:
+            proxy_index = self.proxy_model.mapFromSource(self.model.index(source_row, 0))
+            if not proxy_index.isValid():
+                return True
+            return self.table_view.isRowHidden(proxy_index.row())
+        return self.table_view.isRowHidden(source_row)
+
+    # 按源模型行设置视图行的显隐状态
+    def set_row_hidden(self, source_row: int, hidden: bool) -> None:
+        if not self.table_view:
+            return
+        if self.proxy_model:
+            proxy_index = self.proxy_model.mapFromSource(self.model.index(source_row, 0))
+            if proxy_index.isValid():
+                self.table_view.setRowHidden(proxy_index.row(), hidden)
+        else:
+            self.table_view.setRowHidden(source_row, hidden)
+
     # 初始化表格设置
     def init_table_view(self):
         if not self.table_view:
             return
         self.table_view.verticalHeader().setHidden(True)
+        self.table_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table_view.customContextMenuRequested.connect(self.show_context_menu)
+        self.set_sorting_enabled(self.sorting_enabled)
+
+    # 启用或禁用表格排序
+    def set_sorting_enabled(self, enabled: bool):
+        self.sorting_enabled = enabled
+        if self.table_view:
+            self.table_view.setSortingEnabled(enabled)
+            header = self.table_view.horizontalHeader()
+            if header:
+                header.setSortIndicatorShown(enabled)
 
     # 刷新整个表格
     def refresh_table(self, refresh_data=True):
         Logger().info("正在刷新表格内容...")
+        if self.table_view and self.sorting_enabled:
+            self.table_view.setSortingEnabled(False)
         self.refresh_headers()
         if refresh_data:
             self.model.clear_data()
@@ -82,34 +133,48 @@ class TableFacade(object):
         self.model.header = self.header_list
         self.model.layoutChanged.emit()
 
-        # 获取所有显示模式通用的标题行
-
+    # 获取所有显示模式通用的标题行
     def get_common_headers(self) -> list[str]:
-        pass
+        if self.custom_headers is not None:
+            return self.custom_headers.copy()
+        return []
 
     # 根据当前显示模式获取列信息
     def get_headers_by_display_mode(self) -> list[str]:
-        pass
+        return []
 
-    # 自动根据文本设定列宽
+    # 数据行辅助创建与追加
+    def create_row(self) -> TableRowData:
+        col_count = len(self.header_list) or self.column_num or (len(self.custom_headers) if self.custom_headers else 0)
+        return TableRowData(self.model.rowCount(), col_count)
+
+    def append_row(self, row_data: TableRowData) -> None:
+        self.model.append_row(row_data)
+
+    def append_row_values(
+        self,
+        display_values: list,
+        raw_values: list | None = None,
+        severities: list | None = None,
+    ) -> TableRowData:
+        row_data = self.create_row()
+        for col, disp in enumerate(display_values):
+            raw = raw_values[col] if (raw_values and col < len(raw_values)) else None
+            row_data.set_cell_value(col, disp, raw)
+            if severities and col < len(severities) and severities[col] is not None:
+                row_data.set_cell_severity(col, severities[col])
+        self.append_row(row_data)
+        return row_data
+
+    def clear(self) -> None:
+        self.model.clear_data()
+
+    # 自动根据 DisplayRole 文本设定列宽并自适应扩展窗口宽度
     def auto_set_column_width(self):
         if not self.table_view:
             return
-        header = self.table_view.horizontalHeader()
-        metrics = self.table_view.fontMetrics()
-        padding = 20
-        for col in range(self.model.columnCount()):
-            header_text = str(self.model.header[col])
-            max_width = metrics.horizontalAdvance(header_text) + padding
-            for row in range(self.model.rowCount()):
-                index = self.model.index(row, col)
-                text = str(index.data(Qt.ItemDataRole.DisplayRole))
-                width = metrics.horizontalAdvance(text) + padding
-                if width > max_width:
-                    max_width = width
-            # Interactive：保留按内容自动适配的初始宽度，同时允许用户手动拖拽调整列宽
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-            header.resizeSection(col, max_width)
+        from libraries.utils.qt_utils import auto_adjust_window_width
+        auto_adjust_window_width(self.table_view, resize_columns=True)
 
     # 右键菜单
     def show_context_menu(self, position):
@@ -130,6 +195,8 @@ class TableFacade(object):
         self.model.layoutAboutToBeChanged.emit()
         self.model.layoutChanged.emit()
         if self.table_view:
+            if self.sorting_enabled:
+                self.table_view.setSortingEnabled(True)
             self.auto_set_column_width()
 
     # 筛选表格中勾选和显示的行
@@ -138,7 +205,7 @@ class TableFacade(object):
         for row_data in self.data:
             if checked and not row_data[INCLUSION_COL]:
                 continue
-            if visible and self.table_view and self.table_view.isRowHidden(row_data.row):
+            if visible and self.is_row_hidden(row_data.row):
                 continue
             active_rows.append(row_data)
         return active_rows
@@ -212,5 +279,5 @@ class TableFacade(object):
                         continue
             if can_show:
                 found_count += 1
-            self.table_view.setRowHidden(row, not can_show)
+            self.set_row_hidden(row, not can_show)
         return found_count
