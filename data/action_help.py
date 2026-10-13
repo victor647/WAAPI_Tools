@@ -39,6 +39,7 @@ ACTION_HELP = {
     "actResetSourceEdits": "重置对象的裁剪/淡变等 Source 编辑参数。",
     "actTrimAudioSilence": "裁剪音频的头部和尾部的静音，节省包体空间。",
     "actLoudnessAdjustment": "调整或统一所选音频的响度，可调整源文件和Wwise中设置。",
+    "actAutoCompressionSettings": "根据音频时长选择转码格式（Conversion名称需带Long或Short）",
     "actAutoImport": "按 Originals 约定路径自动为对象导入 wav 文件。",
     "actRenameOriginalToWwise": "把磁盘 wav 文件名改成与 Wwise 对象一致（磁盘改名）。",
     "actTidyOriginalFolders": "自动归类整理 Originals 下的子文件夹并更新引用。",

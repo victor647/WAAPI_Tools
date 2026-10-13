@@ -1,11 +1,15 @@
 from dataclasses import dataclass
 
+from libraries.utils import user_config
 from libraries.utils.wwise import audio_source_utils, waapi_utils
 from libraries.wwise_object import WwiseObject
 
 
 LONG_CATEGORY = "long"
 SHORT_CATEGORY = "short"
+
+# 占优比例的兜底默认值（配置里可改）：占比严格超过它才算某一种音效明显占优
+DEFAULT_DOMINANCE_RATIO = 0.6
 
 
 @dataclass
@@ -23,6 +27,18 @@ def _path_prefixes(path: str) -> list[str]:
     return ["\\" + "\\".join(parts[:index]) for index in range(1, len(parts))]
 
 
+# 本层是否被某一种音效明显占优：占比不超过阈值（如 40:60）或正好打平时返回 None，交给上层继承
+def dominant_category(counts: dict, dominance_ratio: float) -> str:
+    long_count = counts.get(LONG_CATEGORY, 0)
+    short_count = counts.get(SHORT_CATEGORY, 0)
+    total = long_count + short_count
+    if not total or long_count == short_count:
+        return None
+    if max(long_count, short_count) / total <= dominance_ratio:
+        return None
+    return LONG_CATEGORY if long_count > short_count else SHORT_CATEGORY
+
+
 def build_conversion_plans(
     targets: list[WwiseObject],
     audio_sources: list[WwiseObject],
@@ -30,7 +46,10 @@ def build_conversion_plans(
     duration_threshold: float,
     long_conversion: WwiseObject,
     short_conversion: WwiseObject,
+    dominance_ratio: float = None,
 ) -> tuple[list[ConversionAssignmentPlan], dict]:
+    if dominance_ratio is None:
+        dominance_ratio = user_config.get_tool_conversion_dominance_ratio()
     targets_by_id = {obj.id: obj for obj in targets if obj and obj.id}
     targets_by_path = {
         "\\" + "\\".join(part for part in obj.path.replace("/", "\\").split("\\") if part): obj
@@ -88,12 +107,8 @@ def build_conversion_plans(
             category = default_category
             override_enabled = True
         else:
-            if counts[LONG_CATEGORY] > counts[SHORT_CATEGORY]:
-                category = LONG_CATEGORY
-            elif counts[SHORT_CATEGORY] > counts[LONG_CATEGORY]:
-                category = SHORT_CATEGORY
-            else:
-                category = parent_category
+            # 占比不够明显时继承上层，把 override 留给更下层的节点
+            category = dominant_category(counts, dominance_ratio) or parent_category
             override_enabled = category != parent_category
         effective_category_by_id[target.id] = category
         plans.append(ConversionAssignmentPlan(
@@ -112,6 +127,7 @@ def build_conversion_plans(
         "valid_duration_count": valid_duration_count,
         "unclassified_count": len(source_by_id) - valid_duration_count,
         "override_enable_count": sum(plan.override_enabled for plan in plans),
+        "dominance_ratio": dominance_ratio,
     }
 
 

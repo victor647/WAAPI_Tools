@@ -327,6 +327,31 @@ class Ui_ProjectSettings(object):
 
         self.tabToolsLayout.addWidget(self.cbxDetailLog)
 
+        self.grpConversion = QGroupBox(self.tabTools)
+        self.grpConversion.setObjectName(u"grpConversion")
+        self.conversionRow = QHBoxLayout(self.grpConversion)
+        self.conversionRow.setObjectName(u"conversionRow")
+        self.lblConversionDominance = QLabel(self.grpConversion)
+        self.lblConversionDominance.setObjectName(u"lblConversionDominance")
+
+        self.conversionRow.addWidget(self.lblConversionDominance)
+
+        self.spbConversionDominance = QSpinBox(self.grpConversion)
+        self.spbConversionDominance.setObjectName(u"spbConversionDominance")
+        self.spbConversionDominance.setMinimum(50)
+        self.spbConversionDominance.setMaximum(100)
+        self.spbConversionDominance.setSingleStep(5)
+        self.spbConversionDominance.setValue(60)
+
+        self.conversionRow.addWidget(self.spbConversionDominance)
+
+        self.conversionRowSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.conversionRow.addItem(self.conversionRowSpacer)
+
+
+        self.tabToolsLayout.addWidget(self.grpConversion)
+
         self.grpLoudness = QGroupBox(self.tabTools)
         self.grpLoudness.setObjectName(u"grpLoudness")
         self.loudnessRow = QHBoxLayout(self.grpLoudness)
@@ -899,6 +924,15 @@ class Ui_ProjectSettings(object):
         self.cbxDetailLog.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u6253\u5f00\u540e\u4f1a\u628a\u6279\u91cf\u5904\u7406\u4e2d\u6bcf\u4e2a\u5bf9\u8c61\u7684\u5904\u7406\u8bb0\u5f55\u3001\u4ee5\u53ca\u6bcf\u6b21 WAAPI \u8c03\u7528\u7684\u53c2\u6570\u4e0e\u8017\u65f6\u5199\u8fdb\u65e5\u5fd7\u6587\u4ef6\uff08gui_log.log / mcp_log.log\uff09\u3002\u65e5\u5fd7\u91cf\u5927\u65f6\u4f1a\u4ea7\u751f\u989d\u5916\u78c1\u76d8\u5199\u5165\uff0c\u6392\u67e5\u95ee\u9898\u540e\u518d\u5173\u6389\u5373\u53ef\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.cbxDetailLog.setText(QCoreApplication.translate("ProjectSettings", u"\u8bb0\u5f55\u660e\u7ec6\u65e5\u5fd7\uff08\u6279\u91cf\u9010\u5bf9\u8c61\u3001WAAPI \u8c03\u7528\u6d41\u6c34\uff09", None))
+        self.grpConversion.setTitle(QCoreApplication.translate("ProjectSettings", u"\u81ea\u52a8\u8f6c\u7801", None))
+        self.lblConversionDominance.setText(QCoreApplication.translate("ProjectSettings", u"\u957f\u77ed\u97f3\u6548\u5360\u4f18\u6bd4\u4f8b", None))
+#if QT_CONFIG(tooltip)
+        self.lblConversionDominance.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u81ea\u52a8\u8f6c\u7801\u65f6\uff0c\u67d0\u4e2a\u8282\u70b9\u4e0a\u7684\u957f/\u77ed\u97f3\u6548\u5360\u6bd4\u8981\u4e25\u683c\u8d85\u8fc7\u8be5\u6bd4\u4f8b\uff0c\u624d\u4f1a\u8986\u76d6\u4e0a\u5c42\u8bbe\u7f6e\uff1b\u5360\u6bd4\u4e0d\u591f\u660e\u663e\uff08\u5982 40:60\uff09\u65f6\u7ee7\u627f\u4e0a\u5c42\uff0c\u4ea4\u7ed9\u66f4\u4e0b\u5c42\u7684\u8282\u70b9\u51b3\u5b9a\u3002\u9ed8\u8ba4 60%\uff0c\u5373 40:60 \u5206\u754c\u3002", None))
+#endif // QT_CONFIG(tooltip)
+#if QT_CONFIG(tooltip)
+        self.spbConversionDominance.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u81ea\u52a8\u8f6c\u7801\u65f6\uff0c\u67d0\u4e2a\u8282\u70b9\u4e0a\u7684\u957f/\u77ed\u97f3\u6548\u5360\u6bd4\u8981\u4e25\u683c\u8d85\u8fc7\u8be5\u6bd4\u4f8b\uff0c\u624d\u4f1a\u8986\u76d6\u4e0a\u5c42\u8bbe\u7f6e\uff1b\u5360\u6bd4\u4e0d\u591f\u660e\u663e\uff08\u5982 40:60\uff09\u65f6\u7ee7\u627f\u4e0a\u5c42\uff0c\u4ea4\u7ed9\u66f4\u4e0b\u5c42\u7684\u8282\u70b9\u51b3\u5b9a\u3002\u9ed8\u8ba4 60%\uff0c\u5373 40:60 \u5206\u754c\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.spbConversionDominance.setSuffix(QCoreApplication.translate("ProjectSettings", u" %", None))
         self.grpLoudness.setTitle(QCoreApplication.translate("ProjectSettings", u"\u54cd\u5ea6\u8bbe\u7f6e", None))
         self.lblLoudnessStandard.setText(QCoreApplication.translate("ProjectSettings", u"\u54cd\u5ea6\u6807\u51c6", None))
         self.cbbLoudnessStandard.setItemText(0, QCoreApplication.translate("ProjectSettings", u"RMS", None))

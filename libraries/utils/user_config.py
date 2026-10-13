@@ -21,6 +21,8 @@ DEFAULT_CONFIG = {
         "loudness_buffer_samples": 1024,
         # 是否记录明细日志（批量逐个对象的处理记录、WAAPI 调用流水）；关闭可减少日志写入开销
         "detail_log": False,
+        # 自动转码：长/短音效占优比例，超过它才覆盖上层设置（0.6 即 40:60 分界）
+        "conversion_dominance_ratio": 0.6,
     },
     "window_settings": {},
     "ai": {
@@ -242,6 +244,21 @@ def set_tool_page_size(page_size: int) -> None:
 def set_tool_auto_fetch_children(enabled: bool) -> None:
     config = load_config()
     config.setdefault("tools", {})["auto_fetch_children"] = bool(enabled)
+    _write_config(config)
+
+
+# 自动转码：长/短音效「占优比例」，超过它才覆盖上层设置（默认 0.6，即 40:60 分界）
+def get_tool_conversion_dominance_ratio() -> float:
+    try:
+        value = float(load_config()["tools"].get("conversion_dominance_ratio", 0.6))
+    except (TypeError, ValueError):
+        value = 0.6
+    return max(0.5, min(1.0, value))
+
+
+def set_tool_conversion_dominance_ratio(ratio: float) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["conversion_dominance_ratio"] = max(0.5, min(1.0, float(ratio)))
     _write_config(config)
 
 

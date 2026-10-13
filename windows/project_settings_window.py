@@ -61,6 +61,9 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbxAutoFetchChildren.setChecked(user_config.get_tool_auto_fetch_children())
         self.cbxDetailLog.setChecked(user_config.get_tool_detail_log_enabled())
         self.spbPageSize.setValue(user_config.get_tool_page_size())
+        self.spbConversionDominance.setValue(
+            int(round(user_config.get_tool_conversion_dominance_ratio() * 100))
+        )
         self.spbLoudnessBuffer.setValue(user_config.get_tool_loudness_buffer_samples())
         self.cbxPathDisplayCompact.setChecked(user_config.get_tool_path_display_compact())
         self.cbxPathHideRoot.setChecked(user_config.get_tool_path_hide_root())
@@ -89,6 +92,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbxAutoFetchChildren.toggled.connect(user_config.set_tool_auto_fetch_children)
         self.cbxDetailLog.toggled.connect(user_config.set_tool_detail_log_enabled)
         self.spbPageSize.valueChanged.connect(user_config.set_tool_page_size)
+        self.spbConversionDominance.valueChanged.connect(self._on_conversion_dominance_changed)
         self.spbLoudnessBuffer.valueChanged.connect(user_config.set_tool_loudness_buffer_samples)
         self.cbxPathDisplayCompact.toggled.connect(user_config.set_tool_path_display_compact)
         self.cbxPathHideRoot.toggled.connect(user_config.set_tool_path_hide_root)
@@ -124,6 +128,10 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbbPreviewDisplayMode.currentIndexChanged.connect(self._save_preview_settings)
         self.cbxUseDefaultReferenceLanguage.toggled.connect(self._on_use_default_reference_language_toggled)
         self.ledReferenceLanguage.textChanged.connect(self._save_reference_language)
+
+    # 自动转码占优比例：界面用百分数，配置里存 0~1 的比例
+    def _on_conversion_dominance_changed(self, percent: int):
+        user_config.set_tool_conversion_dominance_ratio(percent / 100)
 
     # 各工具窗口持久化的设置（统一在这里编辑，工具窗口内的入口保持不变）
     def __load_window_settings(self):

@@ -6,62 +6,86 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1040</width>
+    <width>1180</width>
     <height>650</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>自动压缩设置</string>
+   <string>自动转码设置</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QFormLayout" name="formLayout">
-     <item row="0" column="0">
+    <layout class="QHBoxLayout" name="settingsLayout">
+     <item>
       <widget class="QLabel" name="lblConversion">
        <property name="text">
         <string>音效 Conversion</string>
        </property>
       </widget>
      </item>
-     <item row="0" column="1">
-      <widget class="QWidget" name="conversionOptions" native="true">
-       <layout class="QHBoxLayout" name="conversionOptionsLayout">
-        <property name="leftMargin">
-         <number>0</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QLabel" name="lblLongConversion">
-          <property name="text">
-           <string>长音效</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="cbbLongConversion"/>
-        </item>
-        <item>
-         <widget class="QLabel" name="lblShortConversion">
-          <property name="text">
-           <string>短音效</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="cbbShortConversion"/>
-        </item>
-       </layout>
+     <item>
+      <widget class="QLabel" name="lblLongConversion">
+       <property name="text">
+        <string>长音效</string>
+       </property>
       </widget>
      </item>
-     <item row="1" column="0">
+     <item>
+      <widget class="QComboBox" name="cbbLongConversion">
+       <property name="minimumSize">
+        <size>
+         <width>160</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>1</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="lblShortConversion">
+       <property name="text">
+        <string>短音效</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="cbbShortConversion">
+       <property name="minimumSize">
+        <size>
+         <width>160</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>1</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="settingsGroupGap">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeType">
+        <enum>QSizePolicy::Fixed</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>16</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
       <widget class="QLabel" name="lblDurationThreshold">
        <property name="text">
         <string>长音效时长阈值（秒）</string>
@@ -71,71 +95,40 @@
        </property>
       </widget>
      </item>
-     <item row="1" column="1">
-      <widget class="QWidget" name="durationOptions" native="true">
-       <layout class="QHBoxLayout" name="durationOptionsLayout">
-        <property name="leftMargin">
-         <number>0</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QDoubleSpinBox" name="spbDurationThreshold">
-          <property name="toolTip">
-           <string>时长大于阈值的样本判定为长音效；小于或等于阈值的样本判定为短音效。</string>
-          </property>
-          <property name="decimals">
-           <number>2</number>
-          </property>
-          <property name="maximum">
-           <double>9999.000000000000000</double>
-          </property>
-          <property name="singleStep">
-           <double>0.100000000000000</double>
-          </property>
-          <property name="value">
-           <double>0.500000000000000</double>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="durationOptionsSpacer">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>40</width>
-            <height>20</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btnAnalyze">
-          <property name="text">
-           <string>分析</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btnApplySelected">
-          <property name="enabled">
-           <bool>false</bool>
-          </property>
-          <property name="text">
-           <string>应用勾选项</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
+     <item>
+      <widget class="QDoubleSpinBox" name="spbDurationThreshold">
+       <property name="toolTip">
+        <string>时长大于阈值的样本判定为长音效；小于或等于阈值的样本判定为短音效。</string>
+       </property>
+       <property name="decimals">
+        <number>2</number>
+       </property>
+       <property name="maximum">
+        <double>9999.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>0.100000000000000</double>
+       </property>
+       <property name="value">
+        <double>0.500000000000000</double>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnAnalyze">
+       <property name="text">
+        <string>分析</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnApplySelected">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="text">
+        <string>应用勾选项</string>
+       </property>
       </widget>
      </item>
     </layout>

@@ -791,7 +791,7 @@ class Ui_MainWindow(object):
         self.actTrimAudioSilence.setText(QCoreApplication.translate("MainWindow", u"\u88c1\u526a\u5934\u5c3e\u9759\u97f3", None))
         self.actSyncTrim.setText(QCoreApplication.translate("MainWindow", u"\u540c\u6b65\u88c1\u526a", None))
         self.actLoudnessAdjustment.setText(QCoreApplication.translate("MainWindow", u"\u54cd\u5ea6\u8c03\u6574", None))
-        self.actAutoCompressionSettings.setText(QCoreApplication.translate("MainWindow", u"\u81ea\u52a8\u538b\u7f29\u8bbe\u7f6e", None))
+        self.actAutoCompressionSettings.setText(QCoreApplication.translate("MainWindow", u"\u81ea\u52a8\u8f6c\u7801\u8bbe\u7f6e", None))
         self.actMultiLanguageCompare.setText(QCoreApplication.translate("MainWindow", u"\u591a\u8bed\u8a00\u5bf9\u6bd4", None))
         self.actLocalizeLanguages.setText(QCoreApplication.translate("MainWindow", u"\u5bfc\u5165\u672c\u5730\u5316\u8bed\u8a00", None))
         self.actProjectSettings.setText(QCoreApplication.translate("MainWindow", u"\u8bbe\u7f6e\u2026", None))

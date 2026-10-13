@@ -1578,9 +1578,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def open_auto_compression_settings_window(self):
         if not self.get_visible_objects():
-            QMessageBox.warning(self, "自动压缩设置", "表格中没有可识别的对象。")
+            QMessageBox.warning(self, "自动转码设置", "表格中没有可识别的对象。")
             return
-        self.open_tool_window("自动压缩设置", lambda: AutoCompressionSettingsWindow(self))
+        self.open_tool_window("自动转码设置", lambda: AutoCompressionSettingsWindow(self))
 
     # 打开多语言对比窗口：按每个 Sound 的直系 AudioSource 分语言对比响度与时长
     def open_multi_language_compare_window(self):

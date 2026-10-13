@@ -553,6 +553,60 @@
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="grpConversion">
+         <property name="title">
+          <string>自动转码</string>
+         </property>
+         <layout class="QHBoxLayout" name="conversionRow">
+          <item>
+           <widget class="QLabel" name="lblConversionDominance">
+            <property name="text">
+             <string>长短音效占优比例</string>
+            </property>
+            <property name="toolTip">
+             <string>自动转码时，某个节点上的长/短音效占比要严格超过该比例，才会覆盖上层设置；占比不够明显（如 40:60）时继承上层，交给更下层的节点决定。默认 60%，即 40:60 分界。</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="spbConversionDominance">
+            <property name="toolTip">
+             <string>自动转码时，某个节点上的长/短音效占比要严格超过该比例，才会覆盖上层设置；占比不够明显（如 40:60）时继承上层，交给更下层的节点决定。默认 60%，即 40:60 分界。</string>
+            </property>
+            <property name="minimum">
+             <number>50</number>
+            </property>
+            <property name="maximum">
+             <number>100</number>
+            </property>
+            <property name="singleStep">
+             <number>5</number>
+            </property>
+            <property name="suffix">
+             <string> %</string>
+            </property>
+            <property name="value">
+             <number>60</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="conversionRowSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="grpLoudness">
          <property name="title">
           <string>响度设置</string>

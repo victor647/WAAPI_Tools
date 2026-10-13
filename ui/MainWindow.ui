@@ -1051,7 +1051,7 @@ Boss        包含 Boss
   </action>
   <action name="actAutoCompressionSettings">
    <property name="text">
-    <string>自动压缩设置</string>
+    <string>自动转码设置</string>
    </property>
   </action>
   <action name="actMultiLanguageCompare">

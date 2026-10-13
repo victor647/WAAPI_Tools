@@ -16,92 +16,85 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
-    QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-    QHeaderView, QLabel, QPlainTextEdit, QPushButton,
-    QSizePolicy, QSpacerItem, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget)
+    QDialog, QDoubleSpinBox, QHBoxLayout, QHeaderView,
+    QLabel, QPlainTextEdit, QPushButton, QSizePolicy,
+    QSpacerItem, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget)
 
 class Ui_AutoCompressionSettings(object):
     def setupUi(self, AutoCompressionSettings):
         if not AutoCompressionSettings.objectName():
             AutoCompressionSettings.setObjectName(u"AutoCompressionSettings")
-        AutoCompressionSettings.resize(1040, 650)
+        AutoCompressionSettings.resize(1180, 650)
         self.verticalLayout = QVBoxLayout(AutoCompressionSettings)
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.formLayout = QFormLayout()
-        self.formLayout.setObjectName(u"formLayout")
+        self.settingsLayout = QHBoxLayout()
+        self.settingsLayout.setObjectName(u"settingsLayout")
         self.lblConversion = QLabel(AutoCompressionSettings)
         self.lblConversion.setObjectName(u"lblConversion")
 
-        self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.lblConversion)
+        self.settingsLayout.addWidget(self.lblConversion)
 
-        self.conversionOptions = QWidget(AutoCompressionSettings)
-        self.conversionOptions.setObjectName(u"conversionOptions")
-        self.conversionOptionsLayout = QHBoxLayout(self.conversionOptions)
-        self.conversionOptionsLayout.setObjectName(u"conversionOptionsLayout")
-        self.conversionOptionsLayout.setContentsMargins(0, 0, 0, 0)
-        self.lblLongConversion = QLabel(self.conversionOptions)
+        self.lblLongConversion = QLabel(AutoCompressionSettings)
         self.lblLongConversion.setObjectName(u"lblLongConversion")
 
-        self.conversionOptionsLayout.addWidget(self.lblLongConversion)
+        self.settingsLayout.addWidget(self.lblLongConversion)
 
-        self.cbbLongConversion = QComboBox(self.conversionOptions)
+        self.cbbLongConversion = QComboBox(AutoCompressionSettings)
         self.cbbLongConversion.setObjectName(u"cbbLongConversion")
+        self.cbbLongConversion.setMinimumSize(QSize(160, 0))
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(1)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.cbbLongConversion.sizePolicy().hasHeightForWidth())
+        self.cbbLongConversion.setSizePolicy(sizePolicy)
 
-        self.conversionOptionsLayout.addWidget(self.cbbLongConversion)
+        self.settingsLayout.addWidget(self.cbbLongConversion)
 
-        self.lblShortConversion = QLabel(self.conversionOptions)
+        self.lblShortConversion = QLabel(AutoCompressionSettings)
         self.lblShortConversion.setObjectName(u"lblShortConversion")
 
-        self.conversionOptionsLayout.addWidget(self.lblShortConversion)
+        self.settingsLayout.addWidget(self.lblShortConversion)
 
-        self.cbbShortConversion = QComboBox(self.conversionOptions)
+        self.cbbShortConversion = QComboBox(AutoCompressionSettings)
         self.cbbShortConversion.setObjectName(u"cbbShortConversion")
+        self.cbbShortConversion.setMinimumSize(QSize(160, 0))
+        sizePolicy.setHeightForWidth(self.cbbShortConversion.sizePolicy().hasHeightForWidth())
+        self.cbbShortConversion.setSizePolicy(sizePolicy)
 
-        self.conversionOptionsLayout.addWidget(self.cbbShortConversion)
+        self.settingsLayout.addWidget(self.cbbShortConversion)
 
+        self.settingsGroupGap = QSpacerItem(16, 20, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
 
-        self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.conversionOptions)
+        self.settingsLayout.addItem(self.settingsGroupGap)
 
         self.lblDurationThreshold = QLabel(AutoCompressionSettings)
         self.lblDurationThreshold.setObjectName(u"lblDurationThreshold")
 
-        self.formLayout.setWidget(1, QFormLayout.ItemRole.LabelRole, self.lblDurationThreshold)
+        self.settingsLayout.addWidget(self.lblDurationThreshold)
 
-        self.durationOptions = QWidget(AutoCompressionSettings)
-        self.durationOptions.setObjectName(u"durationOptions")
-        self.durationOptionsLayout = QHBoxLayout(self.durationOptions)
-        self.durationOptionsLayout.setObjectName(u"durationOptionsLayout")
-        self.durationOptionsLayout.setContentsMargins(0, 0, 0, 0)
-        self.spbDurationThreshold = QDoubleSpinBox(self.durationOptions)
+        self.spbDurationThreshold = QDoubleSpinBox(AutoCompressionSettings)
         self.spbDurationThreshold.setObjectName(u"spbDurationThreshold")
         self.spbDurationThreshold.setDecimals(2)
         self.spbDurationThreshold.setMaximum(9999.000000000000000)
         self.spbDurationThreshold.setSingleStep(0.100000000000000)
         self.spbDurationThreshold.setValue(0.500000000000000)
 
-        self.durationOptionsLayout.addWidget(self.spbDurationThreshold)
+        self.settingsLayout.addWidget(self.spbDurationThreshold)
 
-        self.durationOptionsSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.durationOptionsLayout.addItem(self.durationOptionsSpacer)
-
-        self.btnAnalyze = QPushButton(self.durationOptions)
+        self.btnAnalyze = QPushButton(AutoCompressionSettings)
         self.btnAnalyze.setObjectName(u"btnAnalyze")
 
-        self.durationOptionsLayout.addWidget(self.btnAnalyze)
+        self.settingsLayout.addWidget(self.btnAnalyze)
 
-        self.btnApplySelected = QPushButton(self.durationOptions)
+        self.btnApplySelected = QPushButton(AutoCompressionSettings)
         self.btnApplySelected.setObjectName(u"btnApplySelected")
         self.btnApplySelected.setEnabled(False)
 
-        self.durationOptionsLayout.addWidget(self.btnApplySelected)
+        self.settingsLayout.addWidget(self.btnApplySelected)
 
 
-        self.formLayout.setWidget(1, QFormLayout.ItemRole.FieldRole, self.durationOptions)
-
-
-        self.verticalLayout.addLayout(self.formLayout)
+        self.verticalLayout.addLayout(self.settingsLayout)
 
         self.pteResult = QPlainTextEdit(AutoCompressionSettings)
         self.pteResult.setObjectName(u"pteResult")
@@ -159,7 +152,7 @@ class Ui_AutoCompressionSettings(object):
     # setupUi
 
     def retranslateUi(self, AutoCompressionSettings):
-        AutoCompressionSettings.setWindowTitle(QCoreApplication.translate("AutoCompressionSettings", u"\u81ea\u52a8\u538b\u7f29\u8bbe\u7f6e", None))
+        AutoCompressionSettings.setWindowTitle(QCoreApplication.translate("AutoCompressionSettings", u"\u81ea\u52a8\u8f6c\u7801\u8bbe\u7f6e", None))
         self.lblConversion.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u97f3\u6548 Conversion", None))
         self.lblLongConversion.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u957f\u97f3\u6548", None))
         self.lblShortConversion.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u77ed\u97f3\u6548", None))

@@ -207,18 +207,18 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         long_conversion = self._selected_conversion(self.cbbLongConversion)
         short_conversion = self._selected_conversion(self.cbbShortConversion)
         if long_conversion is None or short_conversion is None:
-            QMessageBox.warning(self, "自动压缩设置", "请在工程中选择长音效和短音效使用的 Conversion 对象。")
+            QMessageBox.warning(self, "自动转码设置", "请在工程中选择长音效和短音效使用的 Conversion 对象。")
             return
         if long_conversion.id == short_conversion.id:
-            QMessageBox.warning(self, "自动压缩设置", "长音效与短音效不能使用同一个 Conversion 对象。")
+            QMessageBox.warning(self, "自动转码设置", "长音效与短音效不能使用同一个 Conversion 对象。")
             return
         # 每次分析都临时取主窗口当前对象，保证与表格同步
         table_objects = self._get_scan_roots(gv.get_table_objects())
         if not table_objects:
-            QMessageBox.warning(self, "自动压缩设置", "表格中没有可识别的对象。")
+            QMessageBox.warning(self, "自动转码设置", "表格中没有可识别的对象。")
             return
         if batch_processor.is_busy():
-            QMessageBox.warning(self, "自动压缩设置", batch_processor.busy_message("分析"))
+            QMessageBox.warning(self, "自动转码设置", batch_processor.busy_message("分析"))
             return
 
         self.__analysis_started_at = time.perf_counter()
@@ -243,7 +243,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         started = batch_processor.create_async(
             table_objects,
             self._enumerate_root_object,
-            "自动压缩设置：枚举对象",
+            "自动转码设置：枚举对象",
             "name",
             on_finished=self._on_enumerate_finished,
             on_interrupted=self._on_scan_interrupted,
@@ -252,7 +252,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         if not started:
             self.__processing_stage = ""
             self._update_control_state()
-            QMessageBox.warning(self, "自动压缩设置", batch_processor.busy_message("分析"))
+            QMessageBox.warning(self, "自动转码设置", batch_processor.busy_message("分析"))
 
     def _enumerate_root_object(self, _index: int, root: WwiseObject) -> bool:
         root_type = (root.wwise_dict or {}).get("type", "")
@@ -293,7 +293,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         if not self.__targets:
             self.__processing_stage = ""
             self._update_control_state()
-            QMessageBox.warning(self, "自动压缩设置", "表格对象下没有找到 ActorMixer。")
+            QMessageBox.warning(self, "自动转码设置", "表格对象下没有找到 ActorMixer。")
             return
         source_pages = list(waapi_utils.iter_object_pages(list(self.__audio_sources.values())))
         if not source_pages:
@@ -305,7 +305,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         started = batch_processor.create_async(
             source_pages,
             self._read_duration_page,
-            "自动压缩设置：读取播放时长",
+            "自动转码设置：读取播放时长",
             on_finished=self._on_scan_finished,
             on_interrupted=self._on_scan_interrupted,
             progress_text_func=lambda _index, page: f"{len(page)} 个音频源",
@@ -314,7 +314,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             self.__processing_stage = ""
             self._update_control_state()
             QMessageBox.warning(
-                self, "自动压缩设置", batch_processor.busy_message("读取播放时长")
+                self, "自动转码设置", batch_processor.busy_message("读取播放时长")
             )
 
     def _read_duration_page(self, _index: int, page: list) -> bool:
@@ -328,7 +328,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         if not self.__targets:
             self.__processing_stage = ""
             self._update_control_state()
-            QMessageBox.warning(self, "自动压缩设置", "表格对象下没有找到 ActorMixer。")
+            QMessageBox.warning(self, "自动转码设置", "表格对象下没有找到 ActorMixer。")
             return
 
         planning_started_at = time.perf_counter()
@@ -349,7 +349,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
                 f"未读取到有效的 AudioFileSource 播放时长。\n"
                 f"分析耗时 {self.__analysis_seconds:.2f}s"
             )
-            QMessageBox.warning(self, "自动压缩设置", "没有读取到有效的 AudioFileSource 播放时长，未修改 Conversion。")
+            QMessageBox.warning(self, "自动转码设置", "没有读取到有效的 AudioFileSource 播放时长，未修改 Conversion。")
             return
 
         self.__override_plans = [plan for plan in self.__plans if plan.override_enabled]
@@ -367,6 +367,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             f"音频文件：{len(self.__audio_sources)} 个（长 {self.__summary['long_count']}，"
             f"短 {self.__summary['short_count']}，时长不可读 {self.__summary['unclassified_count']}）\n"
             f"默认 Conversion：{default_conversion.name}（按根节点多数结果推导）\n"
+            f"占优阈值：{self._dominance_text()}（占比不超过它的节点继承上层，可在设置→工具行为中修改）\n"
             f"分析节点：{len(self.__plans)} 个（ActorMixer {self.__target_type_counts['ActorMixer']}，"
             f"Container {self.__target_type_counts['Container']}）；需要 Override 的节点 "
             f"{len(self.__override_plans)} 个\n"
@@ -377,7 +378,13 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.__processing_stage = ""
         self._update_control_state()
         if not self.__override_plans:
-            QMessageBox.information(self, "自动压缩设置", "分析完成，没有需要设置 OverrideConversion 的节点。")
+            QMessageBox.information(self, "自动转码设置", "分析完成，没有需要设置 OverrideConversion 的节点。")
+
+    # 占优阈值显示成 60:40 形式（取自本次分析使用的比例）
+    def _dominance_text(self) -> str:
+        ratio = self.__summary.get("dominance_ratio") or compression_utils.DEFAULT_DOMINANCE_RATIO
+        majority = int(round(ratio * 100))
+        return f"{majority}:{100 - majority}"
 
     def _render_plan_results(self):
         check_state = Qt.CheckState.Checked if self.cbxSelectAll.isChecked() else Qt.CheckState.Unchecked
@@ -469,11 +476,11 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
     def apply_selected_plans(self):
         selected_plans = self._get_checked_plans()
         if not selected_plans:
-            QMessageBox.information(self, "自动压缩设置", "请先勾选要应用的节点。")
+            QMessageBox.information(self, "自动转码设置", "请先勾选要应用的节点。")
             return
         if batch_processor.is_busy():
             QMessageBox.warning(
-                self, "自动压缩设置", batch_processor.busy_message("应用 Conversion")
+                self, "自动转码设置", batch_processor.busy_message("应用 Conversion")
             )
             return
 
@@ -490,17 +497,17 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         started = batch_processor.create_async(
             self.__plan_batches,
             self._apply_plan_batch,
-            "自动压缩设置：应用 Conversion",
+            "自动转码设置：应用 Conversion",
             on_finished=self._on_apply_finished,
             on_interrupted=self._on_apply_interrupted,
             progress_text_func=lambda _index, plans: f"{len(plans)} 个目标对象",
-            undo_group="自动压缩设置",
+            undo_group="自动转码设置",
         )
         if not started:
             self.__processing_stage = ""
             self._update_control_state()
             QMessageBox.warning(
-                self, "自动压缩设置", batch_processor.busy_message("应用 Conversion")
+                self, "自动转码设置", batch_processor.busy_message("应用 Conversion")
             )
 
     def _apply_plan_batch(self, _index: int, plans: list[compression_utils.ConversionAssignmentPlan]) -> bool:
@@ -534,19 +541,19 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         if failed_count:
             QMessageBox.warning(
                 self,
-                "自动压缩设置",
+                "自动转码设置",
                 f"{failed_count} 个目标对象设置失败，详情见日志。",
             )
 
     def _on_scan_interrupted(self):
         self.__processing_stage = ""
         self._update_control_state()
-        QMessageBox.warning(self, "自动压缩设置", "对象扫描被中断，未修改 Conversion。")
+        QMessageBox.warning(self, "自动转码设置", "对象扫描被中断，未修改 Conversion。")
 
     def _on_apply_interrupted(self):
         self.__processing_stage = ""
         self._update_control_state()
-        QMessageBox.warning(self, "自动压缩设置", "Conversion 应用被中断，部分 ActorMixer 可能已修改。")
+        QMessageBox.warning(self, "自动转码设置", "Conversion 应用被中断，部分 ActorMixer 可能已修改。")
 
     def closeEvent(self, event):
         if self.__processing_stage:
