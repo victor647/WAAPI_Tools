@@ -176,7 +176,25 @@ def _filesystem_move_file(src: str, dst: str) -> bool:
 
 
 # 移动文件；覆盖只读目标时会先去掉只读
-def move_file(src: str, dst: str) -> bool:
+# 移动文件；覆盖只读目标时会先去掉只读。
+# 源文件若受版本控制管理，则走版本控制 move（保留 SVN/P4 历史与待提交状态）
+def move_file(src: str, dst: str, change_desc: str = None) -> bool:
+    from libraries.utils import vcs_utils      # 延迟导入：vcs_utils 会读工程规范，避免模块级循环依赖
+
+    src = _norm_local_path(src)
+    dst = _norm_local_path(dst)
+    if src == dst:
+        return True
+    if vcs_utils.is_file_managed(src):
+        dst_dir = os.path.dirname(dst)
+        if dst_dir and not os.path.exists(dst_dir):
+            os.makedirs(dst_dir, exist_ok=True)
+        result = vcs_utils.get_vcs_client().move(
+            vcs_utils.get_vcs_path(src), vcs_utils.get_vcs_path(dst), change_desc)
+        if result is None:
+            Logger().error(f"move_file: 版本控制 move 失败，未回退为本地移动：{src} -> {dst}")
+            return False
+        return True
     return _filesystem_move_file(src, dst)
 
 
@@ -216,8 +234,45 @@ def compact_path(path: str) -> str:
     return separator.join(compact_parts)
 
 
-# 界面里显示的路径文本：按 user_config 的「路径显示简写」开关决定是否缩写
-def get_display_path(path: str) -> str:
-    if user_config.get_tool_path_display_compact():
-        return compact_path(path)
+# Wwise 顶级根目录名称集合（覆盖 Hierarchy、Events、Banks 等根）
+WWISE_ROOT_FOLDERS = {
+    "actor-mixer hierarchy",
+    "interactive music hierarchy",
+    "master-mixer hierarchy",
+    "events",
+    "soundbanks",
+    "game syncs",
+    "control surface sessions",
+    "dynamic dialogue",
+    "virtual acoustics",
+}
+
+
+# 去除 Wwise 路径的顶级根目录（如 \Actor-Mixer Hierarchy\... 转为 \Default Work Unit\...）
+def strip_root_path(path: str) -> str:
+    if not isinstance(path, str) or not path:
+        return path
+    separator = "\\" if "\\" in path else "/"
+    stripped = path.lstrip(separator)
+    parts = stripped.split(separator)
+    if not parts:
+        return path
+    first_token = parts[0].strip().lower()
+    if first_token in WWISE_ROOT_FOLDERS or "hierarchy" in first_token:
+        remainder = separator.join(parts[1:])
+        if path.startswith(separator):
+            return separator + remainder
+        return remainder
     return path
+
+
+# 界面里显示的路径文本：按 user_config 的「路径隐藏根目录」与「路径显示简写」开关格式化
+def get_display_path(path: str) -> str:
+    if not isinstance(path, str) or not path:
+        return path
+    result = path
+    if user_config.get_tool_path_hide_root():
+        result = strip_root_path(result)
+    if user_config.get_tool_path_display_compact():
+        result = compact_path(result)
+    return result

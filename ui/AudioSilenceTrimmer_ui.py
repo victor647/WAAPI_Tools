@@ -165,6 +165,11 @@ class Ui_AudioSilenceTrimmer(object):
 
         self.horizontalLayout_mode.addWidget(self.rbnModeZero)
 
+        self.rbnModeWwise = QRadioButton(AudioSilenceTrimmer)
+        self.rbnModeWwise.setObjectName(u"rbnModeWwise")
+
+        self.horizontalLayout_mode.addWidget(self.rbnModeWwise)
+
         self.modeSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_mode.addItem(self.modeSpacer)
@@ -221,6 +226,10 @@ class Ui_AudioSilenceTrimmer(object):
         self.lblMode.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u9759\u97f3\u5904\u7406\u65b9\u5f0f", None))
         self.rbnModeTrim.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u88c1\u526a\uff08\u7f29\u77ed\u6587\u4ef6\u65f6\u957f\uff09", None))
         self.rbnModeZero.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u9759\u97f3\u6539\u4e3a\u7eaf0\uff08\u65f6\u957f\u4e0d\u53d8\uff09", None))
+#if QT_CONFIG(tooltip)
+        self.rbnModeWwise.setToolTip(QCoreApplication.translate("AudioSilenceTrimmer", u"\u4e0d\u4fee\u6539\u6e90\u6587\u4ef6\uff0c\u6539\u4e3a\u5728 Wwise \u91cc\u8bbe\u7f6e AudioFileSource \u7684 TrimBegin / TrimEnd\uff0c\u8ba9\u64ad\u653e\u533a\u95f4\u8df3\u8fc7\u8bc6\u522b\u51fa\u7684\u9759\u97f3\uff08\u6de1\u5165\u6de1\u51fa\u65f6\u957f\u7167\u5e38\u4fdd\u7559\u5728\u88c1\u526a\u533a\u95f4\u5185\uff09\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.rbnModeWwise.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"Wwise\u5185\u90e8\u88c1\u526a\uff08\u6539Trim\u503c\uff0c\u4e0d\u52a8\u6587\u4ef6\uff09", None))
         ___qtablewidgetitem = self.tblFileList.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("AudioSilenceTrimmer", u"\u97f3\u9891\u6587\u4ef6\u8def\u5f84", None))
         ___qtablewidgetitem1 = self.tblFileList.horizontalHeaderItem(1)

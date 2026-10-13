@@ -114,8 +114,12 @@ class BatchProcessor:
 
     def run_objects(self, title: str = ""):
         total = len(self.objects)
+        # 明细日志关闭时不生成逐对象日志（也省掉 object_label 的路径拼装）
+        detail = Logger().detail_on()
         for index, obj in enumerate(self.objects, 0):
-            Logger().trace(f"{title} [{index + 1}/{total}] {self.object_label(obj)}", console=False)
+            if detail:
+                Logger().trace(f"{title} [{index + 1}/{total}] {self.object_label(obj)}",
+                               console=False, detail=True)
             try:
                 should_continue = self.processor(index, obj)
             except Exception:
@@ -174,10 +178,14 @@ class BatchProcessorAsync(BatchProcessor, QThread):
     def run_objects(self, title: str):
         total = len(self.objects)
         done = 0
+        # 明细日志关闭时不生成逐对象日志（也省掉 object_label 的路径拼装）
+        detail = Logger().detail_on()
         for index, obj in enumerate(self.objects, 0):
             if not self.is_working:
                 break
-            Logger().trace(f"{title} [{index + 1}/{total}] {self.object_label(obj)}", console=False)
+            if detail:
+                Logger().trace(f"{title} [{index + 1}/{total}] {self.object_label(obj)}",
+                               console=False, detail=True)
             if self.progress_bar and not self.progress_text_func:
                 # 遍历字符串的话直接显示对象名称
                 if isinstance(obj, str):

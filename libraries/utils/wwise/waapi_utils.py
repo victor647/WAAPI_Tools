@@ -1,3 +1,6 @@
+from typing import Iterator
+
+from libraries.utils import user_config
 from libraries.waapi_client import WAAPIClient
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
@@ -79,6 +82,33 @@ def get_object_properties(obj: WwiseObject, property_names: list) -> dict:
     return WAAPIClient().get_object_properties(obj.wwise_dict, available_names)
 
 
+# 一次读取多个对象的多个属性；返回 {对象ID: {属性名: 值}}，比逐个对象查询少很多 WAAPI 往返
+def get_objects_properties(objects: list, property_names: list) -> dict:
+    wwise_objects = [obj for obj in objects if obj and obj.is_valid]
+    if not wwise_objects:
+        return {}
+    # 只要有一个对象类型上存在该属性就带上，缺失的属性 Wwise 会自动跳过
+    available_names = [name for name in property_names
+                       if any(obj.has_property(name) for obj in wwise_objects)]
+    if not available_names:
+        return {}
+    return WAAPIClient().get_objects_properties([obj.wwise_dict for obj in wwise_objects], available_names)
+
+
+# 按「查询分页大小」设置把对象列表分批：批量查询/批量处理前统一用它切分，避免单次请求过大
+def iter_object_pages(objects: list) -> Iterator[list]:
+    interval = max(1, user_config.get_tool_page_size())
+    for start in range(0, len(objects), interval):
+        yield objects[start:start + interval]
+
+
+# index 所在分页的 [start, end)：批处理按对象逐个驱动时，用它判断何时该预取下一批
+def page_bounds(objects: list, index: int) -> tuple:
+    interval = max(1, user_config.get_tool_page_size())
+    start = index - index % interval
+    return start, min(start + interval, len(objects))
+
+
 def get_property_and_reference_names(obj: WwiseObject) -> list[str]:
     return WAAPIClient().get_property_and_reference_names(obj.wwise_dict)
 
@@ -115,12 +145,14 @@ def get_child_objects(obj: WwiseObject, include_descendants=False) -> list[Wwise
     return _dict_list_to_wobjs(WAAPIClient().get_child_objects(obj.wwise_dict, include_descendants=include_descendants))
 
 
-def get_descendants_of_type(obj: WwiseObject, child_type) -> list[WwiseObject]:
+def get_descendants_of_type(obj: WwiseObject, child_type, return_fields: list = None) -> list[WwiseObject]:
     if isinstance(child_type, (list, set, tuple)):
         types = [item.value if isinstance(item, WwiseObjectType) else item for item in child_type]
     else:
         types = child_type.value if isinstance(child_type, WwiseObjectType) else child_type
-    return _dict_list_to_wobjs(WAAPIClient().get_descendants_of_type(obj.wwise_dict, types))
+    return _dict_list_to_wobjs(
+        WAAPIClient().get_descendants_of_type(obj.wwise_dict, types, return_fields=return_fields)
+    )
 
 
 def get_global_objects() -> list[WwiseObject]:
@@ -184,6 +216,13 @@ def rename_object(obj: WwiseObject, new_name: str) -> bool:
 
 def set_object_property(obj: WwiseObject, property_name: str, value, platform=None) -> bool:
     return WAAPIClient().set_object_property(obj.wwise_dict, property_name, value, platform=platform)
+
+
+def set_objects_property_values(assignments: list[tuple[WwiseObject, object]], property_name: str) -> bool:
+    return WAAPIClient().set_objects_property_values(
+        [(obj.wwise_dict, value) for obj, value in assignments],
+        property_name,
+    )
 
 
 def set_object_reference(obj: WwiseObject, reference_type: str, value: WwiseObject) -> bool:

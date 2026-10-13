@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Windows 批处理需要 CRLF，避免在 cmd 下解析异常
+*.bat text eol=crlf

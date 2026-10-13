@@ -3,6 +3,7 @@ from data import project_conventions
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_row_data import TableRowData
 from libraries.utils import path_utils
+from libraries.utils import vcs_utils
 from libraries.utils.wwise import common_utils, audio_source_utils, localization_utils, event_utils, soundbank_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_table_headers import *
@@ -128,7 +129,9 @@ class WwiseTableRowData(TableRowData):
 
     # 读取所有显示模式共有的信息；read_optional=False 时为极速模式，
     # 只填充基础属性与启用状态，避免逐个对象查询备注、引用计数等
-    def read_common_data(self, inclusion_cache: dict[str, bool] | None = None, read_optional: bool = True):
+    # properties 传批量预取的列属性（waapi_utils.get_objects_properties），未传则逐行查询
+    def read_common_data(self, inclusion_cache: dict[str, bool] | None = None, read_optional: bool = True,
+                         properties: dict = None, property_values_by_id: dict = None):
         self[CHECK_BOX_COL] = True
         self[NAME_COL] = self.name
         self[TYPE_COL] = self.type.name
@@ -141,11 +144,15 @@ class WwiseTableRowData(TableRowData):
             self.cells[ENABLE_COL].is_enabled = False
             self.set_cell_severity(ENABLE_COL, CellSeverity.Ignored)
         else:
-            is_included = common_utils.is_object_included(self.wwise_object, inclusion_cache=inclusion_cache)
+            is_included = common_utils.is_object_included(
+                self.wwise_object,
+                inclusion_cache=inclusion_cache,
+                property_values_by_id=property_values_by_id,
+            )
             self[ENABLE_COL] = is_included
         if not read_optional:
             return
-        self[DESCRIPTION_COL] = self.notes
+        self[DESCRIPTION_COL] = self.notes if properties is None else properties.get('notes')
         self[REFERENCE_COUNT_COL] = self.reference_count
         self.apply_inclusion_text_style()
 
@@ -155,13 +162,15 @@ class WwiseTableRowData(TableRowData):
         for column in range(NAME_COL, len(self.cells)):
             self.set_cell_severity(column, CellSeverity.Ignored)
 
-    def read_design_info(self):
+    def read_design_info(self, properties: dict = None):
+        # 用批量预取的属性构造 DesignInfo，避免逐行逐属性查询
+        self._design_info = DesignInfo(self.wwise_object, properties)
         self.read_volume()
         self.read_output_bus()
         self.read_attenuation()
         self.read_conversion()
         self.read_playback_limit()
-        self.read_wwise_original_path()
+        self.read_wwise_original_path(properties)
         self.apply_inclusion_text_style()
 
     # 属性在对象上不存在时统一显示「不适用」并置灰
@@ -176,12 +185,30 @@ class WwiseTableRowData(TableRowData):
             return
         self[VOLUME_COL] = self.design_info.volume
 
-    def read_integration_info(self, event_bank_map: dict | None = None):
+    def read_integration_info(self, event_bank_map: dict | None = None, properties: dict = None):
         self.read_event_action_types()
         self.read_wwise_target_info()
         self.read_wwise_localization()
         self.read_soundbank(event_bank_map)
+        self.read_vcs_author(properties)
         self.apply_inclusion_text_style()
+
+    # 读取对象所在 WorkUnit 文件的版本控制作者（未配置/不可用时显示不适用）
+    def read_vcs_author(self, properties: dict = None):
+        if not vcs_utils.is_available():
+            self.set_not_applicable(VCS_AUTHOR_COL)
+            return
+        workunit_path = properties.get('workUnit.filePath') if properties is not None \
+            else waapi_utils.get_object_property(self.wwise_object, 'workUnit.filePath')
+        if not workunit_path:
+            self.set_not_applicable(VCS_AUTHOR_COL)
+            return
+        author = vcs_utils.get_file_author(workunit_path)
+        if not author:
+            self[VCS_AUTHOR_COL] = "无记录"
+            self.set_cell_severity(VCS_AUTHOR_COL, CellSeverity.Warning)
+            return
+        self[VCS_AUTHOR_COL] = author
 
     # 读取 Event 下所有 Action 的类型（集成视图「动作」列）；非 Event 显示不适用
     def read_event_action_types(self):
@@ -189,10 +216,13 @@ class WwiseTableRowData(TableRowData):
             self[ACTION_COL] = "不适用"
             return
         action_names = []
-        for action in waapi_utils.get_child_objects(self.wwise_object):
-            if action.type != WwiseObjectType.EventAction:
-                continue
-            action_type = waapi_utils.get_object_property(action, 'ActionType')
+        actions = [
+            action for action in waapi_utils.get_child_objects(self.wwise_object)
+            if action.type == WwiseObjectType.EventAction
+        ]
+        action_properties = waapi_utils.get_objects_properties(actions, ['ActionType'])
+        for action in actions:
+            action_type = action_properties.get(action.id, {}).get('ActionType')
             action_names.append(str(ACTION_TYPE_NAMES.get(action_type, action_type)))
         self[ACTION_COL] = "/".join(action_names)
 
@@ -266,11 +296,12 @@ class WwiseTableRowData(TableRowData):
                 self.set_cell_severity(TARGET_TYPE_COL, CellSeverity.Warning)
 
     # 读取对象自身的源文件路径（不递归子对象，取不到时显示不适用）
-    def read_wwise_original_path(self):
+    def read_wwise_original_path(self, properties: dict = None):
         if self.type not in (WwiseObjectType.Sound, WwiseObjectType.AudioSource, WwiseObjectType.MusicTrack):
             self.set_not_applicable(ORIGINAL_PATH_COL)
             return
-        source_path = audio_source_utils.get_source_absolute_path(self.wwise_object)
+        source_path = properties.get('originalFilePath') if properties is not None \
+            else audio_source_utils.get_source_absolute_path(self.wwise_object)
         if not source_path:
             self.set_not_applicable(ORIGINAL_PATH_COL)
             return

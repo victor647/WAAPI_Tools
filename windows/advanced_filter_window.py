@@ -18,6 +18,7 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
     def setup_triggers(self):
         self.cbxCaseSensitive.toggled.connect(self._on_case_sensitive_toggled)
         self.cbxOnlyIncluded.toggled.connect(self._on_only_included_toggled)
+        self.cbxOnlyInUse.toggled.connect(self._on_only_in_use_toggled)
         self.rbnEventAll.toggled.connect(self._on_event_ref_changed)
         self.rbnEventHas.toggled.connect(self._on_event_ref_changed)
         self.rbnEventNo.toggled.connect(self._on_event_ref_changed)
@@ -30,6 +31,7 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
         widgets = (
             self.cbxCaseSensitive,
             self.cbxOnlyIncluded,
+            self.cbxOnlyInUse,
             self.rbnEventAll,
             self.rbnEventHas,
             self.rbnEventNo,
@@ -40,6 +42,7 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
             widget.blockSignals(True)
         self.cbxCaseSensitive.setChecked(settings["case_sensitive"])
         self.cbxOnlyIncluded.setChecked(settings["only_included"])
+        self.cbxOnlyInUse.setChecked(bool(settings.get("only_in_use", False)))
         event_value = settings["event_filter"]
         if event_value not in ("all", "with_ref", "without_ref"):
             event_value = "all"
@@ -67,6 +70,14 @@ class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
     def _on_only_included_toggled(self, checked: bool):
         self.__main.cbxOnlyIncludedEnabled.setChecked(checked)
         user_config.save_advanced_filter_settings({"only_included": bool(checked)})
+
+    # 「只显示在用资源」选项变化时保存并立即筛选（先异步把 WorkUnit 读进缓存）
+    def _on_only_in_use_toggled(self, checked: bool):
+        user_config.save_advanced_filter_settings({"only_in_use": bool(checked)})
+        if checked:
+            self.__main.apply_in_use_filter()
+        else:
+            self.__main.apply_table_filter(True)
 
     # Event 引用选项变化时立即筛选
     def _on_event_ref_changed(self, checked: bool):

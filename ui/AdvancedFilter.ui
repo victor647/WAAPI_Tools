@@ -35,6 +35,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="cbxOnlyInUse">
+     <property name="text">
+      <string>只显示在用资源</string>
+     </property>
+     <property name="toolTip">
+      <string>只保留实际播放的 AudioFileSource（Wwise ActiveSourceList 中的源），用于过滤掉工程里遗留的、未被使用的音频源。</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QGroupBox" name="grpEventFilter">
      <property name="title">
       <string>Event 引用筛选</string>

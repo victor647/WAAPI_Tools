@@ -15,8 +15,12 @@ DEFAULT_CONFIG = {
         "page_size": 500,
         # 表格「路径」列是否使用简写显示；关闭时显示完整路径
         "path_display_compact": True,
+        # 表格「路径」列是否隐藏顶层根目录（如 Actor-Mixer Hierarchy）
+        "path_hide_root": True,
         # RMS 响度分析的分块采样点数（每 buffer 单独求功率后按门限取平均）
         "loudness_buffer_samples": 1024,
+        # 是否记录明细日志（批量逐个对象的处理记录、WAAPI 调用流水）；关闭可减少日志写入开销
+        "detail_log": False,
     },
     "window_settings": {},
     "ai": {
@@ -39,6 +43,11 @@ DEFAULT_CONFIG = {
         # AI 修改策略：read_only=只读 / ask_before_changes=改动工程前弹窗让用户确认 / allow_changes=直接执行
         "mutation_policy": "ask_before_changes",
     },
+    "localization": {
+        # 参考语言：True 时直接读 Wwise 工程的参考语言，False 时用下面手填的语言名
+        "use_default_reference_language": True,
+        "reference_language": "",
+    },
     "advanced_filter": {
         # 高级筛选窗口各选项的持久化状态
         "case_sensitive": False,
@@ -47,6 +56,8 @@ DEFAULT_CONFIG = {
         "event_filter": "all",
         # 语言筛选：all / active
         "language_filter": "all",
+        # 是否只显示「在用」的 AudioFileSource（Wwise ActiveSourceList 里的源）
+        "only_in_use": False,
     },
     "advanced_find": {
         # 高级查找窗口各选项的持久化状态
@@ -60,6 +71,8 @@ DEFAULT_CONFIG = {
     "appearance": {
         # qt_material 主题（themes/*.xml 文件名）
         "theme": "dark_cyan.xml",
+        # 界面缩放：auto=跟随系统；也可以写 "100" / "125" / "150" 等百分比（固定缩放，需重启）
+        "ui_scale": "auto",
     },
 }
 
@@ -107,13 +120,12 @@ def resolve_config_path() -> str | None:
 
 
 def get_config_path() -> str:
-    # 优先返回本次实际使用的文件；还没解析过或文件已被删除时重新解析；
-    # 都找不到时落到应用目录（首次写入会在那里创建）
-    global _config_path
-    if _config_path and os.path.isfile(_config_path):
+    # 这里不能去解析 Wwise 工程目录：解析要连 Wwise，而 WAAPI 调用会触发 Logger 初始化，
+    # Logger 初始化又要读本配置，会在配置尚未读出时形成递归。
+    # 「工程目录优先」由连上 Wwise 后的 reload_config() 负责切换。
+    if _config_path:
         return _config_path
-    _config_path = resolve_config_path() or os.path.join(_app_dir(), CONFIG_FILE_NAME)
-    return _config_path
+    return os.path.join(_app_dir(), CONFIG_FILE_NAME)
 
 
 def _bundled_config_path() -> str:
@@ -200,12 +212,12 @@ def load_config() -> dict:
 def reload_config() -> None:
     global _config_cache, _config_path
     previous = _config_path
-    _config_path = resolve_config_path() or ""
-    if _config_path and _config_path != previous:
-        _config_cache = None
-        Logger().info(f"已切换到工程目录的用户配置：{_config_path}")
-    elif previous and not _config_path:
-        _config_path = previous
+    found = resolve_config_path()
+    if not found or found == previous:
+        return
+    _config_path = found
+    _config_cache = None
+    Logger().info(f"已切换到工程目录的用户配置：{found}")
 
 
 def get_tool_auto_fetch_children() -> bool:
@@ -233,6 +245,22 @@ def set_tool_auto_fetch_children(enabled: bool) -> None:
     _write_config(config)
 
 
+# 是否记录明细日志（批量逐对象处理、WAAPI 调用流水）
+def get_tool_detail_log_enabled() -> bool:
+    return bool(load_config()["tools"].get("detail_log", False))
+
+
+def set_tool_detail_log_enabled(enabled: bool) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["detail_log"] = bool(enabled)
+    _write_config(config)
+    # 立即生效，避免每次写明细日志都要重新读配置
+    try:
+        Logger().refresh_detail_log_setting()
+    except Exception:
+        pass
+
+
 def get_tool_path_display_compact() -> bool:
     return bool(load_config()["tools"].get("path_display_compact", True))
 
@@ -240,6 +268,16 @@ def get_tool_path_display_compact() -> bool:
 def set_tool_path_display_compact(enabled: bool) -> None:
     config = load_config()
     config.setdefault("tools", {})["path_display_compact"] = bool(enabled)
+    _write_config(config)
+
+
+def get_tool_path_hide_root() -> bool:
+    return bool(load_config()["tools"].get("path_hide_root", True))
+
+
+def set_tool_path_hide_root(enabled: bool) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["path_hide_root"] = bool(enabled)
     _write_config(config)
 
 
@@ -255,6 +293,28 @@ def get_tool_loudness_buffer_samples() -> int:
 def set_tool_loudness_buffer_samples(samples: int) -> None:
     config = load_config()
     config.setdefault("tools", {})["loudness_buffer_samples"] = max(128, min(65536, int(samples)))
+    _write_config(config)
+
+
+# 参考语言设置：是否使用工程默认
+def get_reference_language_use_default() -> bool:
+    return bool(load_config().get("localization", {}).get("use_default_reference_language", True))
+
+
+def set_reference_language_use_default(enabled: bool) -> None:
+    config = load_config()
+    config.setdefault("localization", {})["use_default_reference_language"] = bool(enabled)
+    _write_config(config)
+
+
+# 参考语言设置：手动填写的语言名（use_default 打开时不生效）
+def get_configured_reference_language() -> str:
+    return str(load_config().get("localization", {}).get("reference_language", "")).strip()
+
+
+def set_configured_reference_language(language: str) -> None:
+    config = load_config()
+    config.setdefault("localization", {})["reference_language"] = str(language or "").strip()
     _write_config(config)
 
 
@@ -353,6 +413,18 @@ def get_appearance_theme() -> str:
 def save_appearance_theme(theme: str) -> None:
     config = load_config()
     config.setdefault("appearance", {})["theme"] = theme
+    _write_config(config)
+
+
+# 界面缩放：auto 跟随系统，其余为固定百分比（QT_SCALE_FACTOR，只在启动时生效）
+def get_appearance_ui_scale() -> str:
+    value = str(load_config()["appearance"].get("ui_scale", DEFAULT_CONFIG["appearance"]["ui_scale"])).strip()
+    return value if value == "auto" or value.isdigit() else DEFAULT_CONFIG["appearance"]["ui_scale"]
+
+
+def save_appearance_ui_scale(scale: str) -> None:
+    config = load_config()
+    config.setdefault("appearance", {})["ui_scale"] = scale if scale == "auto" or str(scale).isdigit() else "auto"
     _write_config(config)
 
 

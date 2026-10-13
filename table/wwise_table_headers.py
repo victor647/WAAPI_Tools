@@ -24,4 +24,5 @@ TARGET_TYPE_COL = 8
 TARGET_PATH_COL = 9
 LOCALIZATION_COL = 10
 SOUNDBANK_COL = 11
-INTEGRATION_HEADERS = ["动作", "播放对象类型", "播放对象路径", "本地化", "所属SoundBank"]
+VCS_AUTHOR_COL = 12
+INTEGRATION_HEADERS = ["动作", "播放对象类型", "播放对象路径", "本地化", "所属SoundBank", "作者"]

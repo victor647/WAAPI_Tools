@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QDialog, QMessageBox, QTableWidgetItem
 
+import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
@@ -39,10 +40,11 @@ COMMON_PROPERTY_NAMES = [
 # 属性查询窗口：对传入对象列表批量读取指定属性，把结果输出为表格
 class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
 
-    def __init__(self, objects: list[WwiseObject]):
+    def __init__(self):
         super().__init__()
         self.setupUi(self)
-        self.__objects = list(objects)
+        # 从主窗口临时取当前对象，保证与表格同步
+        self.__objects: list[WwiseObject] = gv.get_tool_targets()
         self.__property_names: list[str] = []
         self.__results = []
         self.__row_types: list[str] = []
@@ -157,31 +159,57 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         self.__missing_combos = []
         self.tblPropertyResults.setSortingEnabled(False)
         self._render_object_rows()
+        self.__prefetched_pages: set = set()
+        self.__values_by_id: dict = {}
+        # 仍按对象逐个驱动批处理（进度条跟着对象数量走），属性在 worker 里按「查询分页大小」惰性分批取回
         batch_processor.create_async(
             self.__objects,
-            lambda index, obj: self.read_object_properties(index, obj),
+            self.read_object_properties,
             '读取属性',
             'name',
             on_finished=self.on_query_finished,
         )
 
-    # 工作线程内一次读取单个对象的全部属性，结果先收集，主线程再写入表格
+    # 工作线程内读取单个对象的属性；所在分页还没取过时先把整页取回（同类型合并成一次查询）
     def read_object_properties(self, index: int, obj: WwiseObject):
-        obj_type = obj.type.name
-        self.__row_types[index] = obj_type
-        # 已确认该类型不含的属性不再重复查询
-        missing_props = self.__type_missing_props.get(obj_type, set())
-        candidates = [name for name in self.__property_names if name not in missing_props]
-        values = waapi_utils.get_object_properties(obj, candidates) if candidates else {}
+        self.__prefetch_page(index)
+        values = self.__values_by_id.get(obj.id, {})
         self.__results[index] = values
-        # 查询后仍缺失的属性记为“该类型不含有”，后续同类型对象跳过
-        for name in candidates:
-            if name in values:
-                continue
-            self.__type_missing_props.setdefault(obj_type, set()).add(name)
-            if (obj_type, name) not in self.__missing_combos:
-                self.__missing_combos.append((obj_type, name))
         return True
+
+    # 预取 index 所在分页的属性：只在分页首次被访问时发起一次 WAAPI 查询
+    def __prefetch_page(self, index: int):
+        start, end = waapi_utils.page_bounds(self.__objects, index)
+        if start in self.__prefetched_pages:
+            return
+        self.__prefetched_pages.add(start)
+        page = self.__objects[start:end]
+        # 先按对象类型分组：已确认该类型不含的属性不再重复查询
+        entries_by_type: dict[str, list] = {}
+        for offset, obj in enumerate(page):
+            row_index = start + offset
+            obj_type = obj.type.name
+            self.__row_types[row_index] = obj_type
+            entries_by_type.setdefault(obj_type, []).append((row_index, obj))
+        for obj_type, entries in entries_by_type.items():
+            missing_props = self.__type_missing_props.get(obj_type, set())
+            candidates = [name for name in self.__property_names if name not in missing_props]
+            if not candidates:
+                for row_index, _obj in entries:
+                    self.__results[row_index] = {}
+                continue
+            values_by_id = waapi_utils.get_objects_properties([obj for _row, obj in entries], candidates)
+            # 查询后仍缺失的属性记为“该类型不含有”，后续同类型对象跳过
+            for row_index, obj in entries:
+                values = values_by_id.get(obj.id, {})
+                self.__values_by_id[obj.id] = values
+                self.__results[row_index] = values
+                for name in candidates:
+                    if name in values:
+                        continue
+                    self.__type_missing_props.setdefault(obj_type, set()).add(name)
+                    if (obj_type, name) not in self.__missing_combos:
+                        self.__missing_combos.append((obj_type, name))
 
     # 查询完成后在主线程把结果写入表格
     def on_query_finished(self):

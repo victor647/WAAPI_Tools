@@ -195,24 +195,43 @@ def _audio_sources_of(obj: WwiseObject) -> list:
     return waapi_utils.get_descendants_of_type(obj, WwiseObjectType.AudioSource)
 
 
+def _audio_source_paths_by_id(sources: list[WwiseObject]) -> dict[str, str]:
+    properties_by_id = waapi_utils.get_objects_properties(sources, ['originalFilePath'])
+    return {
+        source.id: audio_source_utils.get_source_absolute_path(
+            source, properties_by_id.get(source.id)
+        ) or ""
+        for source in sources
+    }
+
+
 def _handler_get_objects_info(args: dict) -> dict:
     # 读取对象详情：名称/类型/路径/备注/启用状态
     ids = _require_object_ids(args)[:INFO_OBJECT_LIMIT]
     items = []
     errors = []
+    objects = []
     for object_id in ids:
         try:
-            obj = WwiseObject.from_id(object_id)
-            items.append({
-                "id": obj.id,
-                "name": obj.name,
-                "type": obj.type.value,
-                "path": obj.path,
-                "notes": common_utils.get_object_notes(obj),
-                "included": common_utils.is_object_included(obj),
-            })
+            objects.append(WwiseObject.from_id(object_id))
         except Exception as e:
             errors.append(f"{object_id}: {e}")
+    object_properties = waapi_utils.get_objects_properties(objects, ['Notes', 'Inclusion'])
+    inclusion_cache = {}
+    for obj in objects:
+        properties = object_properties.get(obj.id, {})
+        items.append({
+            "id": obj.id,
+            "name": obj.name,
+            "type": obj.type.value,
+            "path": obj.path,
+            "notes": properties.get('Notes'),
+            "included": common_utils.is_object_included(
+                obj,
+                inclusion_cache=inclusion_cache,
+                property_values_by_id=object_properties,
+            ),
+        })
     return {"items": items, "errors": errors}
 
 
@@ -220,24 +239,30 @@ def _handler_get_audio_sources(args: dict) -> dict:
     # 列出对象子树下的音频源及其磁盘源文件路径（读属性，不改工程）
     ids = _require_object_ids(args)
     limit = _resolve_limit(args, AUDIO_SOURCE_LIST_LIMIT)
-    items = []
     errors = []
+    entries = []
     for object_id in ids:
         try:
             obj = WwiseObject.from_id(object_id)
             for source in _audio_sources_of(obj):
-                if limit is not None and len(items) >= limit:
+                if limit is not None and len(entries) >= limit:
                     break
-                file_path = audio_source_utils.get_source_absolute_path(source) or ""
-                items.append({
-                    "parent": obj.name,
-                    "id": source.id,
-                    "name": source.name,
-                    "path": source.path,
-                    "file_path": file_path,
-                })
+                entries.append((obj, source))
         except Exception as e:
             errors.append(f"{object_id}: {e}")
+        if limit is not None and len(entries) >= limit:
+            break
+    source_paths = _audio_source_paths_by_id(list({source.id: source for _, source in entries}.values()))
+    items = [
+        {
+            "parent": obj.name,
+            "id": source.id,
+            "name": source.name,
+            "path": source.path,
+            "file_path": source_paths.get(source.id, ""),
+        }
+        for obj, source in entries
+    ]
     return {
         "count": len(items),
         "truncated": limit is not None and len(items) >= limit,
@@ -253,13 +278,30 @@ def _handler_calculate_audio_source_size(args: dict) -> dict:
     missing = []
     total_bytes = 0
     per_object = []
+    object_entries = []
     for object_id in ids:
         try:
             obj = WwiseObject.from_id(object_id)
-            size_bytes = 0
-            file_count = 0
-            for source in _audio_sources_of(obj):
-                path = audio_source_utils.get_source_absolute_path(source)
+            object_entries.append((obj, _audio_sources_of(obj), None))
+        except Exception as e:
+            object_entries.append((object_id, [], str(e)))
+
+    sources_by_id = {
+        source.id: source
+        for _obj, sources, error in object_entries
+        if error is None
+        for source in sources
+    }
+    source_paths = _audio_source_paths_by_id(list(sources_by_id.values()))
+    for obj, sources, error in object_entries:
+        if error is not None:
+            per_object.append({"object": obj, "error": error})
+            continue
+        size_bytes = 0
+        file_count = 0
+        try:
+            for source in sources:
+                path = source_paths.get(source.id, "")
                 if not path or path in seen_paths:
                     continue
                 seen_paths.add(path)
@@ -277,7 +319,7 @@ def _handler_calculate_audio_source_size(args: dict) -> dict:
                 "size_mb": round(size_bytes / 1048576, 3),
             })
         except Exception as e:
-            per_object.append({"object": object_id, "error": str(e)})
+            per_object.append({"object": obj.name, "error": str(e)})
     return {
         "total_files": len(seen_paths),
         "total_mb": round(total_bytes / 1048576, 3),
@@ -974,33 +1016,46 @@ def _handler_find_objects_by_property(args: dict) -> dict:
                     break
                 candidates = candidates[:remaining]
             scanned += len(candidates)
-            for candidate in candidates:
-                type_name = candidate.type.name
-                if missing_types.get(type_name) == property_name:
-                    continue
-                values = waapi_utils.get_object_properties(candidate, [property_name])
-                value = values.get(property_name)
-                if value is None:
-                    missing_types[type_name] = property_name
-                    continue
-                matched, comparable = _compare_property(value, op, expected)
-                if not comparable:
-                    incomparable_types[type_name] = property_name
-                    continue
-                if not matched:
-                    continue
-                item = {
-                    "root": root.name,
-                    "root_id": root.id,
-                    "id": candidate.id,
-                    "name": candidate.name,
-                    "type": candidate.type.value,
-                    "value": value,
-                }
-                if include_path:
-                    item["path"] = candidate.path
-                items.append(item)
-                if limit is not None and len(items) >= limit:
+            # 按「查询分页大小」分批取属性：每批一次 WAAPI 查询，避免逐个对象往返
+            hit_limit = False
+            for page in waapi_utils.iter_object_pages(candidates):
+                # 同一批里按类型分组，已知不含该属性的类型整组跳过
+                entries_by_type: dict[str, list] = {}
+                for candidate in page:
+                    type_name = candidate.type.name
+                    if missing_types.get(type_name) == property_name:
+                        continue
+                    entries_by_type.setdefault(type_name, []).append(candidate)
+                for type_name, entries in entries_by_type.items():
+                    values_by_id = waapi_utils.get_objects_properties(entries, [property_name])
+                    for candidate in entries:
+                        value = values_by_id.get(candidate.id, {}).get(property_name)
+                        if value is None:
+                            missing_types[type_name] = property_name
+                            continue
+                        matched, comparable = _compare_property(value, op, expected)
+                        if not comparable:
+                            incomparable_types[type_name] = property_name
+                            continue
+                        if not matched:
+                            continue
+                        item = {
+                            "root": root.name,
+                            "root_id": root.id,
+                            "id": candidate.id,
+                            "name": candidate.name,
+                            "type": candidate.type.value,
+                            "value": value,
+                        }
+                        if include_path:
+                            item["path"] = candidate.path
+                        items.append(item)
+                        if limit is not None and len(items) >= limit:
+                            hit_limit = True
+                            break
+                    if hit_limit:
+                        break
+                if hit_limit:
                     break
             if limit is not None and len(items) >= limit:
                 break

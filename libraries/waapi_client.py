@@ -78,7 +78,9 @@ class WAAPIClient(metaclass=Singleton):
 
         def locked_call(*args, **kwargs):
             topic = str(args[0]) if args else "?"
-            summary = _describe_call_args(args[1:], kwargs)
+            # 明细日志关闭时不构造参数/结果摘要，省掉每条调用的字符串拼装
+            detailed = Logger().detail_on()
+            summary = _describe_call_args(args[1:], kwargs) if detailed else ""
             started = time.perf_counter()
             failure = None
             with lock:
@@ -90,11 +92,15 @@ class WAAPIClient(metaclass=Singleton):
             elapsed_ms = (time.perf_counter() - started) * 1000
             if failure is not None:
                 # 记录失败调用的主题、参数与耗时，便于对着日志排查
+                if not summary:
+                    summary = _describe_call_args(args[1:], kwargs)
                 Logger().trace(f"WAAPI 失败 {topic} {summary} [{elapsed_ms:.0f}ms] "
                                f"{type(failure).__name__}: {failure}", console=False)
                 raise failure
-            Logger().trace(f"WAAPI {topic} {summary} [{elapsed_ms:.0f}ms] -> {_describe_call_result(result)}",
-                           console=False)
+            if detailed:
+                Logger().trace(
+                    f"WAAPI {topic} {summary} [{elapsed_ms:.0f}ms] -> {_describe_call_result(result)}",
+                    console=False, detail=True)
             return result
 
         self.client.call = locked_call
@@ -193,6 +199,34 @@ class WAAPIClient(metaclass=Singleton):
         except Exception as e:
             Logger().error(str(e))
             return {}
+
+    # 一次读取多个对象的多个属性；返回 {对象ID: {属性名: 值}}，与 get_object_properties 同口径：
+    # 只保留请求的属性，类型上不存在的属性不会出现在结果中。
+    # 注意：from.id 只接受数组，传单个字符串会被 Wwise 判为参数非法。
+    # 对象数超过「查询分页大小」设置时自动分批取回再合并，避免单次请求过大
+    def get_objects_properties(self, objects: list[dict], property_names: list) -> dict:
+        object_ids = [obj["id"] for obj in objects if obj and obj.get("id")]
+        if not self.client or not object_ids or not property_names:
+            return {}
+        # from.id 形式下 Wwise 不会自动带上 id，必须显式请求，否则结果无法按对象归位
+        requested_names = list(dict.fromkeys(property_names))
+        interval = max(1, user_config.get_tool_page_size())
+        found: dict = {}
+        for start in range(0, len(object_ids), interval):
+            get_args = {
+                'from': {'id': object_ids[start:start + interval]},
+                'options': {'return': list(dict.fromkeys(['id', *requested_names]))},
+            }
+            try:
+                result = self.client.call('ak.wwise.core.object.get', get_args)
+            except Exception as e:
+                # 单批失败不影响其它批次，缺的属性由调用方按“取不到”处理
+                Logger().error(str(e))
+                continue
+            for item in (result or {}).get('return') or []:
+                if item.get('id'):
+                    found[item['id']] = {name: item[name] for name in requested_names if name in item}
+        return found
 
     # 当前对象类型上可用的属性与引用名称；object.get 的 return 只能使用此处列出的名称（见官方 ak.wwise.core.object.getPropertyAndReferenceNames）
     def get_property_and_reference_names(self, obj: dict) -> list[str]:
@@ -325,6 +359,7 @@ class WAAPIClient(metaclass=Singleton):
             return []
         try:
             children = []
+            seen_ids: set = set()
             index = 0
             interval = user_config.get_tool_page_size()
             while True:
@@ -337,18 +372,22 @@ class WAAPIClient(metaclass=Singleton):
                     'options': RETURN_FIELDS
                 }
                 cur_range_result = self.client.call('ak.wwise.core.object.get', get_args)
-                if cur_range_result and len(cur_range_result['return']) > 0:
-                    children += list(cur_range_result['return'])
-                    index += 1
-                else:
+                page = list(cur_range_result['return']) if cur_range_result and cur_range_result.get('return') else []
+                new_items = [item for item in page if item.get('id') not in seen_ids]
+                if new_items:
+                    seen_ids.update(item.get('id') for item in new_items)
+                    children += new_items
+                # 不满一页说明已经取完；去重后没有新对象则覆盖 range 被忽略、反复返回同一批的情况
+                if len(page) < interval or not new_items:
                     break
+                index += 1
             return children
         except Exception as e:
             Logger().error(str(e))
             return []
 
     # 获取指定类型的全部子对象（child_type 可为类型的字符串或字符串列表）
-    def get_descendants_of_type(self, obj: dict, child_type) -> list[dict]:
+    def get_descendants_of_type(self, obj: dict, child_type, return_fields: list = None) -> list[dict]:
         if not self.client or not obj:
             return []
         types = [child_type] if isinstance(child_type, str) else [t for t in child_type if t]
@@ -358,21 +397,25 @@ class WAAPIClient(metaclass=Singleton):
         try:
             condition = ' or '.join(f'type = "{child_type_name}"' for child_type_name in types)
             waql = f'from object \"{obj_id}\" select descendants where {condition}'
-            return self._paged_object_query({'waql': waql})
+            return self._paged_object_query({'waql': waql}, return_fields=return_fields)
         except Exception as e:
             Logger().error(str(e))
             return []
 
     # 按配置的分页大小执行 object.get，直到取完（range 被忽略时靠去重保护退出）
     # 分页范围必须放在 transform 步骤里：部分 Wwise 版本（如 2023.1）不接受顶层 range，会直接报错
-    def _paged_object_query(self, base_args: dict) -> list[dict]:
+    def _paged_object_query(self, base_args: dict, return_fields: list = None) -> list[dict]:
         objects: list[dict] = []
         seen_ids: set = set()
         interval = user_config.get_tool_page_size()
         index = 0
+        requested_fields = list(dict.fromkeys([
+            *RETURN_FIELDS['return'],
+            *(return_fields or []),
+        ]))
         while True:
             get_args = dict(base_args)
-            get_args['options'] = RETURN_FIELDS
+            get_args['options'] = {'return': requested_fields}
             # 已有 transform 步骤的查询（如后代回退查询）在其后追加分页范围，不要覆盖
             get_args['transform'] = list(base_args.get('transform') or []) + [{'range': [index * interval, interval]}]
             result = self.client.call('ak.wwise.core.object.get', get_args)
@@ -653,6 +696,29 @@ class WAAPIClient(metaclass=Singleton):
             else:
                 Logger().error(f"WAAPI - {obj.get('type')} [{obj.get('name')}]: Cannot set property of {property_name} to [{value}]!")
             return result
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
+    def set_objects_property_values(self, assignments: list[tuple[dict, object]], property_name: str) -> bool:
+        if not self.client or not assignments:
+            return False
+        try:
+            set_args = {
+                'objects': [
+                    {
+                        'object': obj['id'],
+                        f'@{property_name}': value
+                    }
+                    for obj, value in assignments
+                ]
+            }
+            result = self.client.call('ak.wwise.core.object.set', set_args)
+            if result is None:
+                Logger().error(f"WAAPI - Cannot set {property_name} on {len(assignments)} objects!")
+                return False
+            Logger().debug(f"WAAPI - Set {property_name} on {len(assignments)} objects")
+            return True
         except Exception as e:
             Logger().error(str(e))
             return False

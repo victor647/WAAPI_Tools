@@ -23,6 +23,7 @@ from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, mixing_utils, project_utils
 from libraries.utils.wwise import waapi_utils
+from libraries.wwise_object import WwiseObjectType
 from table.wwise_table_context_menu import select_row_objects
 from ui.LoudnessAdjustment_ui import Ui_LoudnessAdjustment
 from windows.audio_preview_window import AudioPreviewWindow
@@ -52,10 +53,11 @@ LOUDNESS_STANDARDS = (audio_utils.LoudnessStandard.RMS, audio_utils.LoudnessStan
 # 响度调整工具：统一表格中所有音频的响度
 class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
 
-    def __init__(self, active_objects: list):
+    def __init__(self):
         super().__init__()
         self.setupUi(self)
-        self.__active_objects = list(active_objects)
+        # 输入对象在 populate_sources 里从主窗口临时获取，保证与表格同步
+        self.__active_objects: list = []
         # 表格每行的数据：{'key', 'row', 'path', 'wwise_objects', 'loudness', 'original_loudness',
         #                 'object_gain', 'bus_gain', 'gain_details', 'adjusted', 'limited'}
         self.__entries = []
@@ -71,8 +73,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         self.load_user_settings()
         self.__sync_gain_columns()
         # 等窗口出现后再异步读取对象背后的源文件，避免呼出前阻塞
-        if self.__active_objects:
-            QTimer.singleShot(0, self.populate_sources)
+        QTimer.singleShot(0, self.populate_sources)
 
     def setup_triggers(self):
         self.btnImportFiles.clicked.connect(self.import_files)
@@ -267,7 +268,14 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
     def populate_sources(self):
         if self.is_busy():
             return
+        # 临时取主窗口当前 AudioSource，保证与表格同步
+        self.__active_objects = gv.get_tool_targets(WwiseObjectType.AudioSource)
+        if not self.__active_objects:
+            Logger().warning('表格中没有可用于「响度调整」的 AudioSource')
+            return
         self.__scanned_paths = [None] * len(self.__active_objects)
+        self.__prefetched_pages: set = set()
+        self.__paths_by_id: dict = {}
         batch_processor.create_async(
             self.__active_objects,
             self.resolve_source_path,
@@ -276,14 +284,24 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             on_finished=self.on_sources_resolved,
         )
 
-    # 工作线程：解析单个 Wwise 对象背后的源文件路径
+    # 工作线程：解析单个 Wwise 对象背后的源文件路径；路径按所在分页惰性预取
     def resolve_source_path(self, index: int, obj):
-        file_path = audio_source_utils.get_source_absolute_path(obj)
+        self.__prefetch_source_paths(index)
+        file_path = self.__paths_by_id.get(obj.id, {}).get('originalFilePath')
         if not file_path or not os.path.exists(file_path):
             Logger().warning(f'找不到源文件：{obj.name}')
             return True
         self.__scanned_paths[index] = (file_path, obj)
         return True
+
+    # 预取 index 所在分页里所有对象的源文件路径
+    def __prefetch_source_paths(self, index: int):
+        start, end = waapi_utils.page_bounds(self.__active_objects, index)
+        if start in self.__prefetched_pages:
+            return
+        self.__prefetched_pages.add(start)
+        self.__paths_by_id.update(
+            waapi_utils.get_objects_properties(self.__active_objects[start:end], ['originalFilePath']))
 
     # 主线程：把解析出的源文件加入表格，并记住对应的 Wwise 对象供后续分析使用
     def on_sources_resolved(self):

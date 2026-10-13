@@ -2,6 +2,7 @@ import clipboard
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMenu, QTableWidgetItem
 
+import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
@@ -21,11 +22,11 @@ COL_TRIM_START = 3
 # 查看并同步一批 AudioSource 的裁剪信息（TrimBegin/TrimEnd/Fade/Loop）
 class SyncTrimWindow(QDialog, Ui_SyncTrim):
 
-    def __init__(self, sources: list[WwiseObject]):
+    def __init__(self):
         super().__init__()
         self.setupUi(self)
-        # 传进来的可能是容器 / Sound 等任意对象，打开后会先展开成所有 AudioSource
-        self.__input_sources = list(sources)
+        # 输入对象从主窗口临时获取（表格里可能是容器 / Sound 等任意对象，打开后会先展开成所有 AudioSource）
+        self.__input_sources = gv.get_tool_targets(WwiseObjectType.AudioSource, expand=True)
         self.__sources: list = []
         self.__usage: dict = {}
         self.__path_by_id: dict = {}
@@ -50,6 +51,8 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
     def refresh_sources(self):
         self.lblHint.setText('正在查找源文件…')
         self.__input_paths = []
+        self.__prefetched_source_pages: set = set()
+        self.__sources_by_id: dict = {}
         batch_processor.create_async(
             self.__input_sources,
             self.resolve_source_path,
@@ -59,11 +62,24 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
         )
 
     # 工作线程：把对象展开成 AudioSource 并读取其源文件相对路径
+    # 相对路径按「查询分页大小」所在的页惰性预取，进度仍按输入对象逐个推进
     def resolve_source_path(self, index: int, obj: WwiseObject):
+        self.__prefetch_source_paths(index)
         for source in self.collect_audio_sources(obj):
-            relative_path = waapi_utils.get_object_property(source, 'originalRelativeFilePath') or ''
+            relative_path = self.__sources_by_id.get(source.id, {}).get('originalRelativeFilePath') or ''
             self.__input_paths.append((source, relative_path))
         return True
+
+    # 预取 index 所在分页里所有 AudioSource 的相对路径
+    def __prefetch_source_paths(self, index: int):
+        start, end = waapi_utils.page_bounds(self.__input_sources, index)
+        if start in self.__prefetched_source_pages:
+            return
+        self.__prefetched_source_pages.add(start)
+        sources = [source for obj in self.__input_sources[start:end]
+                   for source in self.collect_audio_sources(obj)]
+        self.__sources_by_id.update(
+            waapi_utils.get_objects_properties(sources, ['originalRelativeFilePath']))
 
     # AudioSource 直接用；容器 / Sound 等展开成全部后代 AudioSource
     @staticmethod
@@ -133,6 +149,8 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
             f'AudioSource 裁剪信息（共 {len(self.__sources)} 个，{len(self.__input_by_path)} 个源文件）'
         )
         self.tblTrimInfo.setRowCount(len(self.__sources))
+        self.__prefetched_trim_pages: set = set()
+        self.__trim_properties_by_id: dict = {}
         for index, source in enumerate(self.__sources):
             self.tblTrimInfo.setItem(index, COL_SOURCE_PATH, QTableWidgetItem(
                 WwiseTableRowData.get_path_text(self.__path_by_id.get(source.id, ''))
@@ -150,13 +168,26 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
             on_finished=self.on_info_filled,
         )
 
-    # 异步读取单个对象的裁剪信息
+    # 异步读取单个对象的裁剪信息；裁剪属性按所在分页惰性预取
     def fill_source_info(self, index: int, source: WwiseObject):
-        info = audio_source_utils.get_source_edit_info(source)
+        self.__prefetch_trim_info(index)
+        info = audio_source_utils.get_source_edit_info(source, self.__trim_properties(source))
         if info is None:
             return
         for column, value in enumerate(info, start=COL_TRIM_START):
             self.tblTrimInfo.setItem(index, column, QTableWidgetItem(self._format_trim_value(value)))
+
+    # 预取 index 所在分页里所有 AudioSource 的裁剪属性
+    def __prefetch_trim_info(self, index: int):
+        start, end = waapi_utils.page_bounds(self.__sources, index)
+        if start in self.__prefetched_trim_pages:
+            return
+        self.__prefetched_trim_pages.add(start)
+        self.__trim_properties_by_id.update(
+            audio_source_utils.get_source_analysis_properties(self.__sources[start:end]))
+
+    def __trim_properties(self, source: WwiseObject) -> dict:
+        return self.__trim_properties_by_id.get(source.id, {})
 
     # 0 或 -0.001 等价的数值视为“无”
     @staticmethod

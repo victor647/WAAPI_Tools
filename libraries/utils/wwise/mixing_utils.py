@@ -50,42 +50,64 @@ def set_sound_3d(sound: WwiseObject, is3d: bool):
 
 # 对象的音量等参数是否有调整
 def has_fader_edits(obj: WwiseObject) -> bool:
-    volume = waapi_utils.get_object_property(obj, 'Volume')
-    pitch = waapi_utils.get_object_property(obj, 'Pitch')
-    lowpass = waapi_utils.get_object_property(obj, 'Lowpass')
-    highpass = waapi_utils.get_object_property(obj, 'Highpass')
-    if 'Bus' not in obj.type.value:
-        gain = waapi_utils.get_object_property(obj, 'MakeUpGain')
-    else:
-        gain = 0
+    is_bus = 'Bus' in obj.type.value
+    property_names = ['Volume', 'Pitch', 'Lowpass', 'Highpass']
+    if not is_bus:
+        property_names.append('MakeUpGain')
+    properties = waapi_utils.get_object_properties(obj, property_names)
+    volume = properties.get('Volume')
+    pitch = properties.get('Pitch')
+    lowpass = properties.get('Lowpass')
+    highpass = properties.get('Highpass')
+    gain = 0 if is_bus else properties.get('MakeUpGain')
     return volume != 0 or pitch != 0 or lowpass != 0 or highpass != 0 or gain != 0
 
 # 将混音参数传递到下一层
 def down_mix_fader(obj: WwiseObject):
-    down_mix_fader_param(obj, 'Volume')
-    down_mix_fader_param(obj, 'Pitch')
-    down_mix_fader_param(obj, 'Lowpass')
-    down_mix_fader_param(obj, 'Highpass')
+    property_names = ['Volume', 'Pitch', 'Lowpass', 'Highpass']
     # Bus类对象不包含MakeUpGain属性
     if 'Bus' not in obj.type.value:
-        down_mix_fader_param(obj, 'MakeUpGain')
+        property_names.append('MakeUpGain')
+    _down_mix_fader(obj, property_names)
 
 # 向下传递特定的混音参数
 def down_mix_fader_param(obj: WwiseObject, param_name: str):
-    param_delta = waapi_utils.get_object_property(obj, param_name)
-    waapi_utils.set_object_property(obj, param_name, 0)
+    _down_mix_fader(obj, [param_name])
+
+
+def _down_mix_fader(obj: WwiseObject, property_names: list[str], values: dict = None):
+    properties = values if values is not None else waapi_utils.get_object_properties(obj, property_names)
+    deltas = {
+        property_name: properties[property_name]
+        for property_name in property_names
+        if property_name in properties and properties[property_name] is not None
+    }
+    if not deltas:
+        return
+    for property_name in deltas:
+        waapi_utils.set_object_property(obj, property_name, 0)
+
     children = waapi_utils.get_child_objects(obj)
+    properties_by_id = waapi_utils.get_objects_properties(children, list(deltas))
     for child in children:
-        param_base = waapi_utils.get_object_property(child, param_name)
-        waapi_utils.set_object_property(child, param_name, param_base + param_delta)
+        child_properties = properties_by_id.get(child.id, {})
+        child_values = {}
+        for property_name, delta in deltas.items():
+            param_base = child_properties.get(property_name)
+            if param_base is None:
+                continue
+            child_value = param_base + delta
+            waapi_utils.set_object_property(child, property_name, child_value)
+            child_values[property_name] = child_value
         # 递归应用编辑
-        if child.type != WwiseObjectType.Sound:
-            down_mix_fader_param(child, param_name)
+        if child.type != WwiseObjectType.Sound and child_values:
+            _down_mix_fader(child, list(child_values), child_values)
 
 # 音量调整改为增益
 def volume_to_gain(obj: WwiseObject):
-    volume = waapi_utils.get_object_property(obj, 'Volume')
-    gain = waapi_utils.get_object_property(obj, 'MakeUpGain')
+    properties = waapi_utils.get_object_properties(obj, ['Volume', 'MakeUpGain'])
+    volume = properties.get('Volume')
+    gain = properties.get('MakeUpGain')
     final_value = volume + gain
     waapi_utils.set_object_property(obj, 'Volume', 0)
     waapi_utils.set_object_property(obj, 'MakeUpGain', final_value)

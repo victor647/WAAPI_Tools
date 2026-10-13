@@ -62,10 +62,18 @@ class TemplateReplacer(QDialog, Ui_TemplateReplacer):
     # 对声音文件进行替换
     def replace_source_wave(self, obj: WwiseObject):
         self.rename_structure(obj)
-        sources = waapi_utils.get_child_objects(obj)
+        sources = [
+            source for source in waapi_utils.get_child_objects(obj)
+            if source.type == WwiseObjectType.AudioSource
+        ]
+        properties_by_id = waapi_utils.get_objects_properties(
+            sources,
+            ['originalFilePath', localization_utils.AUDIO_SOURCE_LANGUAGE_PROPERTY],
+        )
         for source in sources:
-            original_path = audio_source_utils.get_source_absolute_path(source)
-            language = localization_utils.get_sound_language(source)
+            properties = properties_by_id.get(source.id)
+            original_path = audio_source_utils.get_source_absolute_path(source, properties)
+            language = localization_utils.get_sound_language(source, properties)
             new_wave_path = original_path.replace(self.__oldName, self.__newName)
             waapi_utils.delete_object(source)
             waapi_utils.import_audio_file(new_wave_path, obj, language)

@@ -228,6 +228,16 @@
       </widget>
      </item>
      <item>
+      <widget class="QRadioButton" name="rbnModeWwise">
+       <property name="toolTip">
+        <string>不修改源文件，改为在 Wwise 里设置 AudioFileSource 的 TrimBegin / TrimEnd，让播放区间跳过识别出的静音（淡入淡出时长照常保留在裁剪区间内）。</string>
+       </property>
+       <property name="text">
+        <string>Wwise内部裁剪（改Trim值，不动文件）</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <spacer name="modeSpacer">
        <property name="orientation">
         <enum>Qt::Horizontal</enum>

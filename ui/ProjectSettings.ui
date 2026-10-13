@@ -333,11 +333,19 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="tabTools">
-      <attribute name="title">
-       <string>工具行为</string>
-      </attribute>
-      <layout class="QVBoxLayout" name="tabToolsLayout">
+    <widget class="QWidget" name="tabTools">
+     <attribute name="title">
+      <string>工具行为</string>
+     </attribute>
+     <layout class="QVBoxLayout" name="tabToolsLayout">
+      <item>
+        <widget class="QGroupBox" name="grpSearchAndFilter">
+         <property name="title">
+          <string>查找与筛选</string>
+         </property>
+         <layout class="QVBoxLayout" name="searchAndFilterLayout">
+          <item>
+           <layout class="QHBoxLayout" name="searchRow">
        <item>
         <widget class="QCheckBox" name="cbxAutoFetchChildren">
          <property name="text">
@@ -345,117 +353,617 @@
          </property>
         </widget>
        </item>
-       <item>
-        <layout class="QHBoxLayout" name="pageSizeRow">
-         <item>
-          <widget class="QLabel" name="lblPageSize">
-           <property name="text">
-            <string>查询分页大小</string>
-           </property>
-           <property name="toolTip">
-            <string>WAAPI 查询子对象/后代/批量查找时每次拉取的数量。调大能减少请求次数，但单次请求更重；主窗口查找对象与各工具共用该值。</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QSpinBox" name="spbPageSize">
-           <property name="toolTip">
-            <string>默认 500，可调范围 50-5000。对象数量很大的工程建议保持 500 左右，避免单次请求超时。</string>
-           </property>
-           <property name="minimum">
-            <number>50</number>
-           </property>
-           <property name="maximum">
-            <number>5000</number>
-           </property>
-           <property name="singleStep">
-            <number>50</number>
-           </property>
-           <property name="value">
-            <number>500</number>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="pageSizeSpacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-        </layout>
+             <item>
+              <widget class="QCheckBox" name="cbxKeepSelf">
+              <property name="text">
+               <string>保留原始层级</string>
+              </property>
+              <property name="toolTip">
+               <string>高级查找子对象时，查找结果同时保留输入对象自身。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblPageSize">
+              <property name="text">
+               <string>查询分页大小</string>
+              </property>
+              <property name="toolTip">
+               <string>WAAPI 查询子对象/后代/批量查找时每次拉取的数量。调大能减少请求次数，但单次请求更重；主窗口查找对象与各工具共用该值。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="spbPageSize">
+              <property name="toolTip">
+               <string>默认 500，可调范围 50-5000。对象数量很大的工程建议保持 500 左右，避免单次请求超时。</string>
+              </property>
+              <property name="minimum">
+               <number>50</number>
+              </property>
+              <property name="maximum">
+               <number>5000</number>
+              </property>
+              <property name="singleStep">
+               <number>50</number>
+              </property>
+              <property name="value">
+               <number>500</number>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="searchRowSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="filterCheckRow">
+            <item>
+             <widget class="QCheckBox" name="cbxCaseSensitive">
+              <property name="text">
+               <string>区分大小写</string>
+              </property>
+              <property name="toolTip">
+               <string>主窗口表格关键词筛选时区分英文字母大小写。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="cbxOnlyIncluded">
+              <property name="text">
+               <string>仅显示启用对象</string>
+              </property>
+              <property name="toolTip">
+               <string>过滤掉工程中未启用的对象（含上级未启用的层级）。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="cbxOnlyInUse">
+              <property name="text">
+               <string>只显示在用资源</string>
+              </property>
+              <property name="toolTip">
+               <string>只显示被 WorkUnit 内当前语言实际引用的音频源。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="filterCheckSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="filterRadioRow">
+            <item>
+             <widget class="QLabel" name="lblEventFilter">
+              <property name="text">
+               <string>Event引用：</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QRadioButton" name="rbnEventAll">
+              <property name="text">
+               <string>全部</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QRadioButton" name="rbnEventHas">
+              <property name="text">
+               <string>有引用</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QRadioButton" name="rbnEventNo">
+              <property name="text">
+               <string>无引用</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="filterRadioMiddleSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>20</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblLanguageFilter">
+              <property name="text">
+               <string>语言筛选：</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QRadioButton" name="rbnLangAll">
+              <property name="text">
+               <string>全部语言</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QRadioButton" name="rbnLangActive">
+              <property name="text">
+               <string>仅当前语言</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="filterRadioEndSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="loudnessBufferRow">
-         <item>
-          <widget class="QLabel" name="lblLoudnessBuffer">
-           <property name="text">
-            <string>响度分析分块采样点</string>
-           </property>
-           <property name="toolTip">
-            <string>RMS 响度分析时每个 buffer 的采样点数：每 buffer 单独求功率，剔除低于门限的静音 buffer 后再取平均。分块越大越接近整体响度，越小对静音段更敏感。</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QSpinBox" name="spbLoudnessBuffer">
-           <property name="toolTip">
-            <string>默认 1024，可调范围 128-65536。响度调整、静音裁剪、音频预览的响度显示共用该值。</string>
-           </property>
-           <property name="minimum">
-            <number>128</number>
-           </property>
-           <property name="maximum">
-            <number>65536</number>
-           </property>
-           <property name="singleStep">
-            <number>128</number>
-           </property>
-           <property name="value">
-            <number>1024</number>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="loudnessBufferSpacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="lblLanguagesHeader">
+        <widget class="QCheckBox" name="cbxDetailLog">
+         <property name="toolTip">
+          <string>打开后会把批量处理中每个对象的处理记录、以及每次 WAAPI 调用的参数与耗时写进日志文件（gui_log.log / mcp_log.log）。日志量大时会产生额外磁盘写入，排查问题后再关掉即可。</string>
+         </property>
          <property name="text">
-          <string>未接入语言（用分号分隔）</string>
-         </property>
-         <property name="toolTip">
-          <string>这些语言尚未接入，工程检查时不会要求它们存在对应语音，也不参与本地化检查。多个语言用分号分隔，例如 Chinese;Japanese。</string>
+          <string>记录明细日志（批量逐对象、WAAPI 调用流水）</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QLineEdit" name="iptLanguages">
-         <property name="toolTip">
-          <string>多个语言用分号分隔，例如 Chinese;Japanese。</string>
+        <widget class="QGroupBox" name="grpLoudness">
+         <property name="title">
+          <string>响度设置</string>
+         </property>
+         <layout class="QHBoxLayout" name="loudnessRow">
+          <item>
+           <widget class="QLabel" name="lblLoudnessStandard">
+            <property name="text">
+             <string>响度标准</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="cbbLoudnessStandard">
+            <property name="minimumSize">
+             <size>
+              <width>90</width>
+              <height>0</height>
+             </size>
+            </property>
+            <item>
+             <property name="text">
+              <string>RMS</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>LUFS</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lblTargetLoudness">
+            <property name="text">
+             <string>目标响度</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="spbTargetLoudness">
+            <property name="suffix">
+             <string> dBFS</string>
+            </property>
+            <property name="minimum">
+             <number>-60</number>
+            </property>
+            <property name="maximum">
+             <number>0</number>
+            </property>
+            <property name="value">
+             <number>-18</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lblLoudnessTolerance">
+            <property name="text">
+             <string>宽容度</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="spbLoudnessTolerance">
+            <property name="suffix">
+             <string> dB</string>
+            </property>
+            <property name="decimals">
+             <number>1</number>
+            </property>
+            <property name="minimum">
+             <double>0.000000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>20.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.500000000000000</double>
+            </property>
+            <property name="value">
+             <double>1.000000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="loudnessSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="grpLocalization">
+         <property name="title">
+          <string>本地化</string>
+         </property>
+         <layout class="QVBoxLayout" name="localizationLayout">
+          <item>
+           <layout class="QHBoxLayout" name="referenceLanguageRow">
+            <item>
+             <widget class="QLabel" name="lblReferenceLanguage">
+              <property name="text">
+               <string>参考语言</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="cbxUseDefaultReferenceLanguage">
+              <property name="text">
+               <string>使用工程默认</string>
+              </property>
+              <property name="toolTip">
+               <string>勾选后直接读取 Wwise 工程的参考语言（referenceLanguageId）；取消勾选则使用右边手填的语言名，静音填补空缺等本地化工具与多语言对比都会用到。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="ledReferenceLanguage">
+              <property name="minimumSize">
+               <size>
+                <width>120</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="placeholderText">
+               <string>例如 EN</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="referenceLanguageSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QLabel" name="lblLanguagesHeader">
+              <property name="text">
+               <string>未接入语言（用分号分隔）</string>
+              </property>
+              <property name="toolTip">
+               <string>这些语言尚未接入，工程检查时不会要求它们存在对应语音，也不参与本地化检查。多个语言用分号分隔，例如 Chinese;Japanese。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="iptLanguages">
+              <property name="minimumSize">
+               <size>
+                <width>220</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="toolTip">
+               <string>多个语言用分号分隔，例如 Chinese;Japanese。</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="grpAudioPreview">
+         <property name="title">
+          <string>音频分析与预览</string>
+         </property>
+         <layout class="QVBoxLayout" name="audioPreviewLayout">
+          <item>
+           <layout class="QHBoxLayout" name="previewModeRow">
+            <item>
+             <widget class="QLabel" name="lblPreviewDisplayMode">
+              <property name="text">
+               <string>显示模式</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="cbbPreviewDisplayMode">
+              <item>
+               <property name="text">
+                <string>波形</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>频谱</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+            <item>
+             <spacer name="previewModeSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="loudnessBufferRow">
+            <item>
+             <widget class="QLabel" name="lblLoudnessBuffer">
+              <property name="text">
+               <string>响度分析分块采样点</string>
+              </property>
+              <property name="toolTip">
+               <string>RMS 响度分析时每个 buffer 的采样点数：每 buffer 单独求功率，剔除低于门限的静音 buffer 后再取平均。分块越大越接近整体响度，越小对静音段更敏感。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="spbLoudnessBuffer">
+              <property name="toolTip">
+               <string>默认 1024，可调范围 128-65536。响度调整、静音裁剪、音频预览的响度显示共用该值。</string>
+              </property>
+              <property name="minimum">
+               <number>128</number>
+              </property>
+              <property name="maximum">
+               <number>65536</number>
+              </property>
+              <property name="singleStep">
+               <number>128</number>
+              </property>
+              <property name="value">
+               <number>1024</number>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="loudnessBufferSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+        <item>
+         <spacer name="toolsSpacer">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabVersionControl">
+      <attribute name="title">
+       <string>版本控制</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabVersionControlLayout">
+       <item>
+        <layout class="QFormLayout" name="vcsForm">
+         <item row="0" column="0">
+          <widget class="QLabel" name="lblVcsMode">
+           <property name="text">
+            <string>版本控制类型</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QComboBox" name="cbbVcsMode"/>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="lblP4Server">
+           <property name="text">
+            <string>P4 服务器</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QLineEdit" name="iptP4Server">
+           <property name="placeholderText">
+            <string>如 ssl:perforce.example.com:1666；留空表示用 P4 客户端默认值</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="lblP4Charset">
+           <property name="text">
+            <string>P4 字符集</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="1">
+          <widget class="QLineEdit" name="iptP4Charset">
+           <property name="placeholderText">
+            <string>默认 utf8</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QLabel" name="lblP4ChangelistDescription">
+           <property name="text">
+            <string>P4 提交描述</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QLineEdit" name="iptP4ChangelistDescription"/>
+         </item>
+         <item row="4" column="0">
+          <widget class="QLabel" name="lblSvnExecutable">
+           <property name="text">
+            <string>SVN 可执行文件</string>
+           </property>
+          </widget>
+         </item>
+         <item row="4" column="1">
+          <widget class="QLineEdit" name="iptSvnExecutable">
+           <property name="placeholderText">
+            <string>已在 PATH 中时直接写 svn，否则写完整路径</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="0">
+          <widget class="QLabel" name="lblSvnUsername">
+           <property name="text">
+            <string>SVN 用户名</string>
+           </property>
+          </widget>
+         </item>
+         <item row="5" column="1">
+          <widget class="QLineEdit" name="iptSvnUsername"/>
+         </item>
+         <item row="6" column="0">
+          <widget class="QLabel" name="lblSvnPassword">
+           <property name="text">
+            <string>SVN 密码</string>
+           </property>
+          </widget>
+         </item>
+         <item row="6" column="1">
+          <widget class="QLineEdit" name="iptSvnPassword">
+           <property name="echoMode">
+            <enum>QLineEdit::Password</enum>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="0">
+          <widget class="QLabel" name="lblSvnCommitMessage">
+           <property name="text">
+            <string>SVN 提交信息</string>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="1">
+          <widget class="QLineEdit" name="iptSvnCommitMessage"/>
+         </item>
+         <item row="8" column="0" colspan="2">
+          <widget class="QPushButton" name="btnVcsTest">
+           <property name="text">
+            <string>测试连接</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblVcsHint">
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="text">
+          <string>版本控制用于主窗口「集成视图 - 作者」列：显示对象所在 WorkUnit 文件最后一次提交的提交人。SVN 走 svn info（读本地工作副本，不访问服务器，较快）；P4 走 fstat + describe（需要能连上服务器，首次查询较慢）。提交描述/提交信息用于本工具自动创建 changelist 或提交时填写。设置保存在 user_config.json 的 version_control / p4 / svn 节，修改后需重启软件生效。</string>
          </property>
         </widget>
        </item>
        <item>
-        <spacer name="toolsSpacer">
+        <spacer name="vcsSpacer">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
          </property>
@@ -642,34 +1150,96 @@
       </attribute>
       <layout class="QVBoxLayout" name="tabAppearanceLayout">
        <item>
-        <layout class="QHBoxLayout" name="themeRow">
-         <item>
-          <widget class="QLabel" name="lblTheme">
+       <layout class="QHBoxLayout" name="themeRow">
+        <item>
+         <widget class="QLabel" name="lblTheme">
+          <property name="text">
+           <string>界面主题</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="cbbTheme">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="uiScaleRow">
+        <item>
+         <widget class="QLabel" name="lblUiScale">
+          <property name="text">
+           <string>界面缩放</string>
+          </property>
+          <property name="toolTip">
+           <string>跟随系统＝按 Windows 的显示缩放显示；选择具体百分比则固定为该缩放（不再跟随系统）。QT_SCALE_FACTOR 只在启动时生效，改完需要重启软件。</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="cbbUiScale">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="toolTip">
+           <string>界面感觉整体被放大（或想固定不放大）时，可在这里选 100% 并重启；屏幕本身是高分屏时选「跟随系统」最合适。</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+        <widget class="QGroupBox" name="grpTableDisplay">
+         <property name="title">
+          <string>表格显示</string>
+         </property>
+         <layout class="QHBoxLayout" name="layoutTableDisplay">
+          <item>
+           <widget class="QCheckBox" name="cbxPathDisplayCompact">
+            <property name="text">
+             <string>表格路径显示关键词去重后的简写</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+          <widget class="QCheckBox" name="cbxPathHideRoot">
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>勾选后去掉路径开头的根目录（如 \Actor-Mixer Hierarchy、\Events），所有表格与工具窗口共用该显示规则。</string>
+           </property>
            <property name="text">
-            <string>界面主题</string>
+            <string>路径隐藏根目录</string>
            </property>
           </widget>
-         </item>
-         <item>
-          <widget class="QComboBox" name="cbbTheme">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QCheckBox" name="cbxPathDisplayCompact">
-         <property name="text">
-          <string>表格路径显示关键词去重后的简写</string>
-         </property>
-         <property name="checked">
-          <bool>true</bool>
-         </property>
+          </item>
+          <item>
+           <spacer name="tableDisplaySpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
         </widget>
        </item>
        <item>

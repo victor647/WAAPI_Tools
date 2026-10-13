@@ -20,15 +20,16 @@ from ui.ProjectValidation_ui import Ui_ProjectValidation
 from libraries.multi_thread import batch_processor
 
 
-# 对象可用属性/引用名缓存（按对象 id）：避免对类型上不存在的属性发起 WAAPI 查询
+# 对象可用属性/引用名缓存（按对象类型）：同一类型返回的列表一致，避免对每个对象各查一次
 _AVAILABLE_NAMES_CACHE: dict[str, set] = {}
 
 
 def _available_names(obj: WwiseObject) -> set:
-    names = _AVAILABLE_NAMES_CACHE.get(obj.id)
+    type_name = obj.type.name
+    names = _AVAILABLE_NAMES_CACHE.get(type_name)
     if names is None:
         names = set(waapi_utils.get_property_and_reference_names(obj))
-        _AVAILABLE_NAMES_CACHE[obj.id] = names
+        _AVAILABLE_NAMES_CACHE[type_name] = names
     return names
 
 
@@ -58,6 +59,8 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         self.tblValidationResults.setItemDelegate(SeverityTableDelegate(self.tblValidationResults))
         self.__mainWindow = main_window
         self.__builtInRTPCs = []
+        self.__validationPropertiesById = {}
+        self.__validationInclusionCache = {}
         self.__pendingProblems = []
         self.__pendingWritten = 0
         self.problematicObjects = []
@@ -103,6 +106,8 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
     # 每次运行前重置数据
     def reset_data(self):
         self.__builtInRTPCs = []
+        self.__validationPropertiesById = {}
+        self.__validationInclusionCache = {}
         self.__pendingProblems = []
         self.__pendingWritten = 0
         self.problematicObjects = []
@@ -240,14 +245,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
     def validate_entire_project(self):
         self.reset_data()
         global_objects = waapi_utils.get_global_objects()
-        batch_processor.create_async(
-            global_objects,
-            lambda index, obj: self.validate_object(obj),
-            '工程检查',
-            on_finished=self.on_validate_finished,
-            on_item_processed=self._on_validation_progress,
-            progress_text_func=lambda index, obj: f"已找到 {len(self.__pendingProblems)} 条",
-        )
+        self._start_validation(global_objects)
 
     # 检查对象列表及其所有子对象
     def validate_objects(self, objects):
@@ -259,14 +257,63 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             for descendant in descendants:
                 if descendant.name != '':
                     all_objects.append(descendant)
+        self._start_validation(all_objects)
+
+    def _start_validation(self, objects: list[WwiseObject]):
+        self.__validationObjects = objects
+        self.__validationRequests = self._validation_property_requests()
         batch_processor.create_async(
-            all_objects,
-            lambda index, obj: self.validate_object(obj),
+            objects,
+            self._validate_object_with_prefetch,
             '工程检查',
             on_finished=self.on_validate_finished,
             on_item_processed=self._on_validation_progress,
             progress_text_func=lambda index, obj: f"已找到 {len(self.__pendingProblems)} 条",
         )
+
+    def _validation_property_requests(self) -> dict[str, list[str]]:
+        requests = {}
+        if self.grpDesignStructure.isChecked():
+            if self.cbxNestedWorkUnit.isEnabled() and self.cbxNestedWorkUnit.isChecked():
+                requests[WwiseObjectType.WorkUnit.value] = ['workUnitType']
+            if self.cbxDuplicatedParameter.isEnabled() and self.cbxDuplicatedParameter.isChecked():
+                requests[WwiseObjectType.RTPC.value] = ['BindToBuiltInParam']
+        if self.grpSoundLocalization.isChecked():
+            audio_source_properties = []
+            if self.cbxSilentPlaceholder.isEnabled() and self.cbxSilentPlaceholder.isChecked():
+                requests['SourcePlugin'] = ['classId']
+                audio_source_properties.append('originalFilePath')
+            if self.cbxInvalidTrimRange.isEnabled() and self.cbxInvalidTrimRange.isChecked():
+                audio_source_properties.extend(['TrimEnd', 'playbackDuration'])
+            if audio_source_properties:
+                requests[WwiseObjectType.AudioSource.value] = list(dict.fromkeys(audio_source_properties))
+        if self.grpMistakes.isChecked() and self.cbxSoundNotStreamed.isEnabled() and \
+                self.cbxSoundNotStreamed.isChecked():
+            requests[WwiseObjectType.Sound.value] = ['IsStreamingEnabled']
+            requests[WwiseObjectType.MusicTrack.value] = ['IsStreamingEnabled']
+        return requests
+
+    def _validate_object_with_prefetch(self, index: int, obj: WwiseObject):
+        if index == 0:
+            self.__validationPropertiesById = {}
+            unique_objects = {
+                item.id: item for item in self.__validationObjects if item.id
+            }
+            property_sets = [
+                waapi_utils.get_objects_properties(list(unique_objects.values()), ['Inclusion'])
+            ]
+            objects_by_type = {}
+            for item in self.__validationObjects:
+                object_type = (item.wwise_dict or {}).get('type')
+                if object_type in self.__validationRequests and item.id:
+                    objects_by_type.setdefault(object_type, {})[item.id] = item
+            for object_type, property_names in self.__validationRequests.items():
+                candidates = list(objects_by_type.get(object_type, {}).values())
+                property_sets.append(waapi_utils.get_objects_properties(candidates, property_names))
+            for property_set in property_sets:
+                for object_id, properties in property_set.items():
+                    self.__validationPropertiesById.setdefault(object_id, {}).update(properties)
+        return self.validate_object(obj)
 
     # 批处理每完成一条：把工作线程新收集的问题边查边插入表格（主线程回调）
     def _on_validation_progress(self, payload):
@@ -294,7 +341,11 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
 
     # 检查单个对象
     def validate_object(self, obj: WwiseObject):
-        if not common_utils.is_object_included(obj):
+        if not common_utils.is_object_included(
+            obj,
+            inclusion_cache=self.__validationInclusionCache,
+            property_values_by_id=self.__validationPropertiesById,
+        ):
             return
         obj_type = obj.type
         if obj_type == WwiseObjectType.EventAction:
@@ -312,7 +363,12 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
 
         if self.grpDesignStructure.isChecked():
             title = self.grpDesignStructure.title()
-            self.check_object_by_rule(obj, self.cbxNestedWorkUnit, is_work_unit_nested, title)
+            self.check_object_by_rule(
+                obj,
+                self.cbxNestedWorkUnit,
+                lambda item: is_work_unit_nested(item, self.__validationPropertiesById.get(item.id)),
+                title,
+            )
             self.check_object_by_rule(obj, self.cbxRedundantActorMixer, is_actor_mixer_redundant, title)
             self.check_object_by_rule(obj, self.cbxSingleChildContainer, container_has_single_child, title)
             self.check_object_by_rule(obj, self.cbxEmptyNode, is_node_empty, title)
@@ -322,9 +378,19 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             title = self.grpSoundLocalization.title()
             self.check_object_by_rule(obj, self.cbxSourceNameDifferent, file_path_different_from_sound, title)
             self.check_object_by_rule(obj, self.cbxSourceNotImported, sound_missing_or_not_localized, title)
-            self.check_object_by_rule(obj, self.cbxSilentPlaceholder, is_audio_source_silent, title)
+            self.check_object_by_rule(
+                obj,
+                self.cbxSilentPlaceholder,
+                lambda item: is_audio_source_silent(item, self.__validationPropertiesById.get(item.id)),
+                title,
+            )
             self.check_object_by_rule(obj, self.cbxSoundNotInEvent, sound_not_in_any_events, title)
-            self.check_object_by_rule(obj, self.cbxInvalidTrimRange, audio_trim_out_of_range, title)
+            self.check_object_by_rule(
+                obj,
+                self.cbxInvalidTrimRange,
+                lambda item: audio_trim_out_of_range(item, self.__validationPropertiesById.get(item.id)),
+                title,
+            )
 
         if self.grpEventBank.isChecked():
             title = self.grpEventBank.title()
@@ -340,7 +406,12 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
             self.check_object_by_rule(obj, self.cbxUnassignedSwitchContainer, is_switch_container_unassigned, title)
             self.check_object_by_rule(obj, self.cbxSwitchTo1PByDefault, switch_to_1p_by_default, title)
             self.check_object_by_rule(obj, self.cbxMissingAttenuation, object_missing_attenuation, title)
-            self.check_object_by_rule(obj, self.cbxSoundNotStreamed, sound_not_streamed, title)
+            self.check_object_by_rule(
+                obj,
+                self.cbxSoundNotStreamed,
+                lambda item: sound_not_streamed(item, self.__validationPropertiesById.get(item.id)),
+                title,
+            )
 
     # 检查项目通用接口：置灰（不可用）的检查项一律跳过
     def check_object_by_rule(self, obj: WwiseObject, check_box: QCheckBox, check_function, category: str):
@@ -365,7 +436,12 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
     def is_duplicated_parameter(self, parameter: WwiseObject):
         if parameter.type != WwiseObjectType.RTPC:
             return False
-        built_in = waapi_utils.get_object_property(parameter, 'BindToBuiltInParam')
+        properties = self.__validationPropertiesById.get(parameter.id)
+        built_in = (
+            properties.get('BindToBuiltInParam')
+            if properties is not None and 'BindToBuiltInParam' in properties
+            else waapi_utils.get_object_property(parameter, 'BindToBuiltInParam')
+        )
         if not built_in:
             return False
         if built_in in self.__builtInRTPCs:
@@ -534,6 +610,11 @@ def wrong_reference_notes_or_color(obj: WwiseObject):
             return use_dark_color and not has_dark_color_tag(target)
     else:
         references = waapi_utils.get_object_references(obj)
+        action_references = [
+            reference for reference in references
+            if reference.type == WwiseObjectType.EventAction
+        ]
+        action_properties = waapi_utils.get_objects_properties(action_references, ['ActionType'])
         notes = common_utils.get_object_notes(obj) if use_notes else ''
         obj_path = obj.path
         # 对象被SoundBank引用
@@ -548,7 +629,7 @@ def wrong_reference_notes_or_color(obj: WwiseObject):
         elif 'Hierarchy' in obj_path:
             for reference in references:
                 if reference.type == WwiseObjectType.EventAction:
-                    action_type = waapi_utils.get_object_property(reference, 'ActionType')
+                    action_type = action_properties.get(reference.id, {}).get('ActionType')
                     if action_type == 1:
                         event = waapi_utils.get_parent_object(reference)
                         if use_notes and notes != f"Played by Event [{event.name}]":
@@ -559,9 +640,10 @@ def wrong_reference_notes_or_color(obj: WwiseObject):
 
 # 对象是否因为引用设置了特殊颜色
 def has_dark_color_tag(obj: WwiseObject):
-    if not waapi_utils.get_object_property(obj, 'OverrideColor'):
+    properties = waapi_utils.get_object_properties(obj, ['OverrideColor', 'Color'])
+    if not properties.get('OverrideColor'):
         return False
-    color = common_utils.get_object_color(obj)
+    color = properties.get('Color')
     parent = waapi_utils.get_parent_object(obj)
     if not parent:
         return False
@@ -572,14 +654,15 @@ def has_dark_color_tag(obj: WwiseObject):
 
 # region DesignStructure
 # 检查WorkUnit是否只包含子级WorkUnit
-def is_work_unit_nested(work_unit: WwiseObject):
+def is_work_unit_nested(work_unit: WwiseObject, properties: dict = None):
     if work_unit.type != WwiseObjectType.WorkUnit:
         return False
     # 物理文件夹会只有一个路径，故跳过
     path_splits = work_unit.path.split('\\')
     if len(path_splits) <= 2:
         return False
-    work_unit_type = waapi_utils.get_object_property(work_unit, 'workUnitType')
+    work_unit_type = properties.get('workUnitType') if properties and 'workUnitType' in properties \
+        else waapi_utils.get_object_property(work_unit, 'workUnitType')
     if work_unit_type == WwiseObjectType.Folder:
         return False
     children = waapi_utils.get_child_objects(work_unit)
@@ -602,8 +685,10 @@ def is_actor_mixer_redundant(actor_mixer: WwiseObject):
     names = _available_names(actor_mixer)
     effects_name = next((name for name in ('Effects', '@Effects', 'Effect') if name in names), None)
     rtpcs_name = next((name for name in ('RTPC', '@RTPC') if name in names), None)
-    effects = waapi_utils.get_object_property(actor_mixer, effects_name) if effects_name else None
-    rtpcs = waapi_utils.get_object_property(actor_mixer, rtpcs_name) if rtpcs_name else None
+    property_names = [name for name in (effects_name, rtpcs_name) if name]
+    properties = waapi_utils.get_object_properties(actor_mixer, property_names)
+    effects = properties.get(effects_name) if effects_name else None
+    rtpcs = properties.get(rtpcs_name) if rtpcs_name else None
     if effects or rtpcs:
         return False
     return not mixing_utils.has_fader_edits(actor_mixer)
@@ -642,9 +727,15 @@ def file_path_different_from_sound(sound: WwiseObject):
         return False
     sound_name = sound.name
     suffix = project_conventions.get_net_role_suffix_from_name(sound_name)
-    children = waapi_utils.get_child_objects(sound)
-    for audio_source in children:
-        source_path = audio_source_utils.get_source_absolute_path(audio_source)
+    audio_sources = [
+        child for child in waapi_utils.get_child_objects(sound)
+        if child.type == WwiseObjectType.AudioSource
+    ]
+    properties_by_id = waapi_utils.get_objects_properties(audio_sources, ['originalFilePath'])
+    for audio_source in audio_sources:
+        source_path = audio_source_utils.get_source_absolute_path(
+            audio_source, properties_by_id.get(audio_source.id, {})
+        )
         if source_path:
             source_name = os.path.basename(source_path)[:-4]
             if sound_name != source_name:
@@ -674,24 +765,30 @@ def sound_missing_or_not_localized(sound: WwiseObject):
         return not os.path.exists(path)
     else:
         children = waapi_utils.get_child_objects(sound)
+        audio_sources = [child for child in children if child.type == WwiseObjectType.AudioSource]
         missing_languages = len(implemented_languages)
-        for child in children:
-            language = localization_utils.get_sound_language(child)
+        source_properties = waapi_utils.get_objects_properties(
+            audio_sources, ['audioSource:language'])
+        for child in audio_sources:
+            language = localization_utils.get_sound_language(
+                child, source_properties.get(child.id, {})
+            )
             if language in implemented_languages:
                 missing_languages -= 1
         return missing_languages > 0
 
 
 # 检查样本是否是静音替代资源
-def is_audio_source_silent(source: WwiseObject):
+def is_audio_source_silent(source: WwiseObject, properties: dict = None):
     source_type = source.type
     if source_type != WwiseObjectType.AudioSource:
         # 检查Wwise Silence插件的情况
-        if source_type == 'SourcePlugin':
-            class_id = waapi_utils.get_object_property(source, 'classId')
+        if source_type == WwiseObjectType.SourcePlugin:
+            class_id = properties.get('classId') if properties and 'classId' in properties \
+                else waapi_utils.get_object_property(source, 'classId')
             return class_id == 6619138
         return False
-    source_path = audio_source_utils.get_source_absolute_path(source)
+    source_path = audio_source_utils.get_source_absolute_path(source, properties)
     silent = audio_utils.is_sound_completely_silent(source_path)
     if silent:
         return True
@@ -711,13 +808,22 @@ def sound_not_in_any_events(sound: WwiseObject):
 
 
 # 检查样本的裁剪末尾是否超出时长范围
-def audio_trim_out_of_range(audio_source: WwiseObject):
+def audio_trim_out_of_range(audio_source: WwiseObject, properties: dict = None):
     if audio_source.type != WwiseObjectType.AudioSource:
         return False
-    trim_end = waapi_utils.get_object_property(audio_source, 'TrimEnd')
+    if properties is None or not {'TrimEnd', 'playbackDuration'} <= properties.keys():
+        missing_properties = [
+            name for name in ('TrimEnd', 'playbackDuration')
+            if properties is None or name not in properties
+        ]
+        properties = {
+            **(properties or {}),
+            **waapi_utils.get_object_properties(audio_source, missing_properties),
+        }
+    trim_end = properties.get('TrimEnd')
     if trim_end == -1:
         return False
-    duration = waapi_utils.get_object_property(audio_source, 'playbackDuration')
+    duration = properties.get('playbackDuration')
     if duration:
         return trim_end > duration['playbackDurationMax']
     return False
@@ -799,11 +905,16 @@ def is_bus_unassigned(obj: WwiseObject):
     names = _available_names(obj)
     if 'OutputBus' not in names:
         return False
-    bus = waapi_utils.get_referenced_object(obj, 'OutputBus')
+    property_names = ['OutputBus']
+    if 'OverrideOutput' in names:
+        property_names.append('OverrideOutput')
+    properties = waapi_utils.get_object_properties(obj, property_names)
+    bus_value = properties.get('OutputBus')
+    bus = WwiseObject(bus_value) if bus_value else None
     if bus is None:
         return False
     is_master = bus.name == 'Master Audio Bus'
-    override = waapi_utils.get_object_property(obj, 'OverrideOutput') if 'OverrideOutput' in names else 0
+    override = properties.get('OverrideOutput', 0)
     if override:
         return is_master
     # 非override的对象需要检查是否上级已经检查过了
@@ -853,12 +964,18 @@ def object_missing_attenuation(obj: WwiseObject):
     if not obj.path.startswith('\\Actor-Mixer Hierarchy'):
         return False
     names = _available_names(obj)
-    override = waapi_utils.get_object_property(obj, 'OverridePositioning') if 'OverridePositioning' in names else 0
+    property_names = []
+    if 'OverridePositioning' in names:
+        property_names.append('OverridePositioning')
+    if '3DSpatialization' in names:
+        property_names.append('3DSpatialization')
+    properties = waapi_utils.get_object_properties(obj, property_names)
+    override = properties.get('OverridePositioning', 0)
     if not override and not mixing_utils.is_mixing_root(obj):
         return False
     if '3DSpatialization' not in names:
         return False
-    spatialization_mode = waapi_utils.get_object_property(obj, '3DSpatialization')
+    spatialization_mode = properties.get('3DSpatialization')
     if not spatialization_mode:
         return False
     if spatialization_mode == 0:
@@ -870,12 +987,13 @@ def object_missing_attenuation(obj: WwiseObject):
 
 
 # 检查语音、环境声和音乐是否设为Streaming
-def sound_not_streamed(obj: WwiseObject):
+def sound_not_streamed(obj: WwiseObject, properties: dict = None):
     obj_type = obj.type
-    if obj_type == 'MusicTrack' or obj.type == WwiseObjectType.Sound:
+    if obj_type == WwiseObjectType.MusicTrack or obj.type == WwiseObjectType.Sound:
         category = project_conventions.get_object_category(obj)
         if category == 'Ambience' or category == 'Voice' or category == 'Music':
-            streaming = waapi_utils.get_object_property(obj, 'IsStreamingEnabled')
+            streaming = properties.get('IsStreamingEnabled') if properties and 'IsStreamingEnabled' in properties \
+                else waapi_utils.get_object_property(obj, 'IsStreamingEnabled')
             return not streaming
     return False
 # endregion Mistakes

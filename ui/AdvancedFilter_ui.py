@@ -37,6 +37,11 @@ class Ui_AdvancedFilter(object):
 
         self.verticalLayout.addWidget(self.cbxOnlyIncluded)
 
+        self.cbxOnlyInUse = QCheckBox(AdvancedFilterWindow)
+        self.cbxOnlyInUse.setObjectName(u"cbxOnlyInUse")
+
+        self.verticalLayout.addWidget(self.cbxOnlyInUse)
+
         self.grpEventFilter = QGroupBox(AdvancedFilterWindow)
         self.grpEventFilter.setObjectName(u"grpEventFilter")
         self.horizontalLayout = QHBoxLayout(self.grpEventFilter)
@@ -88,6 +93,10 @@ class Ui_AdvancedFilter(object):
         AdvancedFilterWindow.setWindowTitle(QCoreApplication.translate("AdvancedFilter", u"\u9ad8\u7ea7\u7b5b\u9009", None))
         self.cbxCaseSensitive.setText(QCoreApplication.translate("AdvancedFilter", u"\u533a\u5206\u5927\u5c0f\u5199", None))
         self.cbxOnlyIncluded.setText(QCoreApplication.translate("AdvancedFilter", u"\u4ec5\u663e\u793a\u542f\u7528\u5bf9\u8c61", None))
+        self.cbxOnlyInUse.setText(QCoreApplication.translate("AdvancedFilter", u"\u53ea\u663e\u793a\u5728\u7528\u8d44\u6e90", None))
+#if QT_CONFIG(tooltip)
+        self.cbxOnlyInUse.setToolTip(QCoreApplication.translate("AdvancedFilter", u"\u53ea\u4fdd\u7559\u5b9e\u9645\u64ad\u653e\u7684 AudioFileSource\uff08Wwise ActiveSourceList \u4e2d\u7684\u6e90\uff09\uff0c\u7528\u4e8e\u8fc7\u6ee4\u6389\u5de5\u7a0b\u91cc\u9057\u7559\u7684\u3001\u672a\u88ab\u4f7f\u7528\u7684\u97f3\u9891\u6e90\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.grpEventFilter.setTitle(QCoreApplication.translate("AdvancedFilter", u"Event \u5f15\u7528\u7b5b\u9009", None))
         self.rbnEventAll.setText(QCoreApplication.translate("AdvancedFilter", u"\u5168\u90e8", None))
         self.rbnEventHas.setText(QCoreApplication.translate("AdvancedFilter", u"\u88ab\u5f15\u7528", None))

@@ -12,7 +12,7 @@ from libraries.table_view.table_facade import TableFacade
 from libraries.table_view.table_item_model import TableItemModel
 from libraries.table_view.table_cell_data import TableCellData
 from libraries.wwise_object import WwiseObject, WwiseObjectType
-from libraries.utils.wwise import common_utils, soundbank_utils, waapi_utils
+from libraries.utils.wwise import common_utils, soundbank_utils, waapi_utils, workunit_utils
 from table.wwise_table_headers import *
 from table.wwise_table_row_data import WwiseTableRowData
 from libraries.utils.log_utils import Logger
@@ -115,6 +115,9 @@ class WwiseObjectTable(TableFacade):
         self._inclusion_cache: dict[str, bool] = {}
         # 集成视图「所属SoundBank」列的 Event -> Bank 对应关系，整表读取期间共用
         self._event_bank_map: dict | None = None
+        # 整表读取时按页预取的列属性（{对象ID: {属性名: 值}}）与已预取过的分页起点
+        self._properties_by_id: dict = {}
+        self._prefetched_pages: set = set()
 
     def _run_batch(
         self,
@@ -125,6 +128,7 @@ class WwiseObjectTable(TableFacade):
         on_finished=None,
         on_interrupted=None,
         exclusive: bool = True,
+        progress_text_func=None,
     ):
         raise NotImplementedError
 
@@ -148,7 +152,7 @@ class WwiseObjectTable(TableFacade):
             if self.display_mode == WwiseTableDisplayMode.Design:
                 hidden_columns.update(range(VOLUME_COL, ORIGINAL_PATH_COL + 1))
             elif self.display_mode == WwiseTableDisplayMode.Integration:
-                hidden_columns.update(range(ACTION_COL, SOUNDBANK_COL + 1))
+                hidden_columns.update(range(ACTION_COL, VCS_AUTHOR_COL + 1))
         # 使用自动定义的 Bank 时不展示「所属SoundBank」列
         elif self.display_mode == WwiseTableDisplayMode.Integration and project_conventions.use_auto_defined_bank():
             hidden_columns.add(SOUNDBANK_COL)
@@ -186,6 +190,9 @@ class WwiseObjectTable(TableFacade):
             Logger().info("开始读取音频对象信息...")
         self._inclusion_cache = {}
         self._event_bank_map = None
+        self._prefetched_pages = set()
+        self._properties_by_id = {}
+        # 仍按对象逐个驱动批处理（进度条跟着对象数量走），列属性在读取每行时按「查询分页大小」惰性分批取回
         self._run_batch(
             gv.active_objects,
             self.add_row_data,
@@ -196,9 +203,11 @@ class WwiseObjectTable(TableFacade):
             exclusive=False,
         )
 
-    def read_common_data(self, row_data: WwiseTableRowData):
+    def read_common_data(self, row_data: WwiseTableRowData, properties: dict = None):
         try:
-            row_data.read_common_data(self._inclusion_cache, read_optional=not self.light_mode)
+            row_data.read_common_data(self._inclusion_cache, read_optional=not self.light_mode,
+                                      properties=properties,
+                                      property_values_by_id=self._properties_by_id)
         except Exception as e:
             Logger().error(f"读取行基础数据失败：{row_data.name} ({e})")
 
@@ -221,6 +230,32 @@ class WwiseObjectTable(TableFacade):
                     found_count += 1
         return found_count
 
+    # 只显示在用资源：AudioFileSource 行只保留父 Sound 的 ActiveSourceList 成员
+    # （ActiveSourceList 在 WorkUnit 文件里，workunit_utils 内部按文件缓存，读不到时不隐藏，避免误杀）
+    def filter_in_use_only(self, only_in_use: bool, workunit_path_by_source_id: dict = None) -> None:
+        if not self.table_view or not only_in_use:
+            return
+        for row in range(self.model.rowCount()):
+            if self.is_row_hidden(row):
+                continue
+            row_data = self.data[row]
+            if row_data.type != WwiseObjectType.AudioSource:
+                continue
+            workunit_path = (workunit_path_by_source_id or {}).get(row_data.id)
+            if not self.__is_source_in_use(row_data.wwise_object, workunit_path):
+                self.set_row_hidden(row, True)
+
+    # AudioFileSource 是否在其父 Sound 的 ActiveSourceList 中
+    @staticmethod
+    def __is_source_in_use(source: WwiseObject, workunit_path: str = None) -> bool:
+        parent = waapi_utils.get_parent_object(source)
+        if not parent or not parent.is_valid:
+            return True
+        active_ids = workunit_utils.get_active_source_ids_for_object(parent, workunit_path)
+        if not active_ids:
+            return True
+        return source.id in active_ids
+
     def filter_inclusion_only(self, only_included: bool) -> None:
         if not self.table_view or not only_included:
             return
@@ -230,25 +265,54 @@ class WwiseObjectTable(TableFacade):
             if not common_utils.is_object_included(
                 self.data[row].wwise_object,
                 inclusion_cache=self._inclusion_cache,
+                property_values_by_id=self._properties_by_id,
             ):
                 self.set_row_hidden(row, True)
 
-    def add_row_data(self, row: int, data: WwiseObject):
+    # 当前显示模式下每行需要读取的列属性（按页一次取回）
+    def page_property_names(self) -> list:
+        names = ['notes', 'Inclusion']
+        if self.display_mode == WwiseTableDisplayMode.Design:
+            names += ['Volume', 'OutputBus', 'Attenuation', 'Conversion', 'MaxSoundPerInstance',
+                      'originalFilePath']
+        elif self.display_mode == WwiseTableDisplayMode.Integration:
+            # 集成视图「作者」列需要对象所在的 WorkUnit 文件路径
+            names += ['workUnit.filePath']
+        return names
+
+    # 预取 row 所在分页的列属性：只在分页首次被访问时发起一次 WAAPI 查询
+    def prefetch_row_properties(self, row: int):
+        names = ['Inclusion'] if self.light_mode else self.page_property_names()
+        if not names:
+            return
+        objects = gv.active_objects
+        start, end = waapi_utils.page_bounds(objects, row)
+        if start in self._prefetched_pages:
+            return
+        self._prefetched_pages.add(start)
+        page_objects = objects[start:end]
+        properties_by_id = waapi_utils.get_objects_properties(page_objects, names)
+        self._properties_by_id.update(properties_by_id)
+
+    def add_row_data(self, row: int, data: WwiseObject, properties: dict = None):
         if not data:
             return
+        self.prefetch_row_properties(row)
+        if properties is None:
+            properties = self._properties_by_id.get(data.id)
         row_data = WwiseTableRowData(row, len(self.header_list), data)
-        self.read_common_data(row_data)
-        self.read_data_by_display_mode(row_data)
+        self.read_common_data(row_data, properties)
+        self.read_data_by_display_mode(row_data, properties)
         self.model.append_row(row_data)
 
-    def read_data_by_display_mode(self, row_data: WwiseTableRowData):
+    def read_data_by_display_mode(self, row_data: WwiseTableRowData, properties: dict = None):
         if self.light_mode:
             return
         try:
             if self.display_mode == WwiseTableDisplayMode.Design:
-                row_data.read_design_info()
+                row_data.read_design_info(properties)
             elif self.display_mode == WwiseTableDisplayMode.Integration:
-                row_data.read_integration_info(self.event_bank_map)
+                row_data.read_integration_info(self.event_bank_map, properties)
         except Exception as e:
             Logger().error(f"读取 {row_data.type} [{row_data.name}] 附加属性失败：{e}")
 

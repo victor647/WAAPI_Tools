@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import QDialog, QWidget
+from PySide6.QtWidgets import QButtonGroup
 from qt_material import list_themes
 
 from data import project_conventions
-from libraries.utils import ai_utils, user_config
+from libraries.utils import ai_utils, audio_utils, user_config, vcs_utils
 from libraries.utils.log_utils import Logger
 from ui.ProjectSettings_ui import Ui_ProjectSettings
 
@@ -12,6 +13,16 @@ AI_MODE_LABELS = ("代理模式", "官方 API 模式")
 # AI 修改策略下拉框：键与 user_config.MUTATION_POLICIES 对应
 AI_MUTATION_POLICY_KEYS = user_config.MUTATION_POLICIES
 AI_MUTATION_POLICY_LABELS = ("只读（不改工程）", "改动前弹窗确认", "直接执行（不询问）")
+
+# 响度标准下拉项（顺序与 .ui 一致）
+LOUDNESS_STANDARDS = (audio_utils.LoudnessStandard.RMS, audio_utils.LoudnessStandard.LUFS)
+
+# 版本控制类型下拉项（顺序与 project_conventions.VCS_MODES 一致）
+VCS_MODE_LABELS = ("Perforce (P4)", "Subversion (SVN)")
+
+# 界面缩放下拉项：键与 user_config.appearance.ui_scale 一致（auto=跟随系统）
+UI_SCALE_KEYS = ("auto", "100", "125", "150", "175", "200")
+UI_SCALE_LABELS = ("跟随系统", "100%", "125%", "150%", "175%", "200%")
 
 # 角色表首列显示文案，内部键仍是 1P/2P/3P
 NET_ROLE_LABELS = {"1P": "1P（主角）", "2P": "2P（队友）", "3P": "3P（敌人）"}
@@ -48,16 +59,23 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         # 角色表只有 1P/2P/3P 三行，固定成刚好三行的高度
         self.netRoleValues.set_fixed_row_count(3)
         self.cbxAutoFetchChildren.setChecked(user_config.get_tool_auto_fetch_children())
+        self.cbxDetailLog.setChecked(user_config.get_tool_detail_log_enabled())
         self.spbPageSize.setValue(user_config.get_tool_page_size())
         self.spbLoudnessBuffer.setValue(user_config.get_tool_loudness_buffer_samples())
         self.cbxPathDisplayCompact.setChecked(user_config.get_tool_path_display_compact())
+        self.cbxPathHideRoot.setChecked(user_config.get_tool_path_hide_root())
         self.cbbAiMode.addItems(list(AI_MODE_LABELS))
         self.cbbAiMutationPolicy.addItems(list(AI_MUTATION_POLICY_LABELS))
         self.cbbAiProvider.addItems([info["label"] for info in ai_utils.PROVIDERS.values()])
+        self.cbbVcsMode.addItems(list(VCS_MODE_LABELS))
+        self.cbbUiScale.addItems(list(UI_SCALE_LABELS))
         self.setup_triggers()
         self.__load_values()
         self.__load_ai_values()
         self.__load_theme_values()
+        self.__load_ui_scale_value()
+        self.__load_window_settings()
+        self.__load_vcs_values()
 
     # 绑定按钮与复选框信号槽
     def setup_triggers(self):
@@ -69,12 +87,241 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbxEnablePathLength.toggled.connect(self._on_regulation_switch_toggled)
         self.cbxAutoDefinedBank.toggled.connect(self._on_bank_switch_toggled)
         self.cbxAutoFetchChildren.toggled.connect(user_config.set_tool_auto_fetch_children)
+        self.cbxDetailLog.toggled.connect(user_config.set_tool_detail_log_enabled)
         self.spbPageSize.valueChanged.connect(user_config.set_tool_page_size)
         self.spbLoudnessBuffer.valueChanged.connect(user_config.set_tool_loudness_buffer_samples)
         self.cbxPathDisplayCompact.toggled.connect(user_config.set_tool_path_display_compact)
+        self.cbxPathHideRoot.toggled.connect(user_config.set_tool_path_hide_root)
         self.cbbAiMode.currentIndexChanged.connect(self.__update_ai_controls_state)
         self.cbbAiProvider.currentIndexChanged.connect(self.__update_ai_controls_state)
         self.cbbTheme.currentTextChanged.connect(self._on_theme_changed)
+        self.cbbUiScale.currentIndexChanged.connect(self._on_ui_scale_changed)
+        self.cbbVcsMode.currentIndexChanged.connect(self.__update_vcs_controls_state)
+        self.btnVcsTest.clicked.connect(self._on_vcs_test_clicked)
+        # 工具窗口设置（统一编辑入口）
+        self.__grp_event = QButtonGroup(self)
+        self.__grp_event.addButton(self.rbnEventAll)
+        self.__grp_event.addButton(self.rbnEventHas)
+        self.__grp_event.addButton(self.rbnEventNo)
+
+        self.__grp_lang = QButtonGroup(self)
+        self.__grp_lang.addButton(self.rbnLangAll)
+        self.__grp_lang.addButton(self.rbnLangActive)
+
+        self.cbxKeepSelf.toggled.connect(self._on_keep_self_toggled)
+        self.cbxCaseSensitive.toggled.connect(self._on_case_sensitive_toggled)
+        self.cbxOnlyIncluded.toggled.connect(self._on_only_included_toggled)
+        self.cbxOnlyInUse.toggled.connect(self._on_only_in_use_toggled)
+        self.rbnEventAll.toggled.connect(self._on_event_filter_toggled)
+        self.rbnEventHas.toggled.connect(self._on_event_filter_toggled)
+        self.rbnEventNo.toggled.connect(self._on_event_filter_toggled)
+        self.rbnLangAll.toggled.connect(self._on_lang_filter_toggled)
+        self.rbnLangActive.toggled.connect(self._on_lang_filter_toggled)
+
+        self.cbbLoudnessStandard.currentIndexChanged.connect(self._save_loudness_settings)
+        self.spbTargetLoudness.valueChanged.connect(self._save_loudness_settings)
+        self.spbLoudnessTolerance.valueChanged.connect(self._save_loudness_settings)
+        self.cbbPreviewDisplayMode.currentIndexChanged.connect(self._save_preview_settings)
+        self.cbxUseDefaultReferenceLanguage.toggled.connect(self._on_use_default_reference_language_toggled)
+        self.ledReferenceLanguage.textChanged.connect(self._save_reference_language)
+
+    # 各工具窗口持久化的设置（统一在这里编辑，工具窗口内的入口保持不变）
+    def __load_window_settings(self):
+        loudness = user_config.get_window_settings('loudness_adjustment')
+        standard_name = str(loudness.get('loudness_standard', audio_utils.LoudnessStandard.RMS.value))
+        index = next((i for i, item in enumerate(LOUDNESS_STANDARDS) if item.value == standard_name), 0)
+        self.cbbLoudnessStandard.setCurrentIndex(index)
+        self.spbTargetLoudness.setValue(int(loudness.get('target_loudness_db', self.spbTargetLoudness.value())))
+        self.spbLoudnessTolerance.setValue(
+            float(loudness.get('tolerance_db', self.spbLoudnessTolerance.value())))
+
+        preview = user_config.get_window_settings('audio_preview')
+        self.cbbPreviewDisplayMode.setCurrentIndex(
+            1 if preview.get('display_mode') == 'spectrum' else 0)
+
+        self.cbxUseDefaultReferenceLanguage.setChecked(user_config.get_reference_language_use_default())
+        self.ledReferenceLanguage.setText(user_config.get_configured_reference_language())
+        self.__sync_reference_language_state()
+
+        find_settings = user_config.get_advanced_find_settings()
+        self.cbxKeepSelf.setChecked(bool(find_settings.get("keep_self", False)))
+
+        filter_settings = user_config.get_advanced_filter_settings()
+        self.cbxCaseSensitive.setChecked(bool(filter_settings.get("case_sensitive", False)))
+        self.cbxOnlyIncluded.setChecked(bool(filter_settings.get("only_included", False)))
+        self.cbxOnlyInUse.setChecked(bool(filter_settings.get("only_in_use", False)))
+
+        ev_val = filter_settings.get("event_filter", "all")
+        self.rbnEventAll.setChecked(ev_val == "all")
+        self.rbnEventHas.setChecked(ev_val == "with_ref")
+        self.rbnEventNo.setChecked(ev_val == "without_ref")
+
+        lang_val = filter_settings.get("language_filter", "all")
+        self.rbnLangAll.setChecked(lang_val == "all")
+        self.rbnLangActive.setChecked(lang_val == "active")
+
+    # 合并写入某个窗口节点（保留该节点里的其它键）
+    @staticmethod
+    def __save_window_settings(node: str, patch: dict):
+        current = dict(user_config.get_window_settings(node))
+        current.update(patch)
+        user_config.set_window_settings(node, current)
+
+    # 版本控制设置：读入类型与对应客户端字段（存在工程规范文件的 VersionControl 节点，随工程走）
+    def __load_vcs_values(self):
+        mode = project_conventions.get_version_control_mode()
+        index = project_conventions.VCS_MODES.index(mode) if mode in project_conventions.VCS_MODES else 0
+        self.cbbVcsMode.blockSignals(True)
+        self.cbbVcsMode.setCurrentIndex(index)
+        self.cbbVcsMode.blockSignals(False)
+        self.iptP4Server.setText(project_conventions.get_p4_server())
+        self.iptP4Charset.setText(project_conventions.get_p4_charset())
+        self.iptP4ChangelistDescription.setText(project_conventions.get_p4_changelist_description())
+        self.iptSvnExecutable.setText(project_conventions.get_svn_executable())
+        self.iptSvnUsername.setText(project_conventions.get_svn_username())
+        self.iptSvnPassword.setText(project_conventions.get_svn_password())
+        self.iptSvnCommitMessage.setText(project_conventions.get_svn_commit_message())
+        self.__update_vcs_controls_state()
+
+    # 只显示当前版本控制类型对应的字段
+    def __set_vcs_row_visible(self, row: int, label: QWidget, field: QWidget, visible: bool):
+        if hasattr(self.vcsForm, "setRowVisible"):
+            self.vcsForm.setRowVisible(row, visible)
+        else:
+            label.setVisible(visible)
+            field.setVisible(visible)
+
+    def __update_vcs_controls_state(self, *_args):
+        is_p4 = self.cbbVcsMode.currentIndex() != 1
+        for row, (label, field) in enumerate((
+                (self.lblP4Server, self.iptP4Server),
+                (self.lblP4Charset, self.iptP4Charset),
+                (self.lblP4ChangelistDescription, self.iptP4ChangelistDescription)), start=1):
+            self.__set_vcs_row_visible(row, label, field, is_p4)
+        for row, (label, field) in enumerate((
+                (self.lblSvnExecutable, self.iptSvnExecutable),
+                (self.lblSvnUsername, self.iptSvnUsername),
+                (self.lblSvnPassword, self.iptSvnPassword),
+                (self.lblSvnCommitMessage, self.iptSvnCommitMessage)), start=4):
+            self.__set_vcs_row_visible(row, label, field, not is_p4)
+
+    # 把「版本控制」Tab 的内容写进内存里的工程规范（保存规范文件时一并落盘）
+    def __apply_vcs_to_conventions(self):
+        index = self.cbbVcsMode.currentIndex()
+        mode = (project_conventions.VCS_MODES[index]
+                if 0 <= index < len(project_conventions.VCS_MODES)
+                else project_conventions.DEFAULT_VCS_MODE)
+        self.__conventions["VersionControl"] = {
+            "Mode": mode,
+            "P4": {
+                "Server": self.iptP4Server.text().strip(),
+                "Charset": self.iptP4Charset.text().strip() or project_conventions.DEFAULT_P4_CHARSET,
+                "ChangelistDescription": self.iptP4ChangelistDescription.text().strip()
+                                          or project_conventions.DEFAULT_P4_CHANGELIST_DESCRIPTION,
+            },
+            "SVN": {
+                "Executable": self.iptSvnExecutable.text().strip() or project_conventions.DEFAULT_SVN_EXECUTABLE,
+                "Username": self.iptSvnUsername.text().strip(),
+                "Password": self.iptSvnPassword.text(),
+                "CommitMessage": self.iptSvnCommitMessage.text().strip()
+                                 or project_conventions.DEFAULT_SVN_COMMIT_MESSAGE,
+            },
+        }
+        # 设置变了，之前的可用性与作者缓存作废
+        vcs_utils.clear_cache()
+
+    # 测试版本控制连接：先把当前填写内容写进规范文件（不关窗口），再探测一次
+    def _on_vcs_test_clicked(self):
+        self.__apply_vcs_to_conventions()
+        if not project_conventions.save_conventions(dict(self.__conventions)):
+            Logger().error("版本控制设置保存失败，无法测试连接")
+            return
+        mode_label = self.cbbVcsMode.currentText()
+        if vcs_utils.is_available():
+            Logger().info(f"版本控制连接正常：{mode_label}")
+        else:
+            Logger().error(f"版本控制连接失败：{mode_label}，请检查上面的设置（上面日志里有具体原因）")
+
+    def _save_loudness_settings(self, *_args):
+        self.__save_window_settings('loudness_adjustment', {
+            'loudness_standard': LOUDNESS_STANDARDS[self.cbbLoudnessStandard.currentIndex()].value,
+            'target_loudness_db': self.spbTargetLoudness.value(),
+            'tolerance_db': self.spbLoudnessTolerance.value(),
+        })
+
+    def _save_preview_settings(self, *_args):
+        self.__save_window_settings('audio_preview', {
+            'display_mode': 'spectrum' if self.cbbPreviewDisplayMode.currentIndex() == 1 else 'wave',
+        })
+
+    # 勾选「使用工程默认」时禁用手填输入框
+    def __sync_reference_language_state(self):
+        use_default = self.cbxUseDefaultReferenceLanguage.isChecked()
+        self.ledReferenceLanguage.setEnabled(not use_default)
+
+    def _on_keep_self_toggled(self, checked: bool):
+        user_config.save_advanced_find_settings({"keep_self": bool(checked)})
+        main = self.parent()
+        if main and hasattr(main, "cbxKeepSelf"):
+            main.cbxKeepSelf.setChecked(checked)
+
+    def _on_case_sensitive_toggled(self, checked: bool):
+        user_config.save_advanced_filter_settings({"case_sensitive": bool(checked)})
+        main = self.parent()
+        if main and hasattr(main, "cbxCaseSensitive"):
+            main.cbxCaseSensitive.setChecked(checked)
+
+    def _on_only_included_toggled(self, checked: bool):
+        user_config.save_advanced_filter_settings({"only_included": bool(checked)})
+        main = self.parent()
+        if main and hasattr(main, "cbxOnlyIncludedEnabled"):
+            main.cbxOnlyIncludedEnabled.setChecked(checked)
+
+    def _on_only_in_use_toggled(self, checked: bool):
+        user_config.save_advanced_filter_settings({"only_in_use": bool(checked)})
+        main = self.parent()
+        if main:
+            if checked and hasattr(main, "apply_in_use_filter"):
+                main.apply_in_use_filter()
+            elif hasattr(main, "apply_table_filter"):
+                main.apply_table_filter(True)
+
+    def _on_event_filter_toggled(self, checked: bool):
+        if not checked:
+            return
+        val = "all"
+        if self.rbnEventHas.isChecked():
+            val = "with_ref"
+        elif self.rbnEventNo.isChecked():
+            val = "without_ref"
+        user_config.save_advanced_filter_settings({"event_filter": val})
+        main = self.parent()
+        if main:
+            if val == "with_ref" and hasattr(main, "filter_by_event_reference"):
+                main.filter_by_event_reference(True)
+            elif val == "without_ref" and hasattr(main, "filter_by_event_reference"):
+                main.filter_by_event_reference(False)
+            elif hasattr(main, "reset_event_reference_filter"):
+                main.reset_event_reference_filter()
+
+    def _on_lang_filter_toggled(self, checked: bool):
+        if not checked:
+            return
+        val = "active" if self.rbnLangActive.isChecked() else "all"
+        user_config.save_advanced_filter_settings({"language_filter": val})
+        main = self.parent()
+        if main:
+            if val == "active" and hasattr(main, "filter_by_active_language"):
+                main.filter_by_active_language()
+            elif hasattr(main, "reset_active_language_filter"):
+                main.reset_active_language_filter()
+
+    def _on_use_default_reference_language_toggled(self, checked: bool):
+        user_config.set_reference_language_use_default(bool(checked))
+        self.__sync_reference_language_state()
+
+    def _save_reference_language(self, _text: str = ''):
+        user_config.set_configured_reference_language(self.ledReferenceLanguage.text())
 
     # 缩写/颜色规范开关：仅禁用分类表中对应列（缩写 / 颜色值）
     def _on_regulation_switch_toggled(self, _checked: bool):
@@ -120,6 +367,22 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         user_config.save_appearance_theme(theme)
         if self._on_theme_applied:
             self._on_theme_applied(theme)
+
+    # 填充界面缩放下拉框（QT_SCALE_FACTOR 只在启动时生效，改完提示重启）
+    def __load_ui_scale_value(self):
+        scale = user_config.get_appearance_ui_scale()
+        index = UI_SCALE_KEYS.index(scale) if scale in UI_SCALE_KEYS else 0
+        self.cbbUiScale.blockSignals(True)
+        self.cbbUiScale.setCurrentIndex(index)
+        self.cbbUiScale.blockSignals(False)
+
+    def _on_ui_scale_changed(self, index: int):
+        if not 0 <= index < len(UI_SCALE_KEYS):
+            return
+        scale = UI_SCALE_KEYS[index]
+        user_config.save_appearance_ui_scale(scale)
+        if scale != "auto":
+            Logger().info(f"界面缩放已设为 {scale}%，重启软件后生效")
 
     # 从当前规范数据填充控件
     def __load_values(self):
@@ -238,6 +501,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
     # 收集并保存
     def save_settings(self):
         self.save_ai_settings()
+        self.__apply_vcs_to_conventions()
         new_conventions = dict(self.__conventions)
         acronym_map = {}
         color_map = {}

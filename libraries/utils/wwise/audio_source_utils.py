@@ -1,9 +1,13 @@
 import os
+from typing import Optional
+
 import soundfile
+
 from data import project_conventions
 from libraries.utils import audio_utils, path_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import common_utils, localization_utils, project_utils, event_utils, waapi_utils
+from libraries.utils.wwise import common_utils, localization_utils, project_utils, event_utils, waapi_utils, \
+    workunit_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 
@@ -21,20 +25,51 @@ def sound_play_from_plugin(sound: WwiseObject) -> bool:
 def delete_audio_source_by_language(sound: WwiseObject, language: str) -> bool:
     if sound.type != WwiseObjectType.Sound:
         return False
-    audio_sources = waapi_utils.get_child_objects(sound)
+    audio_sources = [
+        child for child in waapi_utils.get_child_objects(sound)
+        if child.type == WwiseObjectType.AudioSource
+    ]
+    languages_by_id = localization_utils.get_sound_languages(audio_sources)
     for audio_source in audio_sources:
-        source_language = localization_utils.get_sound_language(audio_source)
+        source_language = languages_by_id.get(audio_source.id, localization_utils.SFX_LANGUAGE_NAME)
         if source_language == language:
             return waapi_utils.delete_object(audio_source)
     return False
 
 # 获取音效的源文件路径
-def get_source_absolute_path(sound_or_source: WwiseObject) -> str:
+def get_source_absolute_path(sound_or_source: WwiseObject, properties: dict = None) -> str:
+    if properties is not None:
+        return properties.get('originalFilePath')
     return waapi_utils.get_object_property(sound_or_source, 'originalFilePath')
 
 # 获取源文件相对路径
 def get_source_relative_path(sound_or_source: WwiseObject) -> str:
     return waapi_utils.get_object_property(sound_or_source, 'originalRelativeFilePath')
+
+
+# 响度/裁剪分析需要的源属性：一次批量查询就能取全，避免逐个属性往返
+AUDIO_SOURCE_PLAYBACK_DURATION_PROPERTY = 'audioSource:playbackDuration'
+
+SOURCE_ANALYSIS_PROPERTIES = (
+    'originalFilePath',
+    'workUnit.filePath',
+    'audioSource:language',
+    AUDIO_SOURCE_PLAYBACK_DURATION_PROPERTY,
+    'TrimBegin',
+    'TrimEnd',
+    'FadeInDuration',
+    'FadeOutDuration',
+    'LoopBegin',
+    'LoopEnd',
+)
+
+# 单次测量的最大内存占用（采样点，按 48kHz 60 秒估算）：更长的音频退回流式读取
+IN_MEMORY_MEASURE_FRAME_LIMIT = 48000 * 60
+
+
+# 批量取回多个对象的分析属性：返回 {对象ID: {属性名: 值}}
+def get_source_analysis_properties(objects: list) -> dict:
+    return waapi_utils.get_objects_properties(objects, list(SOURCE_ANALYSIS_PROPERTIES))
 
 
 # 把 Originals 下的绝对路径转为相对路径（等同 Wwise 的 originalRelativeFilePath）；否则原样返回
@@ -83,16 +118,116 @@ def get_all_audio_file_paths(root: WwiseObject) -> list[str]:
     return list(dict.fromkeys(p for p in collected if p))
 
 # 获取Source Editor里的裁剪信息（返回 TrimBegin/TrimEnd/FadeIn/FadeOut/LoopBegin/LoopEnd）
-def get_source_edit_info(obj: WwiseObject):
+# properties 传调用方批量取回的结果（get_source_analysis_properties），未传则单对象查一次
+def get_source_edit_info(obj: WwiseObject, properties: dict = None):
     if obj.type != WwiseObjectType.AudioSource:
         return None
-    trim_begin = waapi_utils.get_object_property(obj, 'TrimBegin')
-    trim_end = waapi_utils.get_object_property(obj, 'TrimEnd')
-    fade_in = waapi_utils.get_object_property(obj, 'FadeInDuration')
-    fade_out = waapi_utils.get_object_property(obj, 'FadeOutDuration')
-    loop_begin = waapi_utils.get_object_property(obj, 'LoopBegin')
-    loop_end = waapi_utils.get_object_property(obj, 'LoopEnd')
-    return trim_begin, trim_end, fade_in, fade_out, loop_begin, loop_end
+    if not properties:
+        properties = waapi_utils.get_object_properties(obj, [
+            'TrimBegin', 'TrimEnd', 'FadeInDuration', 'FadeOutDuration', 'LoopBegin', 'LoopEnd',
+        ])
+    return (properties.get('TrimBegin'), properties.get('TrimEnd'),
+            properties.get('FadeInDuration'), properties.get('FadeOutDuration'),
+            properties.get('LoopBegin'), properties.get('LoopEnd'))
+
+
+# Sound 当前语言下实际播放的 AudioSource（WAAPI 的 activeSource 访问器，未使用/无源时为空对象）
+def get_active_source(sound_or_source: WwiseObject) -> WwiseObject:
+    active = waapi_utils.get_object_property(sound_or_source, 'activeSource')
+    obj = WwiseObject(active) if isinstance(active, dict) else WwiseObject()
+    return obj if obj.is_valid else WwiseObject()
+
+
+# Sound 实际在用的 AudioSource 列表：
+# 1) 优先读所在 WorkUnit 的 ActiveSourceList（Wwise 真正会播放的源，和语言无关，最准确）；
+# 2) 取不到时退回 WAAPI 的 activeSource 访问器（只对当前工程语言有效）。
+# children / workunit_path 已由调用方批量取到时直接传入，省掉重复的子对象查询与 workUnit 属性查询
+def get_active_sources(sound: WwiseObject, children: list = None, workunit_path: str = None) -> list:
+    source_children = children if children is not None else waapi_utils.get_child_objects(sound)
+    source_children = [child for child in source_children if child.type == WwiseObjectType.AudioSource]
+    active_ids = workunit_utils.get_active_source_ids_for_object(sound, workunit_path)
+    if active_ids:
+        matched = [child for child in source_children if child.id in active_ids]
+        if matched:
+            return matched
+    active = get_active_source(sound)
+    return [active] if active.is_valid else []
+
+
+# 从 AudioFileSource 的 playbackDuration 属性值中提取秒数
+def get_audio_source_duration_seconds(properties: dict) -> Optional[float]:
+    duration = (properties or {}).get(AUDIO_SOURCE_PLAYBACK_DURATION_PROPERTY)
+    if isinstance(duration, dict):
+        duration = duration.get('playbackDurationMax', duration.get('playbackDurationMin'))
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+        return float(duration)
+    return None
+
+
+# 音频源的（裁剪后）播放时长秒：优先用 audioSource:playbackDuration 访问器，取不到再手工算
+def get_trimmed_duration(obj: WwiseObject, properties: dict = None) -> float:
+    if not properties:
+        properties = waapi_utils.get_object_properties(obj, [
+            AUDIO_SOURCE_PLAYBACK_DURATION_PROPERTY, 'originalFilePath',
+            'TrimBegin', 'TrimEnd', 'FadeInDuration', 'FadeOutDuration', 'LoopBegin', 'LoopEnd',
+        ])
+    duration = get_audio_source_duration_seconds(properties)
+    if duration is not None:
+        return duration
+    # 回退：文件长度 - TrimBegin - TrimEnd
+    file_path = properties.get('originalFilePath') or get_source_absolute_path(obj)
+    if not file_path or not os.path.exists(file_path):
+        return 0.0
+    with soundfile.SoundFile(file_path) as sound_file:
+        total_frames = sound_file.frames
+        sample_rate = sound_file.samplerate
+    start_frame, end_frame = get_trimmed_frame_range(obj, total_frames, sample_rate, properties)
+    return max(0.0, (end_frame - start_frame) / sample_rate) if sample_rate else 0.0
+
+
+# 源文件里实际生效的采样区间：从 TrimBegin 到（文件长度 - TrimEnd）
+def get_trimmed_frame_range(obj: WwiseObject, total_frames: int, sample_rate: int,
+                            properties: dict = None) -> tuple:
+    info = get_source_edit_info(obj, properties)
+    if not info or not sample_rate:
+        return 0, total_frames
+    trim_begin = info[0] or 0.0
+    trim_end = info[1] or 0.0
+    start_frame = int(round(trim_begin * sample_rate))
+    end_frame = total_frames - int(round(trim_end * sample_rate))
+    return max(0, start_frame), min(total_frames, end_frame)
+
+
+# 按 Source Editor 的裁剪区间测量音频：返回 (响度, 时长秒)，只统计 TrimBegin~TrimEnd 之间的样本
+# properties 传批量取回的分析属性时不再发起 WAAPI 查询；裁剪区间内只打开文件一次
+def measure_trimmed_audio(obj: WwiseObject, standard=None, properties: dict = None) -> tuple:
+    if standard is None:
+        standard = audio_utils.LoudnessStandard.RMS
+    if not properties:
+        properties = get_source_analysis_properties([obj]).get(obj.id, {})
+    file_path = properties.get('originalFilePath') or get_source_absolute_path(obj)
+    if not file_path or not os.path.exists(file_path):
+        return audio_utils.MIN_LOUDNESS_DB, 0.0
+    with soundfile.SoundFile(file_path) as sound_file:
+        total_frames = sound_file.frames
+        sample_rate = sound_file.samplerate
+        start_frame, end_frame = get_trimmed_frame_range(obj, total_frames, sample_rate, properties)
+        duration = max(0.0, (end_frame - start_frame) / sample_rate) if sample_rate else 0.0
+        if end_frame - start_frame <= 0:
+            return audio_utils.MIN_LOUDNESS_DB, 0.0
+        # 短音频一次读入内存算响度；长音频退回流式读取，避免内存占用失控
+        if end_frame - start_frame <= IN_MEMORY_MEASURE_FRAME_LIMIT:
+            sound_file.seek(start_frame)
+            trimmed = sound_file.read(end_frame - start_frame, dtype='float64', always_2d=True)
+            loudness = audio_utils.calculate_loudness_by_standard_from_data(trimmed, sample_rate, standard)
+            return loudness, duration
+    loudness = audio_utils.calculate_loudness_by_standard(file_path, standard, start_frame, end_frame)
+    return loudness, duration
+
+
+# 按裁剪区间测量音频响度（只统计 TrimBegin~TrimEnd 之间的样本）
+def calculate_trimmed_loudness(obj: WwiseObject, standard=None) -> float:
+    return measure_trimmed_audio(obj, standard)[0]
 
 
 # 写入Source Editor里的裁剪信息
@@ -114,6 +249,19 @@ def set_source_edit_info(
     modified &= waapi_utils.set_object_property(obj, 'FadeOutDuration', fade_out)
     modified &= waapi_utils.set_object_property(obj, 'LoopBegin', loop_begin)
     modified &= waapi_utils.set_object_property(obj, 'LoopEnd', loop_end)
+    return modified
+
+
+# 只改写 Source Editor 的裁剪区间：TrimBegin 从头算起、TrimEnd 从尾算起（秒）；
+# 传 None 的方向保持不变，淡变与循环设置完全不动
+def set_source_trim_range(obj: WwiseObject, trim_begin=None, trim_end=None) -> bool:
+    if obj.type != WwiseObjectType.AudioSource:
+        return False
+    modified = True
+    if trim_begin is not None:
+        modified &= waapi_utils.set_object_property(obj, 'TrimBegin', float(trim_begin))
+    if trim_end is not None:
+        modified &= waapi_utils.set_object_property(obj, 'TrimEnd', float(trim_end))
     return modified
 
 
@@ -205,11 +353,19 @@ def rename_original_to_wwise(sound: WwiseObject) -> bool:
     if '_' not in sound_name:
         sound_name = common_utils.get_full_name_with_acronym(sound)
     suffix = project_conventions.get_net_role_suffix_from_name(sound_name)
-    sources = waapi_utils.get_child_objects(sound)
+    sources = [
+        source for source in waapi_utils.get_child_objects(sound)
+        if source.type == WwiseObjectType.AudioSource
+    ]
+    properties_by_id = waapi_utils.get_objects_properties(
+        sources,
+        ['originalFilePath', localization_utils.AUDIO_SOURCE_LANGUAGE_PROPERTY],
+    )
     modified = False
     for source in sources:
-        language = localization_utils.get_sound_language(source)
-        original_wave_path = get_source_absolute_path(source)
+        properties = properties_by_id.get(source.id)
+        language = localization_utils.get_sound_language(source, properties)
+        original_wave_path = get_source_absolute_path(source, properties)
         if not original_wave_path:
             print(f'AudioFile of Sound [{sound_name}] missing at [{original_wave_path}]!')
             continue

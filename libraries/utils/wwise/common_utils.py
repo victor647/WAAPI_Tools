@@ -105,9 +105,13 @@ def update_event_reference_links(obj: WwiseObject, want_notes: bool, want_color:
         set_object_color_by_category(obj, False)
     # 对象是Event
     if obj.type == WwiseObjectType.Event:
-        actions = waapi_utils.get_child_objects(obj)
+        actions = [
+            action for action in waapi_utils.get_child_objects(obj)
+            if action.type == WwiseObjectType.EventAction
+        ]
+        action_properties = waapi_utils.get_objects_properties(actions, ['ActionType'])
         for action in actions:
-            action_type = waapi_utils.get_object_property(action, 'ActionType')
+            action_type = action_properties.get(action.id, {}).get('ActionType')
             if action_type == 1:
                 target = waapi_utils.get_referenced_object(action, 'Target')
                 event_name = obj.name
@@ -124,10 +128,15 @@ def update_event_reference_links(obj: WwiseObject, want_notes: bool, want_color:
     # 对象是Event播放目标
     else:
         references = waapi_utils.get_object_references(obj)
+        action_references = [
+            reference for reference in references
+            if reference.type == WwiseObjectType.EventAction
+        ]
+        action_properties = waapi_utils.get_objects_properties(action_references, ['ActionType'])
         for reference in references:
             ref_type = reference.type
             if ref_type == WwiseObjectType.EventAction:
-                action_type = waapi_utils.get_object_property(reference, 'ActionType')
+                action_type = action_properties.get(reference.id, {}).get('ActionType')
                 if action_type == 1:
                     event = waapi_utils.get_parent_object(reference)
                     event_name = event.name
@@ -171,10 +180,15 @@ def update_object_colors(obj: WwiseObject) -> bool:
 # 是否因为引用需要使用深色标记
 def should_use_dark_color(obj: WwiseObject) -> bool:
     references = waapi_utils.get_object_references(obj)
+    action_references = [
+        reference for reference in references
+        if reference.type == WwiseObjectType.EventAction
+    ]
+    action_properties = waapi_utils.get_objects_properties(action_references, ['ActionType'])
     for reference in references:
         ref_type = reference.type
         if ref_type == WwiseObjectType.EventAction:
-            action_type = waapi_utils.get_object_property(reference, 'ActionType')
+            action_type = action_properties.get(reference.id, {}).get('ActionType')
             if action_type == 1:
                 return True
         elif ref_type == WwiseObjectType.SoundBank:
@@ -232,6 +246,7 @@ def is_object_included(
     obj: WwiseObject,
     check_ancestors=True,
     inclusion_cache: dict[str, bool] | None = None,
+    property_values_by_id: dict[str, dict] = None,
 ) -> bool:
     if 'Hierarchy' not in obj.path:
         return True
@@ -246,11 +261,20 @@ def is_object_included(
             if cache_key and inclusion_cache is not None:
                 inclusion_cache[cache_key] = True
             return True
-        included = is_object_included(parent, inclusion_cache=inclusion_cache)
+        included = is_object_included(
+            parent,
+            inclusion_cache=inclusion_cache,
+            property_values_by_id=property_values_by_id,
+        )
         if cache_key and inclusion_cache is not None:
             inclusion_cache[cache_key] = included
         return included
-    included = waapi_utils.get_object_property(obj, 'Inclusion')
+    properties = (property_values_by_id or {}).get(obj.id)
+    included = (
+        properties.get('Inclusion')
+        if properties is not None and 'Inclusion' in properties
+        else waapi_utils.get_object_property(obj, 'Inclusion')
+    )
     if included is None:
         if cache_key and inclusion_cache is not None:
             inclusion_cache[cache_key] = True
@@ -261,7 +285,11 @@ def is_object_included(
             if cache_key and inclusion_cache is not None:
                 inclusion_cache[cache_key] = True
             return True
-        included = is_object_included(parent, inclusion_cache=inclusion_cache)
+        included = is_object_included(
+            parent,
+            inclusion_cache=inclusion_cache,
+            property_values_by_id=property_values_by_id,
+        )
     if cache_key and inclusion_cache is not None:
         inclusion_cache[cache_key] = included
     return included

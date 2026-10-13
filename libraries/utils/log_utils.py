@@ -102,6 +102,41 @@ _LIGHT_FONT_STYLES = {
 FONT_STYLE_DICT = dict(_DARK_FONT_STYLES)
 
 
+# 默认不落盘的明细日志（批量逐对象处理、WAAPI 调用流水）最多积攒多少行/多久才 flush 一次
+DETAIL_LOG_FLUSH_LINES = 200
+DETAIL_LOG_FLUSH_SECONDS = 0.5
+
+
+# 带缓冲的日志文件句柄：logging.FileHandler 默认每条记录都 flush（每条一次 write+flush 系统调用），
+# 明细日志量大时开销可观；这里按行数与时间攒批落盘，退出前由 Logger().flush() 兜底
+class _BufferedFileHandler(logging.FileHandler):
+
+    def __init__(self, filename, flush_lines: int = DETAIL_LOG_FLUSH_LINES,
+                 flush_seconds: float = DETAIL_LOG_FLUSH_SECONDS):
+        super().__init__(filename, mode="w", encoding="utf-8")
+        self._flush_lines = max(1, flush_lines)
+        self._flush_seconds = max(0.0, flush_seconds)
+        self._pending = 0
+        self._last_flush = time.monotonic()
+
+    def emit(self, record):
+        with self.lock:
+            try:
+                message = self.format(record)
+                self.stream.write(message + self.terminator)
+                self._pending += 1
+                if self._pending >= self._flush_lines or \
+                        time.monotonic() - self._last_flush >= self._flush_seconds:
+                    self.flush()
+            except Exception:
+                self.handleError(record)
+
+    def flush(self):
+        super().flush()
+        self._pending = 0
+        self._last_flush = time.monotonic()
+
+
 # 取主题主色（qt_material 的 primaryColor）；浅色主题下过亮时压暗，保证可读
 def _theme_primary_color(theme_name: str) -> str | None:
     try:
@@ -179,6 +214,13 @@ class ColorfulCMDLogger(object):
 
 # Logger: 在console和QTextItem中输出
 class Logger(object, metaclass=Singleton):
+    def __new__(cls, *args, **kwargs):
+        # 构造过程中会读配置，读配置又可能用到 Logger（如「用户配置已加载」），
+        # 这里先登记实例，让递归调用复用同一个对象：否则会重复注册句柄（日志翻倍）
+        # 并用 w 模式二次打开日志文件（把已写入的内容截断）
+        Singleton._instances[cls] = super().__new__(cls)
+        return Singleton._instances[cls]
+
     def __init__(self):
         self.to_cmdline = True
         self._console_logger = ColorfulCMDLogger()
@@ -188,17 +230,20 @@ class Logger(object, metaclass=Singleton):
         self._log_window_stream = None
         self._status_bar_stream = None
         self._debug_mode = False
+        # 「记录明细日志」开关：默认关，关掉后批量逐对象、WAAPI 流水这类高频日志不再生成
+        self._detail_enabled = False
         self.log_file_path = ""
         self._file_only_logger = logging.getLogger("FFSimpleTool.file")
         self._console_logger.attach_console(self.enable_colorful_cmdline)
         self._setup_file_log()
+        self.refresh_detail_log_setting()
 
     # 运行日志文件：每次启动重写一份，便于只看本次运行的完整输出
     def _setup_file_log(self) -> None:
         mode = log_mode()
         path = os.path.join(_log_dir(), LOG_FILE_NAMES[mode])
         try:
-            handler = logging.FileHandler(path, mode="w", encoding="utf-8")
+            handler = _BufferedFileHandler(path)
         except OSError as e:
             self.info(f"无法写入日志文件 {path}：{e}")
             return
@@ -221,6 +266,29 @@ class Logger(object, metaclass=Singleton):
         )
         handler.stream.write(header)
         handler.stream.flush()
+
+    # 重新读取「记录明细日志」开关（设置窗口改动后由 user_config 调用，避免每次写日志都读配置）
+    def refresh_detail_log_setting(self) -> None:
+        try:
+            from libraries.utils import user_config
+
+            self._detail_enabled = user_config.get_tool_detail_log_enabled()
+        except Exception:
+            # 配置还没就绪（或导入期）时按关闭处理
+            self._detail_enabled = False
+
+    # 明细日志当前是否输出：总开关关闭、或「记录明细日志」未开启时为 False
+    def detail_on(self) -> bool:
+        return bool(self.to_cmdline and self._detail_enabled)
+
+    # 把所有日志句柄的缓冲内容落盘（退出前调用，避免缓冲里的日志丢失）
+    def flush(self) -> None:
+        for logger in (self.colorful_cmd_logger, self._file_only_logger):
+            for handler in list(logger.handlers):
+                try:
+                    handler.flush()
+                except Exception:
+                    continue
 
     # 在文本框中显示日志
     def set_log_window_stream(self, output_stream):
@@ -299,7 +367,10 @@ class Logger(object, metaclass=Singleton):
 
     # 明细日志：写日志文件（console=False 时只写文件），始终不显示在日志窗口
     # 用于批量逐对象处理记录、WAAPI 调用流水等排查用信息
-    def trace(self, text: str, console: bool = True):
+    # detail=True 的调用受「设置 → 工具行为 → 记录明细日志」开关控制（默认关闭）
+    def trace(self, text: str, console: bool = True, detail: bool = False):
+        if detail and not self.detail_on():
+            return
         log_info = self._get_log_info(text, logging.DEBUG)
         if not console:
             self._file_only_logger.debug(log_info)

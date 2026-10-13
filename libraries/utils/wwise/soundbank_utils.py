@@ -8,6 +8,7 @@ from libraries.wwise_object import WwiseObject, WwiseObjectType
 # Bank 名称上的 Event / Media 拆分后缀
 EVENT_BANK_SUFFIX = '_Event'
 MEDIA_BANK_SUFFIX = '_Media'
+PARENT_STREAMING_CACHE_KEY = '_parent_is_streaming_enabled'
 
 
 # 去掉拆分后缀后的 Bank 显示名（拆分 Event/Media 的工程在表格中不显示后缀）
@@ -116,13 +117,13 @@ class MediaSizeNodeStatistics:
         self.seen_wems: set = set()
 
     # 累加单个节点的媒体（容器类节点忽略，其子节点会各自贡献）
-    def accumulate(self, obj) -> None:
+    def accumulate(self, obj, source_properties_by_id: dict = None) -> None:
         if not obj or obj.type not in (WwiseObjectType.AudioSource, WwiseObjectType.SoundBank, WwiseObjectType.Event):
             return
         wav, memory, stream, used_files = _accumulate_media_size(
             obj, self._totals[0], self._totals[1], self._totals[2], self.used_files,
             self.seen_sources, self.seen_walked, None, self.seen_wems,
-            self.stream_file_paths, self.memory_file_paths)
+            self.stream_file_paths, self.memory_file_paths, source_properties_by_id)
         self._totals = [wav, memory, stream]
         self.used_files = used_files
 
@@ -144,7 +145,8 @@ def get_bank_size(bank: WwiseObject, total_wav_size: float, total_memory_wem_siz
 def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float,
                            used_files: list, seen_sources: set, seen_walked: set,
                            sources_to_convert: list = None, seen_wems: set = None,
-                           stream_file_paths: list = None, memory_file_paths: list = None) -> tuple:
+                           stream_file_paths: list = None, memory_file_paths: list = None,
+                           source_properties_by_id: dict = None) -> tuple:
     if not obj or not obj.id:
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if seen_wems is None:
@@ -153,13 +155,35 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
         if obj.id in seen_sources:
             return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
         seen_sources.add(obj.id)
-        wav_path = audio_source_utils.get_source_absolute_path(obj)
+        source_properties = (source_properties_by_id or {}).get(obj.id)
+        if source_properties is None:
+            source_properties = waapi_utils.get_object_properties(obj, [
+                'originalFilePath', 'originalWavFilePath', 'convertedWemFilePath',
+            ])
+        wav_path = audio_source_utils.get_source_absolute_path(obj, source_properties)
         # 部分层级（如 Music Track 下的源）读不到 sound: 前缀属性时退回原始属性
         if not wav_path:
-            wav_path = waapi_utils.get_object_property(obj, 'originalWavFilePath')
-        if not os.path.exists(wav_path):
+            wav_path = source_properties.get('originalWavFilePath')
+        if not wav_path or not os.path.exists(wav_path):
             # 原始文件缺失时整条源跳过（无法确定其 wem 的归属）
             return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
+        wem_path = source_properties.get('convertedWemFilePath')
+        needs_stream_info = (
+            stream_file_paths is not None
+            or memory_file_paths is not None
+            or (wem_path and os.path.exists(wem_path))
+        )
+        is_streaming = False
+        if needs_stream_info:
+            if PARENT_STREAMING_CACHE_KEY in source_properties:
+                is_streaming = source_properties[PARENT_STREAMING_CACHE_KEY]
+            else:
+                parent = waapi_utils.get_parent_object(obj)
+                parent_properties = (
+                    waapi_utils.get_object_properties(parent, ['IsStreamingEnabled'])
+                    if parent and parent.is_valid else {}
+                )
+                is_streaming = parent_properties.get('IsStreamingEnabled', False)
         # 同一 wav 被多个源引用时，原始大小只累加一次
         if wav_path not in used_files:
             used_files.append(wav_path)
@@ -167,18 +191,15 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             total_wav_size += wav_size
             Logger().debug(f'{wav_path} has size of {wav_size}KB')
             if stream_file_paths is not None or memory_file_paths is not None:
-                is_streaming = waapi_utils.get_object_property(waapi_utils.get_parent_object(obj), 'IsStreamingEnabled')
                 bucket = stream_file_paths if is_streaming else memory_file_paths
                 if bucket is not None and wav_path not in bucket:
                     bucket.append(wav_path)
-        wem_path = waapi_utils.get_object_property(obj, 'convertedWemFilePath')
         if wem_path and os.path.exists(wem_path):
             # 同一 wem 被多个源引用时，压缩大小只累加一次
             if wem_path in seen_wems:
                 return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
             seen_wems.add(wem_path)
             wem_size = os.path.getsize(wem_path) / 1024
-            is_streaming = waapi_utils.get_object_property(waapi_utils.get_parent_object(obj), 'IsStreamingEnabled')
             if is_streaming:
                 total_stream_wem_size += wem_size
             else:
@@ -199,20 +220,20 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(inclusion_obj, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                        used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                       stream_file_paths, memory_file_paths))
+                                       stream_file_paths, memory_file_paths, source_properties_by_id))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if obj.type == WwiseObjectType.Event:
         for target in event_utils.get_event_targets(obj):
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(target, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                        used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                       stream_file_paths, memory_file_paths))
+                                       stream_file_paths, memory_file_paths, source_properties_by_id))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     for child in waapi_utils.get_child_objects(obj):
         total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
             _accumulate_media_size(child, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                    used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                   stream_file_paths, memory_file_paths))
+                                   stream_file_paths, memory_file_paths, source_properties_by_id))
     return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
 
 
@@ -250,15 +271,27 @@ def _convert_missing_wem_sources(sources: list, total_memory_wem_size: float, to
         for error in (result or {}).get('errors') or []:
             Logger().error(str(error))
     # 生成成功后重新读取每个源的 wem 路径并累加压缩大小
+    parent_by_source_id = {}
+    unique_parents = {}
     for source in sources:
-        wem_path = waapi_utils.get_object_property(source, 'convertedWemFilePath')
+        parent = waapi_utils.get_parent_object(source)
+        if parent and parent.is_valid:
+            parent_by_source_id[source.id] = parent
+            unique_parents[parent.id] = parent
+    properties_by_id = waapi_utils.get_objects_properties(
+        sources + list(unique_parents.values()),
+        ['convertedWemFilePath', 'IsStreamingEnabled'],
+    )
+    for source in sources:
+        wem_path = properties_by_id.get(source.id, {}).get('convertedWemFilePath')
         if not wem_path or not os.path.exists(wem_path):
             continue
         if wem_path in seen_wems:
             continue
         seen_wems.add(wem_path)
         wem_size = os.path.getsize(wem_path) / 1024
-        is_streaming = waapi_utils.get_object_property(waapi_utils.get_parent_object(source), 'IsStreamingEnabled')
+        parent = parent_by_source_id.get(source.id)
+        is_streaming = properties_by_id.get(parent.id, {}).get('IsStreamingEnabled') if parent else False
         if is_streaming:
             total_stream_wem_size += wem_size
         else:

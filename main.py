@@ -5,6 +5,7 @@ import threading
 import traceback
 
 from PySide6.QtGui import QIcon
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 from qt_material import build_stylesheet, list_themes
 
@@ -40,6 +41,7 @@ def parse_args(argv: list[str]) -> tuple[list[str], bool]:
 
 
 def run_app_loop(object_ids: list[str] | None = None, from_wwise: bool = False):
+    apply_ui_scale_setting()
     app = QApplication([])
     css_path = path_utils.get_resource_path("material.css")
     theme = user_config.get_appearance_theme()
@@ -61,6 +63,14 @@ def run_app_loop(object_ids: list[str] | None = None, from_wwise: bool = False):
     Logger().debug(f"Application exiting with code: {code}")
     return code
 
+
+# 界面缩放：设置-外观里选择具体百分比时用 QT_SCALE_FACTOR 固定缩放（必须在 QApplication 之前设置）
+def apply_ui_scale_setting() -> str:
+    scale = user_config.get_appearance_ui_scale()
+    if scale == "auto":
+        return ""
+    os.environ["QT_SCALE_FACTOR"] = f"{int(scale) / 100:g}"
+    return scale
 
 # 退出前记录仍然存活的非守护线程（如 waapi 客户端的回调线程），便于排查退出卡住的问题
 def log_leftover_threads() -> None:
@@ -89,6 +99,13 @@ def install_exception_logging() -> None:
 # 走 sys.exit 会卡在解释器退出阶段，留下没有窗口的 python.exe
 def exit_process(code: int) -> None:
     log_leftover_threads()
+    # 日志句柄是攒批落盘的，退出前先冲一遍，避免缓冲里的最后几行丢失
+    try:
+        from libraries.utils.log_utils import Logger
+
+        Logger().flush()
+    except Exception:
+        pass
     for stream in (sys.stdout, sys.stderr):
         # 打包成无控制台的 exe 时这两个流是 None，直接跳过
         if stream is None or not hasattr(stream, "flush"):

@@ -41,7 +41,12 @@ COL_STATUS = 6
 # 裁剪音频文件尾巴的工具
 class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
 
-    def __init__(self, active_objects: list):
+    # 静音处理方式：裁剪源文件 / 静音改为纯0 / 只改 Wwise 里的 Trim 值
+    MODE_TRIM = 'trim'
+    MODE_ZERO = 'zero'
+    MODE_WWISE = 'wwise'
+
+    def __init__(self):
         super().__init__()
         self.setupUi(self)
         self.tblFileList.setColumnCount(7)
@@ -57,11 +62,13 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         self.__trimHeadThresholdSeconds = 0
         self.__trimTailThresholdSeconds = 0
         self.__filePaths = []
-        self.__activeObjects = list(active_objects)
+        # 输入对象在 populate_from_main_window 里从主窗口临时获取，保证与表格同步
+        self.__activeObjects: list = []
         self.__resolvedFilePaths = []
+        # 工作线程算出的处理结果，由主线程写回表格（{行号: {'status', 'severity', 'head', 'tail'}}）
+        self.__trim_results = {}
         # 等窗口出现后再异步读取主窗口对象背后的源文件，避免呼出前阻塞
-        if len(self.__activeObjects) > 0:
-            QTimer.singleShot(0, self.populate_from_main_window)
+        QTimer.singleShot(0, self.populate_from_main_window)
         resize_table_and_window(self.tblFileList, self)
 
     def setup_triggers(self):
@@ -114,9 +121,27 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         self.__trimTailThresholdSeconds = self.spbTrimTailThreshold.value() / 1000
         self.__thresholdLinear = audio_utils.decibel_to_linear(self.spbCutThreshold.value())
 
+    # 当前静音处理方式
+    def current_mode(self) -> str:
+        if self.rbnModeZero.isChecked():
+            return self.MODE_ZERO
+        if self.rbnModeWwise.isChecked():
+            return self.MODE_WWISE
+        return self.MODE_TRIM
+
     # 是否为「改为纯0」模式（不缩短时长，仅把识别的静音区域置为 0）
     def is_zero_mode(self) -> bool:
-        return self.rbnModeZero.isChecked()
+        return self.current_mode() == self.MODE_ZERO
+
+    # 是否为「Wwise 内部裁剪」模式（不动源文件，只改 AudioFileSource 的 TrimBegin / TrimEnd）
+    def is_wwise_mode(self) -> bool:
+        return self.current_mode() == self.MODE_WWISE
+
+    # 切换模式单选按钮
+    def set_mode(self, mode: str) -> None:
+        self.rbnModeTrim.setChecked(mode == self.MODE_TRIM)
+        self.rbnModeZero.setChecked(mode == self.MODE_ZERO)
+        self.rbnModeWwise.setChecked(mode == self.MODE_WWISE)
 
     # 读取本窗口持久化的参数（user_config.json 的 window_settings.audio_silence_trim）
     def load_user_settings(self):
@@ -130,7 +155,11 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         self.spbFadeOutDuration.setValue(int(saved.get('fade_out_ms', self.spbFadeOutDuration.value())))
         self.cbxTrimHead.setChecked(bool(saved.get('trim_head', self.cbxTrimHead.isChecked())))
         self.cbxTrimTail.setChecked(bool(saved.get('trim_tail', self.cbxTrimTail.isChecked())))
-        self.rbnModeZero.setChecked(bool(saved.get('zero_mode', False)))
+        # 旧配置里只有 zero_mode 布尔值，读不到 mode 时按它兼容
+        mode = str(saved.get('mode', '') or '')
+        if mode not in (self.MODE_TRIM, self.MODE_ZERO, self.MODE_WWISE):
+            mode = self.MODE_ZERO if saved.get('zero_mode') else self.MODE_TRIM
+        self.set_mode(mode)
 
     # 把本窗口参数写回 user_config.json
     def save_user_settings(self):
@@ -142,6 +171,8 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
             'fade_out_ms': self.spbFadeOutDuration.value(),
             'trim_head': self.cbxTrimHead.isChecked(),
             'trim_tail': self.cbxTrimTail.isChecked(),
+            'mode': self.current_mode(),
+            # 兼容旧版本：只认 zero_mode 时仍然能读回「改为纯0」
             'zero_mode': self.rbnModeZero.isChecked(),
         })
 
@@ -168,7 +199,15 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
     def populate_from_main_window(self):
         if gv.batch_processor and getattr(gv.batch_processor, 'isRunning', lambda: False)():
             return
+        # 临时取主窗口当前 AudioSource，保证与表格同步
+        self.__activeObjects = gv.get_tool_targets(WwiseObjectType.AudioSource)
+        if not self.__activeObjects:
+            Logger().warning('表格中没有可用于「静音裁剪」的 AudioSource')
+            return
         self.__resolvedFilePaths = []
+        self.__prefetched_pages: set = set()
+        self.__sources_by_object: dict = {}
+        self.__paths_by_id: dict = {}
         batch_processor.create_async(
             self.__activeObjects,
             self.resolve_object_source_files,
@@ -177,19 +216,40 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         )
 
     # 工作线程中解析单个对象（AudioSource 直接取源文件，其余递归子级）
+    # 源文件路径按「查询分页大小」所在的页惰性预取，进度仍按输入对象逐个推进
     def resolve_object_source_files(self, index: int, obj):
-        self.collect_source_paths(obj)
-        return True
-
-    # 递归收集源文件路径
-    def collect_source_paths(self, obj):
-        if obj.type == WwiseObjectType.AudioSource:
-            file_path = audio_source_utils.get_source_absolute_path(obj)
+        self.__prefetch_source_paths(index)
+        for source in self.__sources_of(obj):
+            file_path = self.__paths_by_id.get(source.id, {}).get('originalFilePath')
             if file_path:
                 self.__resolvedFilePaths.append(file_path)
+        return True
+
+    # 预取 index 所在分页里所有 AudioSource 的源文件路径
+    def __prefetch_source_paths(self, index: int):
+        start, end = waapi_utils.page_bounds(self.__activeObjects, index)
+        if start in self.__prefetched_pages:
+            return
+        self.__prefetched_pages.add(start)
+        sources = [source for obj in self.__activeObjects[start:end] for source in self.__sources_of(obj)]
+        self.__paths_by_id.update(waapi_utils.get_objects_properties(sources, ['originalFilePath']))
+
+    # 单个对象展开出的 AudioSource（同一次批处理里复用，避免重复递归查询子对象）
+    def __sources_of(self, obj) -> list:
+        sources = self.__sources_by_object.get(obj.id)
+        if sources is None:
+            sources = []
+            self.collect_source_objects(obj, sources)
+            self.__sources_by_object[obj.id] = sources
+        return sources
+
+    # 递归收集对象下的全部 AudioSource（AudioSource 直接收集，其余递归子级）
+    def collect_source_objects(self, obj, collected: list):
+        if obj.type == WwiseObjectType.AudioSource:
+            collected.append(obj)
             return
         for child in waapi_utils.get_child_objects(obj):
-            self.collect_source_paths(child)
+            self.collect_source_objects(child, collected)
 
     # 主线程：把解析到的源文件加入列表
     def on_source_files_resolved(self):
@@ -383,6 +443,17 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
                 f'文件总时长 {total_seconds:.2f}s 不变。',
             )
             return
+        if self.is_wwise_mode():
+            percent = saved_seconds / total_seconds * 100
+            QMessageBox.information(
+                self,
+                '预计缩短的播放时长',
+                f'按当前参数（Wwise 内部裁剪：音头={self.cbxTrimHead.isChecked()}，'
+                f'音尾={self.cbxTrimTail.isChecked()}）处理：\n\n'
+                f'文件总时长：{total_seconds:.2f}s（源文件不变）\n'
+                f'Wwise 中的播放时长将缩短：{saved_seconds:.2f}s（{percent:.1f}%）',
+            )
+            return
         percent = saved_seconds / total_seconds * 100
         QMessageBox.information(
             self,
@@ -477,11 +548,33 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         if not entries:
             Logger().warning('没有勾选任何文件，请先勾选需要裁剪的文件')
             return
+        self.__trim_results = {}
+        title = {
+            self.MODE_ZERO: '静音改为纯0',
+            self.MODE_WWISE: '在 Wwise 中裁剪静音',
+        }.get(self.current_mode(), '裁剪音频末尾')
         batch_processor.create_async(
             entries,
             lambda index, entry: self.trim_file(entry[0], entry[1]),
-            '静音改为纯0' if self.is_zero_mode() else '裁剪音频末尾',
+            title,
+            # 结果在主线程写回表格（工作线程不碰 UI）
+            on_item_processed=self.on_trim_item_processed,
         )
+
+    # 主线程：把工作线程算出的裁剪结果写进表格
+    def on_trim_item_processed(self, payload):
+        _index, entry = payload
+        row = entry[0]
+        result = self.__trim_results.pop(row, None)
+        if not result:
+            return
+        for column, key in ((COL_HEAD, 'head'), (COL_TAIL, 'tail')):
+            if result.get(key) is not None:
+                self.tblFileList.setItem(row, column, QTableWidgetItem(result[key]))
+        status_item = QTableWidgetItem(result['status'])
+        if result.get('severity') is not None:
+            status_item.setData(Qt.ItemDataRole.BackgroundRole, result['severity'])
+        self.tblFileList.setItem(row, COL_STATUS, status_item)
 
     # 裁剪单个音频文件回调
     def trim_file(self, row: int, file_path: str):
@@ -495,6 +588,10 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
         # 只有超过裁剪判定阈值（且长于保留的淡入淡出长度）才裁剪
         trim_head = self.cbxTrimHead.isChecked() and silence_duration_head > max(self.__trimHeadThresholdSeconds, self.__fadeInSeconds)
         trim_tail = self.cbxTrimTail.isChecked() and silence_duration_tail > max(self.__trimTailThresholdSeconds, self.__fadeOutSeconds)
+        if self.is_wwise_mode():
+            # Wwise 内部裁剪：不读也不写源文件，只改引用该文件的 AudioFileSource
+            self.apply_wwise_trim(row, file_path, silence_duration_head, silence_duration_tail, trim_head, trim_tail)
+            return
         sound_file = soundfile.SoundFile(file_path)
         audio_data = sound_file.read()
         sample_rate = sound_file.samplerate
@@ -515,16 +612,48 @@ class AudioSilenceTrimWindow(QDialog, Ui_AudioSilenceTrimmer):
             if trim_head:
                 audio_data = audio_utils.trim(audio_data, (silence_duration_head - self.__fadeInSeconds) * sample_rate, 0)
                 audio_utils.fade(audio_data, int(self.__fadeInSeconds * sample_rate), 1)
-                self.tblFileList.setItem(row, COL_HEAD, QTableWidgetItem(str(self.__fadeInSeconds)))
+                self.__trim_results[row] = {'status': '已裁剪', 'severity': CellSeverity.Success,
+                                            'head': str(self.__fadeInSeconds)}
             if trim_tail:
                 audio_data = audio_utils.trim(audio_data, 0, (silence_duration_tail - self.__fadeOutSeconds) * sample_rate)
                 audio_utils.fade(audio_data, int(self.__fadeOutSeconds * sample_rate), -1)
-                self.tblFileList.setItem(row, COL_TAIL, QTableWidgetItem(str(self.__fadeOutSeconds)))
+                self.__trim_results.setdefault(row, {'status': '已裁剪', 'severity': CellSeverity.Success})['tail'] = \
+                    str(self.__fadeOutSeconds)
         soundfile.write(file=write_path, data=audio_data, samplerate=sample_rate)
         # 更新列表显示
-        status_item = QTableWidgetItem('已置0' if self.is_zero_mode() else '已裁剪')
-        status_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Success)
-        self.tblFileList.setItem(row, COL_STATUS, status_item)
+        result = self.__trim_results.setdefault(row, {'status': '已裁剪', 'severity': CellSeverity.Success})
+        if self.is_zero_mode():
+            result['status'] = '已置0'
+
+    # Wwise 内部裁剪：把识别出的静音改写成 AudioFileSource 的 TrimBegin / TrimEnd（秒，从两端算起），
+    # 淡入淡出时长照常保留在裁剪区间内；源文件完全不动
+    def apply_wwise_trim(self, row: int, file_path: str, head_seconds: float, tail_seconds: float,
+                         trim_head: bool, trim_tail: bool):
+        relative_path = audio_source_utils.to_originals_relative_path(file_path)
+        sources = waapi_utils.find_audio_sources_by_original_path(relative_path) if relative_path else []
+        if not sources:
+            Logger().warning(f'[{os.path.basename(file_path)}] 工程里没有引用该文件的 AudioFileSource，跳过')
+            self.__trim_results[row] = {'status': '无Wwise对象', 'severity': CellSeverity.Warning}
+            return
+        trim_begin = head_seconds - self.__fadeInSeconds if trim_head else None
+        trim_end = tail_seconds - self.__fadeOutSeconds if trim_tail else None
+        updated_count = 0
+        failed_count = 0
+        for source in sources:
+            old_info = audio_source_utils.get_source_edit_info(source) or (None, None, None, None, None, None)
+            if audio_source_utils.set_source_trim_range(source, trim_begin, trim_end):
+                updated_count += 1
+                Logger().debug(f'[{source.name}] Wwise 裁剪区间：TrimBegin {old_info[0]} -> {trim_begin}，'
+                               f'TrimEnd {old_info[1]} -> {trim_end}')
+            else:
+                failed_count += 1
+                Logger().error(f'[{source.name}] 设置裁剪区间失败：TrimBegin={trim_begin} TrimEnd={trim_end}')
+        Logger().info(f'[{os.path.basename(file_path)}] 已在 Wwise 中设置裁剪区间：'
+                      f'TrimBegin={trim_begin} TrimEnd={trim_end}（{updated_count} 个 AudioFileSource）')
+        if failed_count:
+            self.__trim_results[row] = {'status': f'部分失败({failed_count})', 'severity': CellSeverity.Danger}
+        else:
+            self.__trim_results[row] = {'status': '已在Wwise裁剪', 'severity': CellSeverity.Success}
 
     def closeEvent(self, close_event):
         self.save_user_settings()

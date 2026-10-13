@@ -169,12 +169,14 @@ class TableFacade(object):
     def clear(self) -> None:
         self.model.clear_data()
 
-    # 自动根据 DisplayRole 文本设定列宽并自适应扩展窗口宽度
+    # 自动根据 DisplayRole 文本设定列宽（只调列宽，不动窗口尺寸：
+    # 表格每次读取完成都会调用它，若顺带按 95% 屏幕宽扩展窗口，主窗口会被撑满屏）。
+    # 需要连窗口一起自适应的工具窗口，自行调用 qt_utils.resize_table_and_window(table, self)。
     def auto_set_column_width(self):
         if not self.table_view:
             return
         from libraries.utils.qt_utils import auto_adjust_window_width
-        auto_adjust_window_width(self.table_view, resize_columns=True)
+        auto_adjust_window_width(self.table_view, resize_columns=True, resize_window=False)
 
     # 右键菜单
     def show_context_menu(self, position):

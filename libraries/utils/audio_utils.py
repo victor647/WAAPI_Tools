@@ -22,6 +22,11 @@ LUFS_RELATIVE_GATE = -10.0
 LUFS_SHORT_BLOCK_SECONDS = 0.4
 LUFS_SHORT_BLOCK_OVERLAP = 0.75
 
+# K 加权用频域卷积实现时预留的滤波器尾部长度：两级 biquad 的冲激响应在这个长度内已衰减到
+# 远低于静音门限，尾部之外的循环卷积污染会被丢弃。高采样率下衰减更慢，按时间兜底。
+K_WEIGHTING_TAIL_SAMPLES = 8192
+K_WEIGHTING_TAIL_SECONDS = 0.2
+
 # 多声道能量权重（BS.1770 表 3）：左/右/中为 1，环绕为 1.41，LFE 不计入
 LUFS_SURROUND_WEIGHT = 1.41
 
@@ -36,11 +41,20 @@ class LoudnessStandard(Enum):
         return 'dBFS' if self == LoudnessStandard.RMS else 'LUFS'
 
 
-# 按指定的响度标准测量音频
-def calculate_loudness_by_standard(file_path, standard: LoudnessStandard = LoudnessStandard.RMS) -> float:
+# 按指定的响度标准测量音频；start_frame / end_frame 限定统计的采样区间
+def calculate_loudness_by_standard(file_path, standard: LoudnessStandard = LoudnessStandard.RMS,
+                                   start_frame: int = 0, end_frame: int = None) -> float:
     if standard == LoudnessStandard.LUFS:
-        return calculate_lufs(file_path)
-    return calculate_loudness(file_path, threshold_db=LOUDNESS_SILENCE_THRESHOLD_DB)
+        return calculate_lufs(file_path, start_frame, end_frame)
+    return calculate_loudness(file_path, threshold_db=LOUDNESS_SILENCE_THRESHOLD_DB,
+                              start_frame=start_frame, end_frame=end_frame)
+
+
+# 把统计区间收敛到文件的合法采样范围内
+def clamp_frame_range(total_frames: int, start_frame: int = 0, end_frame: int = None) -> tuple:
+    start = max(0, min(int(start_frame or 0), total_frames))
+    end = total_frames if end_frame is None else max(0, min(int(end_frame), total_frames))
+    return start, end
 
 
 # 由平均功率换算 RMS 响度（dBFS）
@@ -59,21 +73,34 @@ def _rms_to_decibel(sum_sq: float, count: int) -> float:
 
 # 计算音频的RMS；threshold_db 为空时统计整段音频，否则按 buffer 门限求平均响度
 def calculate_loudness(file_path, block_size=65536, threshold_db: float = None,
-                       buffer_samples: int = None):
+                       buffer_samples: int = None, start_frame: int = 0, end_frame: int = None):
     # 分块大小可在「设置 - 工具行为」里配置，未显式传入时读配置
     if buffer_samples is None:
         buffer_samples = user_config.get_tool_loudness_buffer_samples()
     if threshold_db is None:
-        return _calculate_overall_loudness(file_path, block_size)
-    return _calculate_buffered_loudness(file_path, block_size, threshold_db, buffer_samples)
+        return _calculate_overall_loudness(file_path, block_size, start_frame, end_frame)
+    return _calculate_buffered_loudness(
+        file_path, block_size, threshold_db, buffer_samples, start_frame, end_frame)
 
 
 # 计算一段音频数据的 RMS 响度（dBFS）
-def calculate_loudness_from_data(audio_data) -> float:
+# threshold_db 为空时统计整段数据；否则按 buffer_samples 分块剔除静音 buffer 后再取平均
+def calculate_loudness_from_data(audio_data, block_size: int = 65536, threshold_db: float = None,
+                                 buffer_samples: int = None) -> float:
     data = numpy.asarray(audio_data, dtype="float64")
     if data.size == 0:
         return MIN_LOUDNESS_DB
-    return _power_to_decibel(numpy.sum(data ** 2) / data.size)
+    if threshold_db is None:
+        return _power_to_decibel(numpy.sum(data ** 2) / data.size)
+    return _buffered_loudness_from_data(data, threshold_db, buffer_samples, block_size)
+
+
+# 按指定响度标准测量已读取到内存的音频数据（裁剪区间由调用方先切好）
+def calculate_loudness_by_standard_from_data(audio_data, sample_rate: int,
+                                             standard: LoudnessStandard = LoudnessStandard.RMS) -> float:
+    if standard == LoudnessStandard.LUFS:
+        return calculate_lufs_from_data(audio_data, sample_rate)
+    return calculate_loudness_from_data(audio_data, threshold_db=LOUDNESS_SILENCE_THRESHOLD_DB)
 
 
 # K 加权滤波器系数：BS.1770 给出的两级 IIR（高架 + 高通），用双线性变换在任意采样率上重新推导
@@ -108,44 +135,74 @@ def _k_weighting_coefficients(sample_rate: int) -> tuple:
     return shelf, highpass
 
 
-# 用 biquad 的频率响应在频域上滤波：等价于零相位滤波，结果与逐点递归一致但快得多
-def _apply_biquad(data, coefficients, sample_rate: int) -> object:
+# 取不小于 target 的「5 平滑」长度：pocketfft 对只含 2/3/5 因子的长度最快，比硬取 2 的幂省算力
+def _next_fast_length(target: int) -> int:
+    if target <= 16:
+        return 16
+    length = target
+    while True:
+        remainder = length
+        for factor in (2, 3, 5):
+            while remainder % factor == 0:
+                remainder //= factor
+        if remainder == 1:
+            return length
+        length += 1
+
+
+# 单个 biquad 在给定频率上的响应
+def _biquad_response(coefficients, z) -> object:
     b0, b1, b2, a1, a2 = coefficients
+    return (b0 + b1 * z + b2 * z ** 2) / (1.0 + a1 * z + a2 * z ** 2)
+
+
+# 两级 biquad 的 K 加权：把两段频响相乘后一次变换完成（级联的频响相乘，结果与逐级滤波一致）；
+# 频域滤波等价于零相位滤波，FFT 长度只需盖住「信号 + 滤波器尾部」
+def _apply_k_weighting(data, sample_rate: int) -> object:
     length = data.shape[0]
-    spectrum_len = 1
-    while spectrum_len < length * 2:
-        spectrum_len *= 2
+    tail_samples = max(K_WEIGHTING_TAIL_SAMPLES, int(K_WEIGHTING_TAIL_SECONDS * sample_rate))
+    spectrum_len = _next_fast_length(length + tail_samples)
     frequencies = numpy.fft.rfftfreq(spectrum_len, d=1.0 / sample_rate)
     z = numpy.exp(-2j * numpy.pi * frequencies / sample_rate)
-    response = (b0 + b1 * z + b2 * z ** 2) / (1.0 + a1 * z + a2 * z ** 2)
+    shelf, highpass = _k_weighting_coefficients(sample_rate)
+    response = _biquad_response(shelf, z) * _biquad_response(highpass, z)
     spectrum = numpy.fft.rfft(data, n=spectrum_len, axis=0)
     filtered = numpy.fft.irfft(spectrum * response[:, None], n=spectrum_len, axis=0)
     return filtered[:length]
 
 
 # 计算音频的 LUFS（ITU-R BS.1770 综合响度）：K 加权 + 400ms 分块 + 两级门限
-def calculate_lufs(file_path) -> float:
+def calculate_lufs(file_path, start_frame: int = 0, end_frame: int = None) -> float:
     with soundfile.SoundFile(file_path) as f:
         sample_rate = f.samplerate
-        channels = max(1, f.channels)
-        data = f.read(dtype="float64", always_2d=True)
+        start_frame, end_frame = clamp_frame_range(f.frames, start_frame, end_frame)
+        if end_frame - start_frame <= 0:
+            return MIN_LOUDNESS_DB
+        f.seek(start_frame)
+        data = f.read(end_frame - start_frame, dtype="float64", always_2d=True)
+    return calculate_lufs_from_data(data, sample_rate)
+
+
+# 计算已读取到内存的音频数据的 LUFS（调用方负责先按裁剪区间切好）
+def calculate_lufs_from_data(audio_data, sample_rate: int) -> float:
+    data = numpy.asarray(audio_data, dtype="float64")
     if data.size == 0:
         return MIN_LOUDNESS_DB
-    shelf, highpass = _k_weighting_coefficients(sample_rate)
-    weighted = _apply_biquad(_apply_biquad(data, shelf, sample_rate), highpass, sample_rate)
+    weighted = _apply_k_weighting(data, sample_rate)
+    return _gated_lufs(_short_term_block_powers(weighted, sample_rate))
+
+
+# 400ms 分块（75% 重叠）的能量序列；短于一个分块时整段作为一个分块
+def _short_term_block_powers(weighted, sample_rate: int) -> list:
+    weights = _channel_weights(max(1, weighted.shape[1]))
     block_size = max(1, int(round(LUFS_SHORT_BLOCK_SECONDS * sample_rate)))
     hop_size = max(1, int(round(block_size * (1.0 - LUFS_SHORT_BLOCK_OVERLAP))))
-    weights = _channel_weights(channels)
-    # 各分块的能量：按声道权重求平均
     if weighted.shape[0] < block_size:
         # 短于一个 400ms 分块（短语音、音效）：整段当作一个分块，
         # 否则一个分块都凑不齐，会被误判成「无信号」
-        block_powers = [_block_power(weighted, weights)]
-    else:
-        block_powers = []
-        for start in range(0, weighted.shape[0] - block_size + 1, hop_size):
-            block_powers.append(_block_power(weighted[start:start + block_size], weights))
-    return _gated_lufs(block_powers)
+        return [_block_power(weighted, weights)]
+    return [_block_power(weighted[start:start + block_size], weights)
+            for start in range(0, weighted.shape[0] - block_size + 1, hop_size)]
 
 
 # 一个分块的能量（先按声道求均方，再按声道权重加权平均）
@@ -181,11 +238,17 @@ def _gated_lufs(block_powers: list) -> float:
 
 
 # 整段 RMS：跳过完全静音的读取块，避免静音部分拉低音量
-def _calculate_overall_loudness(file_path, block_size: int) -> float:
+def _calculate_overall_loudness(file_path, block_size: int, start_frame: int = 0,
+                                end_frame: int = None) -> float:
     sum_sq = 0.0
     count = 0
     with soundfile.SoundFile(file_path) as f:
-        for block in f.blocks(blocksize=block_size, dtype="float32"):
+        start_frame, end_frame = clamp_frame_range(f.frames, start_frame, end_frame)
+        remaining = end_frame - start_frame
+        if remaining <= 0:
+            return MIN_LOUDNESS_DB
+        f.seek(start_frame)
+        for block in f.blocks(blocksize=block_size, frames=remaining, dtype="float32"):
             value = numpy.sum(block ** 2)
             if value > 0:
                 sum_sq += value
@@ -195,22 +258,45 @@ def _calculate_overall_loudness(file_path, block_size: int) -> float:
 
 # 按 buffer 门限求平均响度：每 buffer_samples 个采样点（各声道对齐）单独求功率，
 # 剔除响度低于 threshold_db 的静音 buffer，再对保留 buffer 的功率取平均并换算成响度
-def _calculate_buffered_loudness(file_path, block_size: int, threshold_db: float, buffer_samples: int) -> float:
+def _calculate_buffered_loudness(file_path, block_size: int, threshold_db: float, buffer_samples: int,
+                                 start_frame: int = 0, end_frame: int = None) -> float:
+    with soundfile.SoundFile(file_path) as f:
+        start_frame, end_frame = clamp_frame_range(f.frames, start_frame, end_frame)
+        remaining = end_frame - start_frame
+        if remaining <= 0:
+            return MIN_LOUDNESS_DB
+        f.seek(start_frame)
+        buffer_size = max(1, buffer_samples * max(1, f.channels))
+        blocks = f.blocks(blocksize=block_size, frames=remaining, dtype="float32")
+        return _buffered_loudness_from_blocks(blocks, buffer_size, threshold_db)
+
+
+# 内存数据的 buffer 门限平均响度：先按文件流式的 block_size 切块，再走同一套统计
+def _buffered_loudness_from_data(data, threshold_db: float, buffer_samples: int = None,
+                                 block_size: int = 65536) -> float:
+    if buffer_samples is None:
+        buffer_samples = user_config.get_tool_loudness_buffer_samples()
+    channels = data.shape[1] if data.ndim > 1 else 1
+    buffer_size = max(1, buffer_samples * max(1, channels))
+    flat = data.reshape(-1)
+    blocks = (flat[start:start + block_size] for start in range(0, flat.size, block_size))
+    return _buffered_loudness_from_blocks(blocks, buffer_size, threshold_db)
+
+
+# buffer 门限平均响度的共同实现：跨块拼接凑满一个 buffer，末尾不足一个 buffer 的单独统计
+def _buffered_loudness_from_blocks(blocks, buffer_size: int, threshold_db: float) -> float:
     buffer_power = []
     pending = numpy.empty(0, dtype="float32")
-    with soundfile.SoundFile(file_path) as f:
-        buffer_size = max(1, buffer_samples * max(1, f.channels))
-        for block in f.blocks(blocksize=block_size, dtype="float32"):
-            data = block.reshape(-1)
-            if pending.size > 0:
-                data = numpy.concatenate((pending, data))
-            full_size = data.size - data.size % buffer_size
-            for start in range(0, full_size, buffer_size):
-                chunk = data[start:start + buffer_size]
-                buffer_power.append(numpy.sum(chunk ** 2) / chunk.size)
-            pending = data[full_size:]
+    for block in blocks:
+        chunk = numpy.asarray(block).reshape(-1)
+        if pending.size > 0:
+            chunk = numpy.concatenate((pending, chunk))
+        full_size = chunk.size - chunk.size % buffer_size
+        for offset in range(0, full_size, buffer_size):
+            piece = chunk[offset:offset + buffer_size]
+            buffer_power.append(numpy.sum(piece ** 2) / piece.size)
+        pending = chunk[full_size:]
     if pending.size > 0:
-        # 末尾不足一个 buffer 的采样点单独统计
         buffer_power.append(numpy.sum(pending ** 2) / pending.size)
     kept = [power for power in buffer_power if _power_to_decibel(power) >= threshold_db]
     if not kept:

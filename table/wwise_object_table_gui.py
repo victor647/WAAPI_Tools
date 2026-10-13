@@ -29,6 +29,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         on_finished=None,
         on_interrupted=None,
         exclusive: bool = True,
+        progress_text_func=None,
     ):
         batch_processor.create_async(
             objects,
@@ -37,6 +38,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
             obj_name,
             on_finished=on_finished,
             on_interrupted=on_interrupted,
+            progress_text_func=progress_text_func,
             exclusive=exclusive,
         )
 

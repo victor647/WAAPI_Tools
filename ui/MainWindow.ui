@@ -567,6 +567,7 @@ Boss        包含 Boss
     </widget>
     <addaction name="mnuAudioOrganize"/>
     <addaction name="actLoudnessAdjustment"/>
+    <addaction name="actAutoCompressionSettings"/>
     <addaction name="separator"/>
     <addaction name="actAutoImport"/>
    </widget>
@@ -782,6 +783,7 @@ Boss        包含 Boss
     <addaction name="mnuFillSilence"/>
     <addaction name="separator"/>
     <addaction name="actFilterByLanguage"/>
+    <addaction name="actMultiLanguageCompare"/>
    </widget>
    <addaction name="mnuFile"/>
    <addaction name="mnuEdit"/>
@@ -1045,6 +1047,16 @@ Boss        包含 Boss
   <action name="actLoudnessAdjustment">
    <property name="text">
     <string>响度调整</string>
+   </property>
+  </action>
+  <action name="actAutoCompressionSettings">
+   <property name="text">
+    <string>自动压缩设置</string>
+   </property>
+  </action>
+  <action name="actMultiLanguageCompare">
+   <property name="text">
+    <string>多语言对比</string>
    </property>
   </action>
   <action name="actLocalizeLanguages">

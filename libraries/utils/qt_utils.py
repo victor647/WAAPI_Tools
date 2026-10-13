@@ -1,6 +1,26 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QMessageBox, QStyle, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QHeaderView,
+    QMessageBox,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QWidget,
+)
+
+# 路径类表格列的默认固定宽度
+PATH_COLUMN_DEFAULT_WIDTH = 300
+
+
+# 判定表头文本是否属于路径列（如路径、对象路径、源文件路径、原工程路径等）
+def is_path_column(header_text: str) -> bool:
+    if not header_text:
+        return False
+    text = header_text.lower()
+    return "路径" in text or "path" in text
 
 
 # 弹出消息框
@@ -18,6 +38,7 @@ def auto_adjust_window_width(
     padding: int = 20,
     extra_padding: int = 12,
     resize_columns: bool = True,
+    resize_window: bool = True,
 ) -> None:
     if not table:
         return
@@ -42,21 +63,40 @@ def auto_adjust_window_width(
         if not table.isColumnHidden(col):
             header_val = model.headerData(col, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
             header_text = str(header_val) if header_val is not None else ""
-            max_col_width = metrics.horizontalAdvance(header_text) + padding
 
-            # 严格使用 DisplayRole 获取展示文本，确保简写路径按实际展示长度测量
-            for row in range(row_count):
-                if table.isRowHidden(row):
-                    continue
-                index = model.index(row, col)
-                display_val = model.data(index, Qt.ItemDataRole.DisplayRole)
-                display_text = str(display_val) if display_val is not None else ""
+            if is_path_column(header_text):
+                # 隐藏根目录开启时路径精简，保持 300px 紧凑宽度；未开启隐藏根目录时前缀带有较长根目录，合理展开避免只能看到最左侧
+                from libraries.utils import user_config
+                if user_config.get_tool_path_hide_root():
+                    max_col_width = PATH_COLUMN_DEFAULT_WIDTH
+                else:
+                    content_w = metrics.horizontalAdvance(header_text) + padding
+                    for row in range(row_count):
+                        if table.isRowHidden(row):
+                            continue
+                        index = model.index(row, col)
+                        display_val = model.data(index, Qt.ItemDataRole.DisplayRole)
+                        display_text = str(display_val) if display_val is not None else ""
+                        w = metrics.horizontalAdvance(display_text) + padding
+                        if w > content_w:
+                            content_w = w
+                    max_col_width = max(PATH_COLUMN_DEFAULT_WIDTH, min(content_w, 480))
+            else:
+                max_col_width = metrics.horizontalAdvance(header_text) + padding
 
-                w = metrics.horizontalAdvance(display_text) + padding
-                if model.data(index, Qt.ItemDataRole.CheckStateRole) is not None:
-                    w += 22
-                if w > max_col_width:
-                    max_col_width = w
+                # 严格使用 DisplayRole 获取展示文本，确保非路径列按实际展示长度测量
+                for row in range(row_count):
+                    if table.isRowHidden(row):
+                        continue
+                    index = model.index(row, col)
+                    display_val = model.data(index, Qt.ItemDataRole.DisplayRole)
+                    display_text = str(display_val) if display_val is not None else ""
+
+                    w = metrics.horizontalAdvance(display_text) + padding
+                    if model.data(index, Qt.ItemDataRole.CheckStateRole) is not None:
+                        w += 22
+                    if w > max_col_width:
+                        max_col_width = w
 
             if resize_columns:
                 header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
@@ -64,6 +104,8 @@ def auto_adjust_window_width(
             columns_width += max_col_width
 
     if columns_width <= 0:
+        return
+    if not resize_window:
         return
 
     # 预留垂直滚动条宽度、行头宽度、框架边距

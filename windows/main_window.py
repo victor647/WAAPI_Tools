@@ -24,6 +24,7 @@ from table.wwise_object_table import WwiseTableDisplayMode
 from table.wwise_table_headers import CHECK_BOX_COL, COMMON_HEADERS, ENABLE_COL, TABLE_DISPLAY_MODE_LABELS, PATH_COL
 from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSilenceTrimWindow
 from windows.loudness_adjustment_window import LoudnessAdjustmentWindow as LoudnessAdjustmentWindow
+from windows.multi_language_compare_window import MultiLanguageCompareWindow as MultiLanguageCompareWindow
 from windows.advanced_filter_window import AdvancedFilterWindow as AdvancedFilterWindow
 from windows.advanced_find_window import AdvancedFindWindow as AdvancedFindWindow
 from windows.sync_trim_window import SyncTrimWindow as SyncTrimWindow
@@ -35,6 +36,7 @@ from windows.work_unit_import_window import WorkUnitImporter as WorkUnitImporter
 from windows.project_settings_window import ProjectSettingsWindow as ProjectSettingsWindow
 from windows.media_size_window import MediaSizeWindow as MediaSizeWindow
 from windows.property_query_window import PropertyQueryWindow as PropertyQueryWindow
+from windows.auto_compression_settings_window import AutoCompressionSettingsWindow as AutoCompressionSettingsWindow
 from waapi import CannotConnectToWaapiException
 from PySide6.QtWidgets import QApplication, QDialog, QMainWindow, QMenu, QMessageBox, QTableWidgetItem
 from ui.MainWindow_ui import Ui_MainWindow
@@ -42,6 +44,7 @@ from windows.export_object_list_window import ExportObjectListWindow as ExportOb
 from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_utils, soundbank_utils, \
     localization_utils, project_utils, event_utils, container_utils, migration_utils, waapi_utils, mixing_utils
 from libraries.utils import ai_utils, io_utils, path_utils, user_config
+from libraries.utils.wwise import workunit_utils
 
 # 「撤销/重做」菜单项最多显示多少个工具撤销组名
 UNDO_GROUP_NAME_LIMIT = 20
@@ -167,6 +170,12 @@ class AiChatWorker(QThread):
 class MainWindow(QMainWindow, Ui_MainWindow):
     # 主窗口：对象列表以 globals.active_objects 为源，表格由 WwiseTableImpl 驱动
 
+    # 日志窗口最多保留的行数（超出后丢弃最旧的行）
+    LOG_WINDOW_MAX_LINES = 2000
+
+    # 工作线程里打的日志先发信号回主线程，再写入日志窗口（Qt 控件只能在 GUI 线程访问）
+    log_line_received = Signal(str)
+
     # 兼容子窗口对 main_window.activeObjects 的读写（与 gv.active_objects 同步）
     @property
     def activeObjects(self):
@@ -181,6 +190,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
         self.setWindowTitle(f"WAAPI 工具集 {get_software_version()}")
+        # 子窗口通过 globals 里的引用临时获取主窗口对象，避免构造时固化旧列表
+        gv.main_window = self
         self.style_sheet = style_sheet
         self.table = WwiseTableImpl(self.tblWwiseObjects)
         self._object_history: list[tuple] = []
@@ -544,11 +555,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.is_busy():
             Logger().warning(self.busy_message(f"打开{name}"))
             return
-        Logger().info(f"打开工具窗口：{name}")
+        Logger().debug(f"打开工具窗口：{name}")
         window = builder()
         window.show()
         window.exec()
-        Logger().info(f"关闭工具窗口：{name}")
+        Logger().debug(f"关闭工具窗口：{name}")
 
     # 是否有任务正在运行（工具批处理或 AI 任务）：同一时间只允许一个
     def is_busy(self) -> bool:
@@ -662,7 +673,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.apply_table_filter(record_history=True)
 
     # 「启用」列写入 Wwise 后，若正在按启用筛选则刷新行可见性
-    def _on_wwise_inclusion_cell_changed(self, _row: int):
+    def _on_wwise_inclusion_cell_changed(self, row: int):
+        if 0 <= row < len(self.table.data):
+            row_data = self.table.data[row]
+            self.table._inclusion_cache.clear()
+            self.table._properties_by_id.setdefault(row_data.id, {})['Inclusion'] = row_data[INCLUSION_COL]
         if self.cbxOnlyIncludedEnabled.isChecked():
             self.apply_table_filter(record_history=False)
 
@@ -672,6 +687,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._setup_type_filter_combo()
         self._setup_turbo_mode_checkbox()
         # 日志绑定
+        self.log_line_received.connect(self._append_log_line)
+        # 日志窗口只保留最近若干行，避免长时间运行后文档无限增长
+        self.txeOutputLogs.document().setMaximumBlockCount(self.LOG_WINDOW_MAX_LINES)
         Logger().set_log_window_stream(self.add_log)
         Logger().set_status_bar_stream(lambda text: self.statusbar.showMessage(text))
         # 所有按键
@@ -734,6 +752,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actTrimAudioSilence.triggered.connect(self.open_audio_silence_trimmer_window)
         self.actSyncTrim.triggered.connect(self.open_sync_trim_window)
         self.actLoudnessAdjustment.triggered.connect(self.open_loudness_adjustment_window)
+        self.actAutoCompressionSettings.triggered.connect(self.open_auto_compression_settings_window)
+        self.actMultiLanguageCompare.triggered.connect(self.open_multi_language_compare_window)
         self.setup_batch_processor(self.actApplyEditsToOriginal, lambda index, obj: audio_source_utils.apply_source_edits(obj), WwiseObjectType.AudioSource)
         self.setup_batch_processor(self.actResetSourceEdits, lambda index, obj: audio_source_utils.reset_source_editor(obj), WwiseObjectType.AudioSource)
         self.setup_batch_processor(self.actRenameOriginalToWwise, lambda index, obj: audio_source_utils.rename_original_to_wwise(obj), WwiseObjectType.Sound)
@@ -879,7 +899,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 检查WAAPI连接状态
     def check_wwise_connection(self):
-        project_utils.wwise_version = 0
+        # 连接（可能是重新连接、切了工程）前清掉工程级缓存，保证读到当前工程
+        project_utils.clear_project_cache()
         try:
             Logger().debug("正在尝试连接Wwise...")
             client = WAAPIClient()
@@ -1050,7 +1071,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.table.refresh_table(True)
 
     # 筛选表格内容
-    def apply_table_filter(self, record_history: bool = False):
+    def apply_table_filter(self, record_history: bool = False, workunit_path_by_source_id: dict = None):
         total_count = self.table.model.rowCount()
         # 表格尚未载入数据（异步填充中）时无需筛选，避免误报 0/0
         if total_count == 0:
@@ -1059,6 +1080,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         checked_types = self.cbbFilterType.checked_options()
         self.table.filter_by_type({WwiseObjectType(name) for name in checked_types} if checked_types else None)
         self.table.filter_inclusion_only(self.cbxOnlyIncludedEnabled.isChecked())
+        only_in_use = bool(user_config.get_advanced_filter_settings().get("only_in_use", False))
+        if only_in_use and workunit_path_by_source_id is None:
+            workunit_path_by_source_id = self.collect_source_workunit_path_by_id()
+        self.table.filter_in_use_only(only_in_use, workunit_path_by_source_id)
         # 关键词/类型/启用等筛选全部执行完后，一次性输出筛选结果
         shown_count = sum(
             1
@@ -1069,6 +1094,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.calculate_checked_rows()
         if record_history and not self._restoring_history:
             self._history_append_current_if_changed()
+
+    # 「只显示在用资源」：先把相关 WorkUnit 的 ActiveSourceList 异步读进缓存（带进度条），
+    # 读完再筛选，避免在界面线程里扫描几十 MB 的 .wwu 造成卡顿
+    def apply_in_use_filter(self):
+        workunit_path_by_source_id = self.collect_source_workunit_path_by_id()
+        paths = list(dict.fromkeys(workunit_path_by_source_id.values()))
+        if not paths:
+            self.apply_table_filter(True, workunit_path_by_source_id)
+            return
+        batch_processor.create_async(
+            paths,
+            lambda index, path: workunit_utils.get_active_source_ids(path),
+            '读取在用资源',
+            on_finished=lambda: self.apply_table_filter(True, workunit_path_by_source_id),
+        )
+
+    # 当前可见的 AudioFileSource 行所属的 WorkUnit 路径
+    def collect_source_workunit_path_by_id(self) -> dict[str, str]:
+        sources = [
+            row_info.wwise_object
+            for row_info in self.table.data
+            if row_info.type == WwiseObjectType.AudioSource
+            and not self.tblWwiseObjects.isRowHidden(row_info.row)
+        ]
+        properties_by_id = waapi_utils.get_objects_properties(sources, ['workUnit.filePath'])
+        paths_by_id = {}
+        for source in sources:
+            path = properties_by_id.get(source.id, {}).get('workUnit.filePath')
+            if path:
+                paths_by_id[source.id] = path
+        return paths_by_id
 
     # 统计有多少行选中
     def calculate_checked_rows(self):
@@ -1133,36 +1189,48 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             localization_utils.get_current_language() if language_filter_active else None
         )
         visible_objects = self.get_visible_objects()
+        candidate_by_id = {}
+        for obj in visible_objects:
+            candidate_by_id.setdefault(obj.id, obj)
+            if not expand:
+                continue
+            if target_types is None:
+                descendants = waapi_utils.get_child_objects(obj, True)
+            else:
+                descendants = waapi_utils.get_descendants_of_type(obj, target_types)
+            for descendant in descendants:
+                candidate_by_id.setdefault(descendant.id, descendant)
+        candidates = list(candidate_by_id.values())
+        language_by_id = {}
+        if language_filter_active:
+            language_candidates = [
+                obj for obj in candidates
+                if obj.type in (WwiseObjectType.Sound, WwiseObjectType.AudioSource)
+                and (target_types is None or obj.type in target_types)
+            ]
+            language_by_id = localization_utils.get_sound_languages(language_candidates)
+
         collected: list[WwiseObject] = []
         seen_ids: set[str] = set()
 
         def add_object(obj: WwiseObject):
-            if target_types is not None and obj.type not in target_types:
+            object_type = (obj.wwise_dict or {}).get('type', '')
+            if target_types is not None and WwiseObjectType(object_type) not in target_types:
                 return
             if obj.id not in seen_ids:
                 if (
                     language_filter_active
-                    and obj.type in (WwiseObjectType.Sound, WwiseObjectType.AudioSource)
-                    and localization_utils.is_filtered_out_by_language(obj, active_language)
+                    and object_type in (WwiseObjectType.Sound.value, WwiseObjectType.AudioSource.value)
+                    and localization_utils.is_filtered_out_by_language(
+                        obj, active_language, language_by_id.get(obj.id)
+                    )
                 ):
                     return
                 seen_ids.add(obj.id)
                 collected.append(obj)
 
-        if not expand:
-            for obj in visible_objects:
-                add_object(obj)
-            return collected
-        for obj in visible_objects:
+        for obj in candidates:
             add_object(obj)
-            if target_types is None:
-                # 不筛类型：只能拉全部后代
-                for child in waapi_utils.get_child_objects(obj, True):
-                    add_object(child)
-            else:
-                # 有目标类型：用按类型查询后代的接口（单次 WAQL，比全量分页更快）
-                for child in waapi_utils.get_descendants_of_type(obj, target_types):
-                    add_object(child)
         return collected
 
     # 查找父级对象
@@ -1230,11 +1298,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 查找引用当前表格对象的所有对象，逐一查询并去重后加入表格
     def find_references(self):
         visible_objects = self.get_visible_objects()
+        audio_sources = [obj for obj in visible_objects if obj.type == WwiseObjectType.AudioSource]
+        source_properties = waapi_utils.get_objects_properties(
+            audio_sources, ['originalRelativeFilePath'])
+        references_by_path = {}
+        for source in audio_sources:
+            relative_path = source_properties.get(source.id, {}).get('originalRelativeFilePath')
+            if relative_path not in references_by_path:
+                references_by_path[relative_path] = (
+                    waapi_utils.find_audio_sources_by_original_path(relative_path)
+                    if relative_path else []
+                )
         found_objects = list(visible_objects) if self.cbxKeepSelf.isChecked() else []
         seen_ids = {obj.id for obj in found_objects}
         for obj in visible_objects:
             if obj.type == WwiseObjectType.AudioSource:
-                references = self._get_audio_source_references(obj)
+                relative_path = source_properties.get(obj.id, {}).get('originalRelativeFilePath')
+                references = references_by_path.get(relative_path, [])
             else:
                 references = waapi_utils.get_object_references(obj)
             for reference in references:
@@ -1306,23 +1386,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         settings['table_log_sizes'] = self.splitterTableLogs.sizes()
         user_config.set_window_settings('main_window', settings)
 
-    # AudioFileSource 无法用 referencesTo 反查，改为按 originalRelativeFilePath 反查同源文件对象
-    # 结果始终包含自身，保证未勾选「保留原始层级」时也能把当前对象搜出来
-    def _get_audio_source_references(self, source: WwiseObject) -> list[WwiseObject]:
-        relative_path = waapi_utils.get_object_property(source, 'originalRelativeFilePath')
-        if not relative_path:
-            return []
-        return waapi_utils.find_audio_sources_by_original_path(relative_path)
-
     # 按工程当前参考语言筛选对象
     def filter_by_active_language(self):
         if self.__languageFilterBase is None:
             self.__languageFilterBase = list(self.get_visible_objects())
         active_language = localization_utils.get_current_language()
+        visible_objects = self.get_visible_objects()
+        languages_by_id = localization_utils.get_sound_languages(visible_objects)
         gv.active_objects = [
             obj
-            for obj in self.get_visible_objects()
-            if not localization_utils.is_filtered_out_by_language(obj, active_language)
+            for obj in visible_objects
+            if not localization_utils.is_filtered_out_by_language(
+                obj, active_language, languages_by_id.get(obj.id)
+            )
         ]
         self.show_obj_list()
 
@@ -1480,44 +1556,54 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开音频末尾静音裁剪窗口
     def open_audio_silence_trimmer_window(self):
-        target_objects = self.get_tool_target_objects(WwiseObjectType.AudioSource)
-        if not target_objects:
+        if not self.collect_tool_targets(WwiseObjectType.AudioSource):
             self.warn_no_target_objects('静音裁剪')
             return
-        self.open_tool_window("静音裁剪", lambda: AudioSilenceTrimWindow(target_objects))
+        self.open_tool_window("静音裁剪", AudioSilenceTrimWindow)
 
     # 打开同步裁剪窗口，列出主窗口表格中的所有 AudioSource 及其裁剪信息
     def open_sync_trim_window(self):
         # 该工具按源文件工作：固定展开子级拿全 AudioSource，用户不必先「查找子对象」
-        sources = self.collect_tool_targets(WwiseObjectType.AudioSource, expand=True)
-        if not sources:
+        if not self.collect_tool_targets(WwiseObjectType.AudioSource, expand=True):
             self.warn_no_target_objects('同步裁剪')
             return
-        self.open_tool_window("同步裁剪", lambda: SyncTrimWindow(sources))
+        self.open_tool_window("同步裁剪", SyncTrimWindow)
 
     # 打开响度调整窗口，统一表格中所有 AudioSource 的响度
     def open_loudness_adjustment_window(self):
-        target_objects = self.get_tool_target_objects(WwiseObjectType.AudioSource)
-        if not target_objects:
+        if not self.collect_tool_targets(WwiseObjectType.AudioSource):
             self.warn_no_target_objects('响度调整')
             return
-        self.open_tool_window("响度调整", lambda: LoudnessAdjustmentWindow(target_objects))
+        self.open_tool_window("响度调整", LoudnessAdjustmentWindow)
+
+    def open_auto_compression_settings_window(self):
+        if not self.get_visible_objects():
+            QMessageBox.warning(self, "自动压缩设置", "表格中没有可识别的对象。")
+            return
+        self.open_tool_window("自动压缩设置", lambda: AutoCompressionSettingsWindow(self))
+
+    # 打开多语言对比窗口：按每个 Sound 的直系 AudioSource 分语言对比响度与时长
+    def open_multi_language_compare_window(self):
+        if not self.collect_tool_targets(WwiseObjectType.Sound):
+            self.warn_no_target_objects('多语言对比')
+            return
+        compare_window = MultiLanguageCompareWindow()
+        compare_window.show()
+        compare_window.exec()
 
     # 打开媒体资源大小统计窗口（按每个对象逐项展示）
     def calculate_media_size(self):
-        objects = [row_data.wwise_object for row_data in self.table.active_data]
-        if not objects:
+        if not self.get_visible_objects():
             Logger().warning('表格中没有可统计的对象')
             return
-        self.open_tool_window("媒体资源大小统计", lambda: MediaSizeWindow(objects))
+        self.open_tool_window("媒体资源大小统计", MediaSizeWindow)
 
     # 打开属性查询窗口，对表格可见对象批量读取指定属性
     def open_property_query_window(self):
-        objects = self.collect_tool_targets()
-        if not objects:
+        if not self.collect_tool_targets():
             Logger().warning('表格中没有可查询的对象')
             return
-        self.open_tool_window("属性查询", lambda: PropertyQueryWindow(objects))
+        self.open_tool_window("属性查询", PropertyQueryWindow)
 
     # 添加列表对象到选中的Bank中
     def add_to_selected_bank(self):
@@ -1542,7 +1628,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.open_tool_window("工程检查", lambda: ProjectValidation(self))
 
     # 添加日志，确保自动定位到最新
+    # 写日志窗口：可能由工作线程调用，此时改走信号回到 GUI 线程再写
     def add_log(self, line):
+        if QThread.currentThread() is not self.thread():
+            self.log_line_received.emit(line)
+            return
+        self._append_log_line(line)
+
+    def _append_log_line(self, line):
         cursor = self.txeOutputLogs.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.txeOutputLogs.append(line)
@@ -1583,3 +1676,4 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         event.accept()
         # 即使有窗口拒绝了 close，也让事件循环退出，避免进程留在后台
         QApplication.quit()
+

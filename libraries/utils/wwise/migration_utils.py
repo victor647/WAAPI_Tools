@@ -141,12 +141,29 @@ def import_fmod_marker(marker: dict, root: WwiseObject):
             import_loop_status(root, loop_entry, loop_exit)
         else:
             instruments = waapi_utils.get_child_objects(root)
+            instruments = [
+                instrument for instrument in instruments
+                if instrument.has_property('InitialDelay')
+            ]
+            properties_by_id = waapi_utils.get_objects_properties(instruments, ['InitialDelay'])
             for instrument in instruments:
-                import_loop_status(instrument, loop_entry, loop_exit)
+                import_loop_status(
+                    instrument, loop_entry, loop_exit, properties_by_id.get(instrument.id, {})
+                )
 
 # 导入FMOD中的loop设置
-def import_loop_status(instrument: WwiseObject, loop_entry: float, loop_exit: float):
-    delay = waapi_utils.get_object_property(instrument, 'InitialDelay')
+def import_loop_status(
+    instrument: WwiseObject,
+    loop_entry: float,
+    loop_exit: float,
+    properties: dict = None,
+):
+    delay = (
+        properties.get('InitialDelay')
+        if properties is not None else waapi_utils.get_object_property(instrument, 'InitialDelay')
+    )
+    if delay is None:
+        return
     if loop_entry <= delay <= loop_exit:
         if instrument.type == WwiseObjectType.RandomContainer:
             waapi_utils.set_object_property(instrument, 'PlayMechanismLoop', True)

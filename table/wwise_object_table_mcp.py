@@ -17,7 +17,10 @@ class WwiseTableImpl_MCP(WwiseObjectTable):
         obj_name: str = "",
         on_finished=None,
         on_interrupted=None,
+        exclusive: bool = True,
+        progress_text_func=None,
     ):
+        # MCP 场景没有进度条，也不允许在批处理期间插队，progress_text_func / exclusive 只用于对齐 GUI 侧的签名
         batch_processor.create_sync(
             objects,
             processor,

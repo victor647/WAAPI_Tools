@@ -31,6 +31,17 @@ DEFAULT_EVENT_PLAY_PREFIX = False
 DEFAULT_EVENT_REF_DARK_COLOR = True
 DEFAULT_EVENT_REF_NOTES = True
 
+# 支持的版本控制类型
+VCS_MODES = ('p4', 'svn')
+
+# 版本控制默认值：随工程保存（ProjectConventions.json 的 VersionControl 节点）
+DEFAULT_VCS_MODE = 'p4'
+DEFAULT_P4_SERVER = ''
+DEFAULT_P4_CHARSET = 'utf8'
+DEFAULT_P4_CHANGELIST_DESCRIPTION = '【WAAPI_Tools】自动创建的修改'
+DEFAULT_SVN_EXECUTABLE = 'svn'
+DEFAULT_SVN_COMMIT_MESSAGE = '【WAAPI_Tools】自动创建的修改'
+
 # 默认工程规范：任何位置都没有规范文件时用它生成一份（打包环境优先用随包携带的 ProjectConventions.json）
 DEFAULT_CONVENTIONS = {
     "NetRole": {
@@ -69,6 +80,20 @@ DEFAULT_CONVENTIONS = {
     "BankConvention": {
         "UseAutoDefinedBank": DEFAULT_USE_AUTO_DEFINED_BANK,
         "SplitEventMedia": DEFAULT_SPLIT_EVENT_MEDIA,
+    },
+    "VersionControl": {
+        "Mode": DEFAULT_VCS_MODE,
+        "P4": {
+            "Server": DEFAULT_P4_SERVER,
+            "Charset": DEFAULT_P4_CHARSET,
+            "ChangelistDescription": DEFAULT_P4_CHANGELIST_DESCRIPTION,
+        },
+        "SVN": {
+            "Executable": DEFAULT_SVN_EXECUTABLE,
+            "Username": "",
+            "Password": "",
+            "CommitMessage": DEFAULT_SVN_COMMIT_MESSAGE,
+        },
     },
 }
 
@@ -284,6 +309,54 @@ def use_full_name_in_sound() -> bool:
     if not conventions or 'FullNameInSound' not in conventions:
         return True
     return conventions['FullNameInSound']
+
+
+# —— 版本控制设置（集成视图「作者」列、文件移动时用；随工程保存在 VersionControl 节点）——
+def get_version_control_section() -> dict:
+    return _convention_section('VersionControl')
+
+
+def _vcs_sub_section(name: str) -> dict:
+    section = get_version_control_section().get(name)
+    return section if isinstance(section, dict) else {}
+
+
+# 当前工程的版本控制类型；仅接受 p4/svn，非法值回退默认 p4
+def get_version_control_mode() -> str:
+    mode = get_version_control_section().get('Mode', DEFAULT_VCS_MODE)
+    if mode not in VCS_MODES:
+        Logger().warning(
+            f"VersionControl.Mode 仅支持 {'/'.join(VCS_MODES)}，当前值 '{mode}'，已回退为 '{DEFAULT_VCS_MODE}'.")
+        return DEFAULT_VCS_MODE
+    return mode
+
+
+def get_p4_server() -> str:
+    return _vcs_sub_section('P4').get('Server', DEFAULT_P4_SERVER)
+
+
+def get_p4_charset() -> str:
+    return _vcs_sub_section('P4').get('Charset', DEFAULT_P4_CHARSET)
+
+
+def get_p4_changelist_description() -> str:
+    return _vcs_sub_section('P4').get('ChangelistDescription', DEFAULT_P4_CHANGELIST_DESCRIPTION)
+
+
+def get_svn_executable() -> str:
+    return _vcs_sub_section('SVN').get('Executable', DEFAULT_SVN_EXECUTABLE)
+
+
+def get_svn_username() -> str:
+    return _vcs_sub_section('SVN').get('Username', '')
+
+
+def get_svn_password() -> str:
+    return _vcs_sub_section('SVN').get('Password', '')
+
+
+def get_svn_commit_message() -> str:
+    return _vcs_sub_section('SVN').get('CommitMessage', DEFAULT_SVN_COMMIT_MESSAGE)
 
 
 # 使用颜色规范
