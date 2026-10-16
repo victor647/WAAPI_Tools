@@ -63,6 +63,10 @@ def get_project_property(property_name: str):
     return WAAPIClient().get_project_property(property_name)
 
 
+def save_project() -> bool:
+    return WAAPIClient().save_project()
+
+
 def get_referenced_object(obj: WwiseObject, property_name: str):
     obj = get_object_property(obj, property_name)
     return WwiseObject(obj) if obj else None
@@ -269,7 +273,7 @@ def convert_audio_objects(objects: list, platforms: list, languages: list) -> di
     return WAAPIClient().convert_audio_objects([obj.id for obj in objects], platforms, languages)
 
 
-def add_silence(obj: WwiseObject, length: int, language='SFX') -> bool:
+def add_silence(obj: WwiseObject, length: float, language='SFX') -> bool:
     return WAAPIClient().add_silence(obj.wwise_dict, length, language=language)
 
 
@@ -346,6 +350,13 @@ def destroy_transport(transport_id: int) -> bool:
 # region UICommand
 def execute_ui_command(objects: list, command: str) -> bool:
     return WAAPIClient().execute_ui_command([o.wwise_dict for o in objects], command)
+
+
+# 切换 Wwise 当前平台：core API 没有该能力，通过 UI 命令 SwitchToPlatform<平台名> 实现
+def switch_project_platform(platform_name: str) -> bool:
+    if not platform_name:
+        return False
+    return WAAPIClient().execute_ui_command([], f'SwitchToPlatform{platform_name}')
 
 
 def select_objects_in_wwise(objects: list) -> bool:

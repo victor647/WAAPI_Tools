@@ -16,6 +16,7 @@ from bundle_helpers import load_mcp_stack_bundles, metadata_datas
 
 packager_dir = os.path.abspath(SPECPATH)
 root = os.path.dirname(packager_dir)
+icon_ico_file = os.path.join(root, "icons", "Icon.ico")
 
 
 def _safe_collect(name):
@@ -124,6 +125,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=icon_ico_file if os.path.isfile(icon_ico_file) else None,
 )
 
 coll = COLLECT(

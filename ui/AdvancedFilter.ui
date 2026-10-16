@@ -96,7 +96,7 @@
       <item>
        <widget class="QRadioButton" name="rbnLangActive">
         <property name="text">
-         <string>按当前语言筛选</string>
+         <string>当前语言</string>
         </property>
        </widget>
       </item>

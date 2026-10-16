@@ -19,6 +19,22 @@ def get_table_objects() -> list:
     return list(active_objects)
 
 
+# 主窗口表格里勾选了「选中」列的可见对象：分析类工具只处理这些对象
+def get_checked_table_objects() -> list:
+    window = main_window
+    if window is not None:
+        return list(window.get_checked_visible_objects())
+    return list(active_objects)
+
+
+# 主窗口表格里未勾选「选中」列的可见对象路径：这些对象及其整棵子树都不参与分析
+def get_unchecked_table_paths() -> list:
+    window = main_window
+    if window is not None:
+        return list(window.get_unchecked_visible_paths())
+    return []
+
+
 # 工具目标对象：按「自动获取子对象」与高级筛选的语言设置临时采集
 def get_tool_targets(target_types=None, expand: bool = None) -> list:
     window = main_window

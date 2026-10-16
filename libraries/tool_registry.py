@@ -20,6 +20,7 @@ from typing import Any, Callable
 from libraries.utils.wwise import (
     audio_source_utils,
     common_utils,
+    compression_utils,
     container_utils,
     event_utils,
     game_sync_utils,
@@ -31,6 +32,7 @@ from libraries.utils.wwise import (
     waapi_utils,
 )
 from libraries.utils.log_utils import Logger
+from libraries.utils import user_config
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 # 单次可列出的音频源上限 / 可统计的对象上限，防止一次请求拖垮上下文
@@ -1321,6 +1323,206 @@ register_tool(
     _object_ids_parameters("要检查的对象 id"),
     _handler_check_event_references,
 )
+
+# —— 自动转码（按音频时长分配 Conversion）——
+AUTO_COMPRESSION_PLAN_LIMIT = 200
+
+
+def _auto_compression_threshold(value, fallback: float) -> float:
+    # 0 是合法的短音效阈值，只在缺省时回退到设置里保存的值
+    if value is None or value == "":
+        return float(fallback)
+    return float(value)
+
+
+def _auto_compression_analysis(args: dict, create_missing: bool = False) -> dict:
+    # 计算自动转码方案；失败时返回 {"error": ...}
+    ids = _require_object_ids(args)
+    saved = user_config.get_window_settings(compression_utils.WINDOW_SETTINGS_KEY)
+    try:
+        short = _auto_compression_threshold(
+            args.get("short_threshold"),
+            saved.get("short_threshold", compression_utils.DEFAULT_SHORT_THRESHOLD),
+        )
+        long = _auto_compression_threshold(
+            args.get("long_threshold"),
+            saved.get("long_threshold", compression_utils.DEFAULT_LONG_THRESHOLD),
+        )
+    except (TypeError, ValueError):
+        return {"error": "short_threshold / long_threshold 必须是秒数（数字）"}
+    if short >= long:
+        return {"error": f"短音效阈值（{short} 秒）必须小于长音效阈值（{long} 秒）"}
+    default_conversion = compression_utils.resolve_default_conversion(
+        args.get("default_conversion_id") or ""
+    )
+    if default_conversion is None:
+        names = ", ".join(
+            obj.name for obj in waapi_utils.find_all_objects_by_type(WwiseObjectType.Conversion)[:20]
+        )
+        return {"error": (
+            "找不到默认档 Conversion：请传 default_conversion_id，"
+            "或先在「自动转码设置」窗口里选一次默认档。"
+            f"工程里的 Conversion：{names or '（无）'}"
+        )}
+    analysis = compression_utils.analyze_auto_compression(
+        [WwiseObject.from_id(object_id) for object_id in ids],
+        short,
+        long,
+        default_conversion,
+        create_missing=create_missing,
+    )
+    analysis["error"] = ""
+    analysis["default_conversion"] = default_conversion
+    analysis["short_threshold"] = short
+    analysis["long_threshold"] = long
+    return analysis
+
+
+def _auto_compression_conversion_names(analysis: dict) -> dict:
+    # 各档位实际使用的 Conversion 名称；长/短档缺失时给出待创建的名称
+    default_name = analysis["default_conversion"].name
+    names = {}
+    for category in (
+        compression_utils.MEDIUM_CATEGORY,
+        compression_utils.LONG_CATEGORY,
+        compression_utils.SHORT_CATEGORY,
+    ):
+        conversion = analysis["conversions"].get(category)
+        names[category] = conversion.name if conversion else (
+            default_name + compression_utils.CATEGORY_SUFFIXES.get(category, "")
+        )
+    return names
+
+
+def _handler_auto_compression_plan(args: dict) -> dict:
+    # 只分析不修改：给出各档数量与需要打开 OverrideConversion 的节点
+    analysis = _auto_compression_analysis(args)
+    if analysis.get("error"):
+        return analysis
+    summary = analysis["summary"]
+    override_plans = [plan for plan in analysis["plans"] if plan.override_enabled]
+    result = {
+        "default_conversion": analysis["default_conversion"].name,
+        "short_threshold": analysis["short_threshold"],
+        "long_threshold": analysis["long_threshold"],
+        "conversions": _auto_compression_conversion_names(analysis),
+        "will_create": [name for _category, name in analysis["missing_categories"]],
+        "target_count": analysis["target_count"],
+        "source_count": analysis["source_count"],
+        "override_count": len(override_plans),
+        "plans": [
+            {
+                "id": plan.target.id,
+                "name": plan.target.name,
+                "type": plan.target.type.value,
+                "path": plan.target.path,
+                "category": plan.effective_category,
+                "counts": plan.counts_by_category,
+            }
+            for plan in override_plans[:AUTO_COMPRESSION_PLAN_LIMIT]
+        ],
+        "truncated": len(override_plans) > AUTO_COMPRESSION_PLAN_LIMIT,
+        "summary": summary,
+    }
+    if not summary.get("valid_duration_count"):
+        result["hint"] = "表格对象下没有读到有效的 AudioFileSource 播放时长，无法给出转码方案"
+    return result
+
+
+def _handler_auto_compression_apply(args: dict) -> dict:
+    # 危险：批量打开 OverrideConversion 并设置 Conversion（会改工程）
+    if args.get("confirmed") is not True:
+        return {"error": "危险操作被拦截：请显式传入 confirmed=true 确认执行"}
+    analysis = _auto_compression_analysis(args, create_missing=True)
+    if analysis.get("error"):
+        return analysis
+    override_plans = [plan for plan in analysis["plans"] if plan.override_enabled]
+    failed = []
+    page_size = max(1, user_config.get_tool_page_size())
+    for start in range(0, len(override_plans), page_size):
+        failed.extend(compression_utils.apply_conversion_plans(override_plans[start:start + page_size]))
+    failed = sorted(set(failed))
+    summary = analysis["summary"]
+    Logger().info(
+        f"自动转码应用完成：目标节点 {len(override_plans)} 个，失败 {len(failed)} 个，"
+        f"新建档位 Conversion {len(analysis['created_categories'])} 个"
+    )
+    return {
+        "applied_count": len(override_plans) - len(failed),
+        "failed_count": len(failed),
+        "failed": failed[:50],
+        "default_conversion": analysis["default_conversion"].name,
+        "conversions": _auto_compression_conversion_names(analysis),
+        "created_conversions": sorted(analysis["created_categories"]),
+        "override_count": len(override_plans),
+        "summary": summary,
+    }
+
+
+register_tool(
+    "auto_compression_plan",
+    "分析「自动转码」方案（只读，不改工程）：递归收集表格对象子树里的 ActorMixer 与 Container，读取其下 AudioFileSource 的播放时长，按短/长阈值把音频分成短/中/长三档，再按每个节点的多数结果（父级继承 + 占优比例）决定它该用哪一档 Conversion；长/短档用默认档 Conversion 名称加 _Long / _Short 后缀。用户说「按音频时长自动设置转码 / 长短音效分开转码 / 自动分配 Conversion」时先用它出方案，用户确认后再调 auto_compression_apply。返回各档数量 summary、需要 OverrideConversion 的节点 plans、以及待新建的 Conversion 名称",
+    {
+        "type": "object",
+        "properties": {
+            "object_ids": {
+                "type": "array",
+                "items": {"type": "string", "description": "Wwise 对象 GUID"},
+                "description": "要分析的根对象 id（表格对象；其子树里的 ActorMixer / Container 会被逐个判定）",
+            },
+            "short_threshold": {
+                "type": "number",
+                "description": "短音效时长阈值（秒），不超过该值算短档；省略则用「自动转码设置」里保存的值",
+            },
+            "long_threshold": {
+                "type": "number",
+                "description": "长音效时长阈值（秒），不小于该值算长档；省略则用「自动转码设置」里保存的值",
+            },
+            "default_conversion_id": {
+                "type": "string",
+                "description": "默认档（中音效）使用的 Conversion 对象 GUID；省略则用「自动转码设置」里保存的默认档",
+            },
+        },
+        "required": ["object_ids"],
+    },
+    _handler_auto_compression_plan,
+)
+
+
+register_tool(
+    "auto_compression_apply",
+    "按 auto_compression_plan 的结果应用自动转码（会改工程）：为命中的节点打开 OverrideConversion 并设置对应档位的 Conversion；长/短档 Conversion 缺失时先复制默认档生成 _Long / _Short 副本。属于批量修改工程，必须 confirmed=true；建议先调 auto_compression_plan 把方案讲给用户、得到同意后再执行",
+    {
+        "type": "object",
+        "properties": {
+            "object_ids": {
+                "type": "array",
+                "items": {"type": "string", "description": "Wwise 对象 GUID"},
+                "description": "要处理的根对象 id（与 auto_compression_plan 传同一批）",
+            },
+            "short_threshold": {
+                "type": "number",
+                "description": "短音效时长阈值（秒）；省略则用「自动转码设置」里保存的值",
+            },
+            "long_threshold": {
+                "type": "number",
+                "description": "长音效时长阈值（秒）；省略则用「自动转码设置」里保存的值",
+            },
+            "default_conversion_id": {
+                "type": "string",
+                "description": "默认档 Conversion 对象 GUID；省略则用「自动转码设置」里保存的默认档",
+            },
+            "confirmed": {
+                "type": "boolean",
+                "description": "用户明确同意后传 true（软件内 AI 助手会按修改策略代填）",
+            },
+        },
+        "required": ["object_ids", "confirmed"],
+    },
+    _handler_auto_compression_apply,
+    mutating=True,
+)
+
 
 # MCP legacy 工具迁移目录：注册后 AI 助手与 MCP 共用同一份工具定义
 from libraries import wwise_tool_catalog as _wwise_tool_catalog  # noqa: E402, F401

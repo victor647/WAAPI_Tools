@@ -428,7 +428,7 @@ def delete_unused_akd_files():
     Logger().info(f'删除完毕，共删除了{count}个akd文件！')
 
 # 为语音添加临时的静音
-def add_silence(sound: WwiseObject, duration: int, language: str) -> bool:
+def add_silence(sound: WwiseObject, duration: float, language: str) -> bool:
     version = project_utils.get_project_version()
     if version > 2021:
         return waapi_utils.add_silence(sound, duration, language)

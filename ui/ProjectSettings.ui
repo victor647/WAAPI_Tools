@@ -783,6 +783,58 @@
             </item>
            </layout>
           </item>
+          <item>
+           <layout class="QHBoxLayout" name="silenceDurationRow">
+            <item>
+             <widget class="QLabel" name="lblSilenceDuration">
+              <property name="text">
+               <string>静音填补时长</string>
+              </property>
+              <property name="toolTip">
+               <string>「静音填补空缺」为缺失语言新建的静音源长度（秒）。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QDoubleSpinBox" name="spbSilenceDuration">
+              <property name="toolTip">
+               <string>默认 2 秒，可调范围 0.1-60。只影响新建的静音源，已有样本不受影响。</string>
+              </property>
+              <property name="suffix">
+               <string> 秒</string>
+              </property>
+              <property name="decimals">
+               <number>1</number>
+              </property>
+              <property name="minimum">
+               <double>0.100000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>60.000000000000000</double>
+              </property>
+              <property name="singleStep">
+               <double>0.500000000000000</double>
+              </property>
+              <property name="value">
+               <double>2.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="silenceDurationSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
          </layout>
         </widget>
        </item>

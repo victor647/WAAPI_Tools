@@ -949,7 +949,7 @@ def build_tool_schemas() -> list[dict]:
         ),
         function_schema(
             "gui_open_window",
-            "软件界面操作：打开软件里的功能窗口（等同点菜单/按钮）。可用值：property_query(属性查询) / multi_editor(多项编辑器) / batch_rename(批量重命名) / table_rename(读表重命名) / audio_silence_trim(裁剪静音) / bank_matrix(Bank分配矩阵) / project_validation(工程检查) / unity_asset(UnityAsset管理) / settings(设置)",
+            "软件界面操作：打开软件里的功能窗口（等同点菜单/按钮）。可用值：property_query(属性查询) / multi_editor(多项编辑器) / batch_rename(批量重命名) / table_rename(读表重命名) / audio_silence_trim(裁剪静音) / auto_compression(自动转码设置) / bank_matrix(Bank分配矩阵) / project_validation(工程检查) / unity_asset(UnityAsset管理) / settings(设置)",
             {
                 "type": "object",
                 "properties": {

@@ -19,6 +19,8 @@ DEFAULT_CONFIG = {
         "path_hide_root": True,
         # RMS 响度分析的分块采样点数（每 buffer 单独求功率后按门限取平均）
         "loudness_buffer_samples": 1024,
+        # 静音填补空缺时新建静音的时长（秒）
+        "silence_duration": 2.0,
         # 是否记录明细日志（批量逐个对象的处理记录、WAAPI 调用流水）；关闭可减少日志写入开销
         "detail_log": False,
         # 自动转码：长/短音效占优比例，超过它才覆盖上层设置（0.6 即 40:60 分界）
@@ -310,6 +312,21 @@ def get_tool_loudness_buffer_samples() -> int:
 def set_tool_loudness_buffer_samples(samples: int) -> None:
     config = load_config()
     config.setdefault("tools", {})["loudness_buffer_samples"] = max(128, min(65536, int(samples)))
+    _write_config(config)
+
+
+# 静音填补空缺的新建静音时长（秒）：限制在 0.1~60，避免填成 0 或异常长的静音
+def get_tool_silence_duration() -> float:
+    try:
+        value = float(load_config()["tools"].get("silence_duration", 2.0))
+    except (TypeError, ValueError):
+        value = 2.0
+    return max(0.1, min(60.0, value))
+
+
+def set_tool_silence_duration(duration: float) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["silence_duration"] = round(max(0.1, min(60.0, float(duration))), 1)
     _write_config(config)
 
 

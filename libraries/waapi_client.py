@@ -106,15 +106,19 @@ class WAAPIClient(metaclass=Singleton):
         self.client.call = locked_call
 
     # 关闭Waapi客户端连接
-    def disconnect(self):
+    def disconnect(self, timeout: float = 0.5):
         if not self.client:
             return
+        client = self.client
+        self.client = None
         try:
-            self.client.disconnect()
-            self.client = None
+            # WaapiClient.disconnect() 内部会同步等待 WAMP GOODBYE 握手与线程 join（无超时），
+            # 若 Wwise 繁忙或连接半开会长时间卡住调用线程；放到守护线程里限时等待即可
+            closer = threading.Thread(target=client.disconnect, daemon=True)
+            closer.start()
+            closer.join(timeout=timeout)
         except Exception as e:
             Logger().error(f"WAAPI - Error closing WAAPI client: {e}")
-            self.client = None
 
     # 是否已经连接
     def is_connected(self):
@@ -882,7 +886,7 @@ class WAAPIClient(metaclass=Singleton):
             return {}
 
     # 为声音创建静音源插件
-    def add_silence(self, obj: dict, length: int, language='SFX') -> bool:
+    def add_silence(self, obj: dict, length: float, language='SFX') -> bool:
         if not self.client or not obj:
             return False
         try:
@@ -1157,14 +1161,14 @@ class WAAPIClient(metaclass=Singleton):
     # region UICommand
     # 执行Wwise操作
     def execute_ui_command(self, objects: list, command: str) -> bool:
-        if not self.client or len(objects) == 0:
+        if not self.client or not command:
             return False
         try:
-            obj_ids = [obj["id"] for obj in objects]
-            execute_args = {
-                'command': command,
-                'objects': obj_ids
-            }
+            execute_args = {'command': command}
+            # 有些命令不需要目标对象（如切换平台），此时不带 objects 字段
+            obj_ids = [obj["id"] for obj in (objects or []) if obj and obj.get("id")]
+            if obj_ids:
+                execute_args['objects'] = obj_ids
             self.client.call('ak.wwise.ui.commands.execute', execute_args)
             return True
         except Exception as e:
@@ -1245,6 +1249,21 @@ class WAAPIClient(metaclass=Singleton):
         try:
             execute_args = {'command': 'Redo'}
             self.client.call('ak.wwise.ui.commands.execute', execute_args)
+            return True
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
+    # 保存工程：把 Wwise 内存里的改动写回工程文件
+    def save_project(self) -> bool:
+        if not self.client:
+            return False
+        try:
+            result = self.client.call('ak.wwise.core.project.save', {})
+            if result is None:
+                Logger().error("WAAPI - 保存工程失败")
+                return False
+            Logger().debug("WAAPI - 工程已保存")
             return True
         except Exception as e:
             Logger().error(str(e))

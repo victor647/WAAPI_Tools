@@ -16,6 +16,7 @@ from globals.version import get_software_version
 from globals.constants import DOCUMENTATION_URL
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_item_model import INCLUSION_COL
+from libraries.utils import single_instance
 from libraries.utils.log_utils import Logger, set_log_theme
 from libraries.waapi_client import WAAPIClient
 from libraries.wwise_object import WwiseObject, WwiseObjectType
@@ -220,7 +221,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._setup_action_help()
         self._setup_ai_assistant()
         # 先按应用目录加载一次规范，未连接 Wwise 时也能拿到配置（连接成功后 check_wwise_connection 会按工程目录再加载）
-        project_conventions.init()
+        try:
+            project_conventions.init()
+        except Exception as e:
+            # 规范加载失败不应阻止主窗口打开
+            Logger().warning(f"加载工程规范失败（不影响启动）：{e}")
         self.check_wwise_connection()
         self.update_convention_action_states()
         self._update_history_buttons()
@@ -424,6 +429,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             "batch_rename": ("批量重命名", self.open_in_batch_rename),
             "table_rename": ("读表重命名", self.open_table_rename_window),
             "audio_silence_trim": ("裁剪静音", self.open_audio_silence_trimmer_window),
+            "auto_compression": ("自动转码设置", self.open_auto_compression_settings_window),
             "bank_matrix": ("Bank 分配矩阵", self.open_bank_assignment_matrix_window),
             "project_validation": ("工程检查", self.open_project_validation_window),
             "unity_asset": ("Unity Asset 管理", self.open_unity_asset_manager_window),
@@ -762,9 +768,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actDeleteUnusedAKDFiles.triggered.connect(audio_source_utils.delete_unused_akd_files)
         # 本地化菜单
         self.setup_batch_processor(self.actLocalizeLanguages, lambda index, obj: localization_utils.localize_languages(obj), WwiseObjectType.Sound)
-        self.setup_batch_processor(self.actFillSilenceForRefLanguage, lambda index, obj: localization_utils.import_silence_for_ref_language(obj), WwiseObjectType.Sound)
-        self.setup_batch_processor(self.actFillSilenceForAllLanguages, lambda index, obj: localization_utils.import_silence_for_all_languages(obj), WwiseObjectType.Sound)
-        self.actFilterByLanguage.triggered.connect(self.filter_by_active_language)
+        # 静音填补的语言范围跟随高级筛选的语言选项，目标对象本身不受该筛选限制
+        self.setup_batch_processor(self.actFillSilence, lambda index, obj: localization_utils.fill_silence(obj), WwiseObjectType.Sound, ignore_language_filter=True)
         # 混音菜单
         self.setup_batch_processor(self.actDownMixFader, lambda index, obj: mixing_utils.down_mix_fader(obj))
         self.setup_batch_processor(self.actVolumeToGain, lambda index, obj: mixing_utils.volume_to_gain(obj))
@@ -827,7 +832,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             line_edit.editingFinished.connect(self._persist_ai_model)
 
     # 连接批处理器到操作（processor 签名为 (index, obj)，与 batch_processor.create_async 一致）
-    def setup_batch_processor(self, action, obj_func: Callable, target_types=None, expand: bool = None):
+    def setup_batch_processor(self, action, obj_func: Callable, target_types=None, expand: bool = None, ignore_language_filter: bool = False):
         def proc(index, obj):
             obj_func(index, obj)
             return True
@@ -837,7 +842,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if self.is_busy():
                 Logger().warning(self.busy_message(action.text()))
                 return
-            objects = self.collect_tool_targets(target_types, expand)
+            objects = self.collect_tool_targets(target_types, expand, ignore_language_filter)
             if not objects:
                 Logger().warning(f"「{action.text()}」没有可处理的对象")
                 return
@@ -950,6 +955,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
         self.get_selected_objects()
 
+    # 菜单启动与单实例转发共用的载入逻辑：优先用传入的 GUID，没有则读 Wwise 当前选中
+    def load_objects_by_request(self, object_ids: list[str], from_wwise: bool):
+        if object_ids:
+            self.load_external_objects(object_ids)
+        elif from_wwise:
+            self.load_current_wwise_selection()
+
+    # 已运行实例收到其它进程转发的对象：载入表格并把窗口提到前台
+    def apply_single_instance_payload(self, payload: str):
+        data = single_instance.decode_payload(payload)
+        if data is None:
+            Logger().warning(f"忽略无法解析的单实例消息：{payload[:200]}")
+            return
+        object_ids = [str(item) for item in data.get("object_ids") or []]
+        self.load_objects_by_request(object_ids, bool(data.get("from_wwise")))
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
     # 接收 Wwise 右键菜单（Open in WAAPI Tools）传入的对象 GUID 并载入列表
     def load_external_objects(self, object_ids: list[str]):
         if not object_ids:
@@ -963,7 +988,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
         objects = []
         for raw_id in object_ids:
-            obj = waapi_utils.get_full_info_from_obj_id(str(raw_id).strip())
+            obj = waapi_utils.get_full_info_from_obj_id(self._normalize_wwise_object_id(raw_id))
             if obj.is_valid:
                 objects.append(obj)
             else:
@@ -977,6 +1002,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.apply_table_filter()
         self._object_history_reset_with_current()
         Logger().info(f"已从Wwise右键菜单载入 {len(objects)} 个对象")
+
+    # Wwise 菜单宏 ${id} 传入的 GUID 可能带引号或缺少花括号，统一成 WAQL 需要的 "{guid}" 形式
+    @staticmethod
+    def _normalize_wwise_object_id(raw_id) -> str:
+        value = str(raw_id).strip().strip('"').strip()
+        is_bare_guid = len(value) == 36 and value.count("-") == 4 and "\\" not in value
+        if is_bare_guid and not value.startswith("{"):
+            return "{" + value + "}"
+        return value
 
     # 拷贝 WwiseObject 列表（字典级拷贝）
     @staticmethod
@@ -1153,6 +1187,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def get_visible_objects(self) -> list[WwiseObject]:
         return [row_data.wwise_object for row_data in self.table.active_data]
 
+    # 获取当前筛选后仍可见、且勾选了「选中」列的 Wwise 对象
+    def get_checked_visible_objects(self) -> list[WwiseObject]:
+        return [
+            row_data.wwise_object
+            for row_data in self.table.get_active_rows(checked=True, visible=True)
+        ]
+
+    # 获取当前筛选后仍可见、但没有勾选「选中」列的对象路径：分析类工具要跳过它们及其子树
+    def get_unchecked_visible_paths(self) -> list[str]:
+        return [
+            path for path in (
+                row_data.wwise_object.path
+                for row_data in self.table.active_data
+                if not row_data[INCLUSION_COL]
+            ) if path
+        ]
+
     # 获取目标类型对象：按「自动获取子对象」设置决定只取可见行还是先展开子级再筛选
     def get_tool_target_objects(self, target_types) -> list[WwiseObject]:
         return self.collect_tool_targets(target_types)
@@ -1168,27 +1219,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             '· 设置里的「工具执行前自动获取子对象」是否被关闭'
             '（关闭时只处理表格中本身就是 AudioSource 的行）\n'
             '· 表格当前的筛选（关键字 / 高级筛选）是否把含音频源的行过滤掉了\n'
-            '· 高级筛选中是否开启了「按当前语言筛选」，把非当前语言的音频源排除了\n'
+            '· 高级筛选中是否开启了「当前语言」，把非当前语言的音频源排除了\n'
             '· 表格里的对象（如 Event、SoundBank、Bus 等）本身不含 AudioSource 子对象',
         )
 
     # 统一的工具执行前对象采集：按「工具执行前自动获取子对象」决定是否展开子级，
-    # 可按目标类型筛选（target_types 为 None 表示不筛类型），并遵循高级筛选的语言设置
-    def collect_tool_targets(self, target_types=None, expand: bool = None) -> list[WwiseObject]:
+    # 可按目标类型筛选（target_types 为 None 表示不筛类型），并遵循高级筛选的语言设置；
+    # ignore_language_filter=True 时跳过语言筛选，改用高级筛选应用前的对象列表
+    def collect_tool_targets(self, target_types=None, expand: bool = None, ignore_language_filter: bool = False) -> list[WwiseObject]:
         if target_types is not None and isinstance(target_types, WwiseObjectType):
             target_types = {target_types}
         elif target_types is not None:
             target_types = set(target_types)
         if expand is None:
             expand = user_config.get_tool_auto_fetch_children()
-        # 高级筛选中开启「按当前语言筛选」时，只收集当前语言的音频源
+        # 高级筛选中开启「当前语言」时，只收集当前语言的音频源
         language_filter_active = (
-            user_config.get_advanced_filter_settings().get("language_filter") == "active"
+            not ignore_language_filter
+            and user_config.get_advanced_filter_settings().get("language_filter") == "active"
         )
         active_language = (
             localization_utils.get_current_language() if language_filter_active else None
         )
-        visible_objects = self.get_visible_objects()
+        # 语言筛选会把其它语言的语音从表格里移除，忽略该筛选时回到筛选前的列表
+        if ignore_language_filter and self.__languageFilterBase is not None:
+            visible_objects = list(self.__languageFilterBase)
+        else:
+            visible_objects = self.get_visible_objects()
         candidate_by_id = {}
         for obj in visible_objects:
             candidate_by_id.setdefault(obj.id, obj)
@@ -1651,29 +1708,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def closeEvent(self, event):
         Logger().info("正在关闭应用程序...")
         self._save_splitter_settings()
-        # 等待 AI 对话线程结束（最多 3 秒）
+        # 关闭所有子窗口并立即隐藏主窗口，避免清理阶段阻塞消息循环导致界面显示「未响应」
+        close_child_windows(self)
+        if gv.progress_bar:
+            gv.progress_bar.close()
+        self.hide()
+        event.accept()
+        # 通知后台线程停止并做短暂等待（进程退出时 exit_process 会统一兜底结束）
         if self._ai_worker and self._ai_worker.isRunning():
             self._ai_worker.stop_requested()
-            self._ai_worker.wait(3000)
+            self._ai_worker.wait(300)
         if self._ai_model_worker and self._ai_model_worker.isRunning():
-            self._ai_model_worker.wait(2000)
+            self._ai_model_worker.wait(200)
         # 停止所有正在运行的批处理线程
         if gv.batch_processor and hasattr(gv.batch_processor, "isRunning"):
             gv.batch_processor.stop()
             if gv.batch_processor.isRunning():
-                gv.batch_processor.wait(3000)  # 等待最多3秒
-        # 关闭进度条窗口
-        if gv.progress_bar:
-            gv.progress_bar.close()
-        # 关闭所有子窗口（预览、工具窗口等），保证进程能完全退出
-        close_child_windows(self)
+                gv.batch_processor.wait(500)
         # 关闭WAAPI连接
         try:
             waapi_utils.close_client()
         except Exception as e:
             Logger().error(f"关闭WAAPI连接时出错: {e}")
         Logger().debug("应用程序已关闭")
-        event.accept()
         # 即使有窗口拒绝了 close，也让事件循环退出，避免进程留在后台
         QApplication.quit()
 

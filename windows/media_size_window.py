@@ -1,11 +1,13 @@
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QTableView, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QWidget
 
 import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_facade import TableFacade
+from libraries.utils import user_config
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import soundbank_utils, waapi_utils
+from libraries.utils.wwise import localization_utils, soundbank_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
+from ui.MediaSize_ui import Ui_MediaSize
 
 
 HEADERS = ['名称', '类型', '流式源文件', '非流式源文件', '总源文件数',
@@ -35,35 +37,36 @@ def format_ratio(numerator: float, denominator: float) -> str:
 
 
 # 媒体资源大小统计窗口：按对象逐项展示 wav/内存wem/流式wem 大小
-class MediaSizeWindow(QDialog):
+# wem 只统计当前平台（可在窗口里切换平台并同步修改 Wwise 的当前平台）
+class MediaSizeWindow(QDialog, Ui_MediaSize):
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
-        self.setWindowTitle('媒体资源大小')
-        self.resize(1100, 430)
+        self.setupUi(self)
         self.__objects: list[WwiseObject] = []
         # 每个根对象一个累加器；批处理按展开后的所有节点推进（进度条总数=节点数）
         self.__stats: list = []
         self.__nodes: list[WwiseObject] = []
         self.__node_root: list[int] = []
         self.__source_properties_by_id: dict = None
-        self.__table_view = QTableView(self)
+        # 语言筛选（口径同主窗口「高级筛选 → 语言筛选」）：None 表示统计全部语言
+        self.__only_language: str = None
+        self.__current_platform: str = ''
         self.__table = TableFacade(
-            self.__table_view,
+            self.tblMediaSize,
             headers=HEADERS,
             sorting_enabled=True,
             pinned_bottom_count=1,
         )
-        self.__table_view.doubleClicked.connect(self.__on_table_double_clicked)
-        self.__btnClose = QPushButton('关闭')
-        self.__btnClose.clicked.connect(self.accept)
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-        button_row.addWidget(self.__btnClose)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.__table_view)
-        layout.addLayout(button_row)
+        self.setup_triggers()
+        self.load_platforms()
         self.__start_measuring()
+
+    # 绑定信号槽（控件来自 ui/MediaSize.ui）
+    def setup_triggers(self):
+        self.btnClose.clicked.connect(self.accept)
+        self.tblMediaSize.doubleClicked.connect(self.__on_table_double_clicked)
+        self.cbbPlatform.currentIndexChanged.connect(self.on_platform_selected)
 
     # 双击某行在 Wwise 中选中对应对象
     def __on_table_double_clicked(self, index):
@@ -71,10 +74,69 @@ class MediaSizeWindow(QDialog):
         if 0 <= source_row < len(self.__objects):
             waapi_utils.select_objects_in_wwise([self.__objects[source_row]])
 
+    # 当前平台名（读工程信息里的 currentPlatformId）
+    @staticmethod
+    def get_current_platform_name() -> str:
+        platform_id = waapi_utils.get_project_info('currentPlatformId')
+        platform = waapi_utils.get_full_info_from_obj_id(platform_id) if platform_id else None
+        return platform.name if platform else ''
+
+    # 平台下拉：列出工程所有平台并选中当前平台
+    def load_platforms(self):
+        platforms = waapi_utils.get_project_info('platforms') or []
+        names = [item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
+                 for item in platforms]
+        names = [name for name in names if name]
+        self.__current_platform = self.get_current_platform_name()
+        self.cbbPlatform.blockSignals(True)
+        self.cbbPlatform.clear()
+        self.cbbPlatform.addItems(names)
+        index = self.cbbPlatform.findText(self.__current_platform)
+        self.cbbPlatform.setCurrentIndex(index if index >= 0 else 0)
+        self.cbbPlatform.blockSignals(False)
+
+    # 把下拉框选回指定平台（切换失败或正在跑批处理时回退显示）
+    def select_platform_in_combo(self, platform_name: str):
+        index = self.cbbPlatform.findText(platform_name)
+        if index < 0:
+            return
+        self.cbbPlatform.blockSignals(True)
+        self.cbbPlatform.setCurrentIndex(index)
+        self.cbbPlatform.blockSignals(False)
+
+    # 切换平台：同步修改 Wwise 的当前平台，然后按新平台重新统计
+    def on_platform_selected(self, _index: int):
+        platform_name = self.cbbPlatform.currentText()
+        if not platform_name or platform_name == self.__current_platform:
+            return
+        if batch_processor.is_busy():
+            Logger().warning(batch_processor.busy_message('切换平台'))
+            self.select_platform_in_combo(self.__current_platform)
+            return
+        if not waapi_utils.switch_project_platform(platform_name):
+            Logger().error(f'切换平台失败：{platform_name}')
+            self.select_platform_in_combo(self.__current_platform)
+            return
+        self.__current_platform = platform_name
+        Logger().info(f'已切换 Wwise 当前平台为「{platform_name}」，重新统计媒体资源大小')
+        self.__start_measuring()
+
+    # 语言筛选口径与主窗口一致：高级筛选选「只显示当前语言」时只统计当前语言的源（SFX 始终保留）
+    def resolve_language_filter(self):
+        settings = user_config.get_advanced_filter_settings()
+        if settings.get('language_filter') != 'active':
+            self.__only_language = None
+            self.lblLanguageFilter.setText('语言筛选：全部语言')
+            return
+        active_language = localization_utils.get_current_language()
+        self.__only_language = active_language or None
+        self.lblLanguageFilter.setText(f'语言筛选：仅当前语言（{active_language}）')
+
     # 为每个对象创建一行并异步统计
     def __start_measuring(self):
         # 每次统计都临时取主窗口当前对象，保证与表格同步
         self.__objects = gv.get_table_objects()
+        self.resolve_language_filter()
         self.__stats = [soundbank_utils.MediaSizeNodeStatistics() for _ in self.__objects]
         self.__nodes = []
         self.__node_root = []
@@ -117,7 +179,9 @@ class MediaSizeWindow(QDialog):
                 property_objects[parent.id] = parent
         properties_by_id = waapi_utils.get_objects_properties(
             list(property_objects.values()),
-            ['originalFilePath', 'originalWavFilePath', 'convertedWemFilePath', 'IsStreamingEnabled'],
+            # 语言属性一起取回，语言筛选时不必再逐个查
+            ['originalFilePath', 'originalWavFilePath', 'convertedWemFilePath', 'IsStreamingEnabled',
+             'audioSource:language'],
         )
         cached_properties = {}
         for source in sources:
@@ -136,7 +200,8 @@ class MediaSizeWindow(QDialog):
     def __measure_node(self, index: int, obj: WwiseObject):
         if index == 0:
             self.__source_properties_by_id = self.__prefetch_source_properties()
-        self.__stats[self.__node_root[index]].accumulate(obj, self.__source_properties_by_id)
+        self.__stats[self.__node_root[index]].accumulate(
+            obj, self.__source_properties_by_id, self.__only_language)
         return True
 
     # 主线程写入结果并追加合计行

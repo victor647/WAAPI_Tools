@@ -39,16 +39,14 @@ ACTION_HELP = {
     "actResetSourceEdits": "重置对象的裁剪/淡变等 Source 编辑参数。",
     "actTrimAudioSilence": "裁剪音频的头部和尾部的静音，节省包体空间。",
     "actLoudnessAdjustment": "调整或统一所选音频的响度，可调整源文件和Wwise中设置。",
-    "actAutoCompressionSettings": "根据音频时长选择转码格式（Conversion名称需带Long或Short）",
+    "actAutoCompressionSettings": "根据音频时长自动选择转码格式，会拆分成Long和Short的Conversion",
     "actAutoImport": "按 Originals 约定路径自动为对象导入 wav 文件。",
     "actRenameOriginalToWwise": "把磁盘 wav 文件名改成与 Wwise 对象一致（磁盘改名）。",
     "actTidyOriginalFolders": "自动归类整理 Originals 下的子文件夹并更新引用。",
     "actDeleteUnusedAKDFiles": "删除工程中无对应 wav 的 .akd 文件（全工程扫描，危险）。",
     # 本地化
     "actLocalizeLanguages": "为语音对象批量导入其它语言槽位的样本（按已有语言路径复制）。",
-    "actFillSilenceForRefLanguage": "为参考语言缺失的语音补静音。",
-    "actFillSilenceForAllLanguages": "为全部未导入语言补静音。",
-    "actFilterByLanguage": "表格只保留当前编辑语言对应的语音对象。",
+    "actFillSilence": "为语音补静音；高级筛选选「只显示当前语言」时只补当前语言，选「全部语言」时补齐全部未导入语言。",
     # 混音
     "actDownMixFader": "把当前层的音量/音高/滤波器参数向下逐层传递并清零当前层。",
     "actVolumeToGain": "把音量值并入增益并清零音量（Bus 类对象无增益，不处理）。",

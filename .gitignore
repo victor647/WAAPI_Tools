@@ -182,6 +182,10 @@ cython_debug/
 
 # 用户配置文件（本机个性化设置，不入库）
 user_config.json
+
+# 本地临时测试脚本（_scratch/ 下放一次性的探测/验证脚本，不进版本库）
+_scratch/
+
 .codemap/
 .codemaker/codemap/
 .codemaker/codeindex/

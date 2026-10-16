@@ -43,7 +43,8 @@
 1. 界面操作能覆盖 → 用 `gui_*`（等价于用户点按钮/菜单，同一套代码路径）：
    取选中 `gui_get_wwise_selection`；查找上下级 `gui_find_children` / `gui_find_parent`；
    筛选 `gui_set_filter`；打开窗口 `gui_open_window`（property_query / multi_editor / batch_rename /
-   table_rename / audio_silence_trim / bank_matrix / project_validation / unity_asset / settings）；
+   table_rename / audio_silence_trim / auto_compression / bank_matrix / project_validation /
+   unity_asset / settings）；
    菜单功能先 `gui_list_actions` 再 `gui_run_action`。
 2. 既要界面展示、又要数据结论 → 数据工具算结果 → `set_table_objects` 放进表格 → 开窗口展示。
 3. 界面覆盖不了（跨层级查找、条件统计、属性筛选、批量修改）→ 用底层数据工具。
@@ -62,6 +63,7 @@
 | 按属性筛选（如 Volume ≠ 0） | find_objects_by_property |
 | 计数 / 分组 / 多步统计（含求和、平均） | count_tool_items / group_tool_items / aggregate_tool_chain |
 | 音频源路径 / 音频资源体积 | get_audio_sources / calculate_audio_source_size |
+| 按音频时长自动分配转码（长短音效分开转码） | auto_compression_plan（出方案，只读）→ 用户确认 → auto_compression_apply（改工程） |
 | 改名 | rename_case / rename_with_acronym / rename_object / remove_name_prefix / remove_name_suffix |
 | 备注 / 启用 / 颜色 | set_notes / set_inclusion / update_notes_and_color |
 | 结构（父级 / 类型 / 拆文件夹 / Play 事件） | create_parent / convert_type / split_underscore_to_folder / create_play_event |
@@ -97,6 +99,10 @@
 - **新建对象的任务会自动把产出送进表格**：本次任务新建的对象（Event、对象、副本等）在结束时
   自动替换表格内容，不要再用 `set_table_objects` 去覆盖成别的集合；只有确实想让表格显示
   其它对象时才显式调用它。
+- **自动转码分两步走**：用户说「按音频时长自动设置转码 / 长短音效分开转码 / 自动分配 Conversion」时，
+  先 `auto_compression_plan` 出方案（只读），把各档数量、要改的节点数、待新建的 Conversion 讲给用户，
+  得到同意后再 `auto_compression_apply`；阈值和默认档默认取「自动转码设置」窗口里保存的值，
+  用户没特别要求就不要自己改。只想让用户自己核对/微调时，用 `gui_open_window(auto_compression)` 打开窗口。
 - 属性筛选与「属性查询」窗口同口径：逐对象读属性，某类型读不到即视为该类型不含有它，
   结果里用 `types_without_property` 汇报。
 - Wwise 中 Event 通过 EventAction(Action) 引用对象：判断“被 Event 引用”看 Action，而不是 Event 类型。

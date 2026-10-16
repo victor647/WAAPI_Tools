@@ -117,13 +117,14 @@ class MediaSizeNodeStatistics:
         self.seen_wems: set = set()
 
     # 累加单个节点的媒体（容器类节点忽略，其子节点会各自贡献）
-    def accumulate(self, obj, source_properties_by_id: dict = None) -> None:
+    # only_language 传具体语言名时只统计该语言的源，与主窗口的语言筛选口径一致
+    def accumulate(self, obj, source_properties_by_id: dict = None, only_language: str = None) -> None:
         if not obj or obj.type not in (WwiseObjectType.AudioSource, WwiseObjectType.SoundBank, WwiseObjectType.Event):
             return
         wav, memory, stream, used_files = _accumulate_media_size(
             obj, self._totals[0], self._totals[1], self._totals[2], self.used_files,
             self.seen_sources, self.seen_walked, None, self.seen_wems,
-            self.stream_file_paths, self.memory_file_paths, source_properties_by_id)
+            self.stream_file_paths, self.memory_file_paths, source_properties_by_id, only_language)
         self._totals = [wav, memory, stream]
         self.used_files = used_files
 
@@ -140,13 +141,24 @@ def get_bank_size(bank: WwiseObject, total_wav_size: float, total_memory_wem_siz
     return _accumulate_media_size(bank, total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files, set(), set(), None, set())
 
 
+# 从已取回的属性里读音频源语言名（批量预取过就不用再查一次）
+def _language_from_properties(source_properties: dict = None) -> str:
+    value = (source_properties or {}).get('audioSource:language')
+    if isinstance(value, dict):
+        return value.get('name') or None
+    if isinstance(value, str):
+        return value or None
+    return None
+
+
 # 递归累加对象子树内的媒体资源：SoundBank 按 media 包含展开、Event 按播放目标展开、
 # AudioFileSource 统计源文件大小，其余类型逐级下钻子对象
+# only_language 传具体语言名时只统计该语言的源（SFX 等非本地化源始终保留），不传则全语言统计
 def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: float, total_stream_wem_size: float,
                            used_files: list, seen_sources: set, seen_walked: set,
                            sources_to_convert: list = None, seen_wems: set = None,
                            stream_file_paths: list = None, memory_file_paths: list = None,
-                           source_properties_by_id: dict = None) -> tuple:
+                           source_properties_by_id: dict = None, only_language: str = None) -> tuple:
     if not obj or not obj.id:
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if seen_wems is None:
@@ -160,6 +172,10 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             source_properties = waapi_utils.get_object_properties(obj, [
                 'originalFilePath', 'originalWavFilePath', 'convertedWemFilePath',
             ])
+        # 语言筛选（口径与主窗口「高级筛选 → 语言筛选」一致）：非当前语言的本地化源直接跳过
+        if only_language and localization_utils.is_filtered_out_by_language(
+                obj, only_language, _language_from_properties(source_properties)):
+            return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
         wav_path = audio_source_utils.get_source_absolute_path(obj, source_properties)
         # 部分层级（如 Music Track 下的源）读不到 sound: 前缀属性时退回原始属性
         if not wav_path:
@@ -220,35 +236,21 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(inclusion_obj, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                        used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                       stream_file_paths, memory_file_paths, source_properties_by_id))
+                                       stream_file_paths, memory_file_paths, source_properties_by_id, only_language))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if obj.type == WwiseObjectType.Event:
         for target in event_utils.get_event_targets(obj):
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(target, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                        used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                       stream_file_paths, memory_file_paths, source_properties_by_id))
+                                       stream_file_paths, memory_file_paths, source_properties_by_id, only_language))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     for child in waapi_utils.get_child_objects(obj):
         total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
             _accumulate_media_size(child, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                    used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                   stream_file_paths, memory_file_paths, source_properties_by_id))
+                                   stream_file_paths, memory_file_paths, source_properties_by_id, only_language))
     return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
-
-
-# 获取当前平台名称，作为与 convertedWemFilePath 一致的转码上下文
-def _get_current_platform_name() -> str:
-    platform_id = waapi_utils.get_project_info('currentPlatformId')
-    platform = waapi_utils.get_full_info_from_obj_id(platform_id) if platform_id else None
-    if platform:
-        return platform.name
-    # 取不到当前平台时退回工程的第一个平台
-    for item in waapi_utils.get_project_info('platforms'):
-        name = item.get('name') if isinstance(item, dict) else getattr(item, 'name', None)
-        if name:
-            return name
-    return None
 
 
 # 用 ak.wwise.core.audio.convert 为未转码的源生成一次 wem 后补充压缩大小（该接口需 Wwise 2024 及以上版本）
@@ -256,7 +258,8 @@ def _convert_missing_wem_sources(sources: list, total_memory_wem_size: float, to
     if project_utils.get_project_version() < 2024:
         Logger().warning(f'当前 Wwise 版本不支持WAAPI转码（需 2024 及以上），跳过 {len(sources)} 个未转码源的 wem 生成')
         return total_memory_wem_size, total_stream_wem_size
-    platform_name = _get_current_platform_name()
+    # 当前平台作为与 convertedWemFilePath 一致的转码上下文
+    platform_name = project_utils.get_current_platform_name()
     if not platform_name:
         Logger().warning('无法确定当前平台，跳过未转码源的 wem 生成')
         return total_memory_wem_size, total_stream_wem_size

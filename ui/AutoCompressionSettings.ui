@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1180</width>
+    <width>1040</width>
     <height>650</height>
    </rect>
   </property>
@@ -15,229 +15,450 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QHBoxLayout" name="settingsLayout">
-     <item>
-      <widget class="QLabel" name="lblConversion">
-       <property name="text">
-        <string>音效 Conversion</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="lblLongConversion">
-       <property name="text">
-        <string>长音效</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="cbbLongConversion">
-       <property name="minimumSize">
-        <size>
-         <width>160</width>
-         <height>0</height>
-        </size>
-       </property>
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-         <horstretch>1</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="lblShortConversion">
-       <property name="text">
-        <string>短音效</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="cbbShortConversion">
-       <property name="minimumSize">
-        <size>
-         <width>160</width>
-         <height>0</height>
-        </size>
-       </property>
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-         <horstretch>1</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <spacer name="settingsGroupGap">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeType">
-        <enum>QSizePolicy::Fixed</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>16</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QLabel" name="lblDurationThreshold">
-       <property name="text">
-        <string>长音效时长阈值（秒）</string>
-       </property>
-       <property name="toolTip">
-        <string>时长大于阈值的样本判定为长音效；小于或等于阈值的样本判定为短音效。</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QDoubleSpinBox" name="spbDurationThreshold">
-       <property name="toolTip">
-        <string>时长大于阈值的样本判定为长音效；小于或等于阈值的样本判定为短音效。</string>
-       </property>
-       <property name="decimals">
-        <number>2</number>
-       </property>
-       <property name="maximum">
-        <double>9999.000000000000000</double>
-       </property>
-       <property name="singleStep">
-        <double>0.100000000000000</double>
-       </property>
-       <property name="value">
-        <double>0.500000000000000</double>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="btnAnalyze">
-       <property name="text">
-        <string>分析</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="btnApplySelected">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
-       <property name="text">
-        <string>应用勾选项</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <widget class="QPlainTextEdit" name="pteResult">
-     <property name="maximumSize">
-      <size>
-       <width>16777215</width>
-       <height>95</height>
-      </size>
-     </property>
-     <property name="readOnly">
-      <bool>true</bool>
-     </property>
-     <property name="placeholderText">
-      <string>分析统计和应用结果将显示在这里。</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="tableActionsLayout">
-     <item>
-      <widget class="QCheckBox" name="cbxSelectAll">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>60</width>
-         <height>16777215</height>
-        </size>
-       </property>
-       <property name="text">
-        <string>全选</string>
-       </property>
-       <property name="checked">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <spacer name="tableActionsSpacer">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <widget class="QTableWidget" name="tblPlanResults">
-     <property name="alternatingRowColors">
-      <bool>true</bool>
-     </property>
-     <property name="editTriggers">
-      <set>QAbstractItemView::NoEditTriggers</set>
-     </property>
-     <property name="selectionBehavior">
-      <enum>QAbstractItemView::SelectRows</enum>
-     </property>
-     <property name="sortingEnabled">
-      <bool>false</bool>
-     </property>
-     <column>
-      <property name="text">
-       <string>应用</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>名称</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>类型</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>路径</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>长音效数</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>短音效数</string>
-      </property>
-     </column>
-     <column>
-      <property name="text">
-       <string>应用 Conversion</string>
-      </property>
-     </column>
+    <widget class="QTabWidget" name="tabModes">
+     <widget class="QWidget" name="tabDuration">
+      <attribute name="title">
+       <string>按时长</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabDurationLayout">
+       <item>
+        <layout class="QHBoxLayout" name="settingsLayout">
+         <item>
+          <widget class="QLabel" name="lblConversion">
+           <property name="text">
+            <string>默认档 Conversion</string>
+           </property>
+           <property name="toolTip">
+            <string>中档（时长介于两个阈值之间）使用的 Conversion。长音效档用「名称_Long」、短音效档用「名称_Short」；工程里找不到时会复制该 Conversion 再改名生成。</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="cbbDefaultConversion">
+           <property name="minimumSize">
+            <size>
+             <width>220</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>中档（时长介于两个阈值之间）使用的 Conversion。长音效档用「名称_Long」、短音效档用「名称_Short」；工程里找不到时会复制该 Conversion 再改名生成。</string>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+             <horstretch>1</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="settingsGroupGap">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeType">
+            <enum>QSizePolicy::Fixed</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>16</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="cbxUseShort">
+           <property name="text">
+            <string>短音效</string>
+           </property>
+           <property name="toolTip">
+            <string>勾选时区分短音效档：播放时长小于或等于右侧阈值（秒）的样本算短音效，用「名称_Short」的 Conversion；不勾选时这些样本算默认档（中档）。默认勾选，阈值 0.5 秒。</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QDoubleSpinBox" name="spbShortThreshold">
+           <property name="toolTip">
+            <string>短音效判定阈值：播放时长小于或等于该值的样本算短音效档。取消勾选左侧「短音效阈值」时不生效。默认 0.5 秒。</string>
+           </property>
+           <property name="decimals">
+            <number>2</number>
+           </property>
+           <property name="maximum">
+            <double>9999.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.100000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.500000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="cbxUseLong">
+           <property name="text">
+            <string>长音效</string>
+           </property>
+           <property name="toolTip">
+            <string>勾选时区分长音效档：播放时长大于或等于右侧阈值（秒）的样本算长音效，用「名称_Long」的 Conversion；不勾选时这些样本算默认档（中档）。默认勾选，阈值 5 秒。</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QDoubleSpinBox" name="spbLongThreshold">
+           <property name="toolTip">
+            <string>长音效判定阈值：播放时长大于或等于该值的样本算长音效档。取消勾选左侧「长音效阈值」时不生效。默认 5 秒。</string>
+           </property>
+           <property name="decimals">
+            <number>2</number>
+           </property>
+           <property name="maximum">
+            <double>9999.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.500000000000000</double>
+           </property>
+           <property name="value">
+            <double>5.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnAnalyze">
+           <property name="text">
+            <string>分析</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnApply">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>应用</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="analysisRow">
+         <item>
+          <widget class="QWidget" name="analysisPanel" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <layout class="QVBoxLayout" name="analysisPanelLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QPlainTextEdit" name="pteResult">
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+              <property name="placeholderText">
+               <string>分析统计和应用结果将显示在这里。</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="analysisActionsLayout">
+              <item>
+               <widget class="QCheckBox" name="cbxOverwriteConflicts">
+                <property name="text">
+                 <string>覆盖已有其它 Conversion 的节点</string>
+                </property>
+                <property name="toolTip">
+                 <string>分析出「已经打开 Override，但指向的不是本次方案指定的 Conversion」的节点（表格里标红）。勾选时按方案改写这些节点，不勾选时跳过它们、保留原有设置。</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="analysisActionsSpacer">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="lblConversionPlatform">
+                <property name="text">
+                 <string>平台</string>
+                </property>
+                <property name="toolTip">
+                 <string>右侧三个档位 Conversion 的 Format / Quality 按该平台显示（取自工程 WorkUnit 里的 Conversion 设置），默认跟随 Wwise 当前平台。</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QComboBox" name="cbbConversionPlatform">
+                <property name="minimumSize">
+                 <size>
+                  <width>100</width>
+                  <height>0</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>100</width>
+                  <height>16777215</height>
+                 </size>
+                </property>
+                <property name="toolTip">
+                 <string>右侧三个档位 Conversion 的 Format / Quality 按该平台显示（取自工程 WorkUnit 里的 Conversion 设置），默认跟随 Wwise 当前平台。</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="conversionPanel" native="true">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <layout class="QVBoxLayout" name="conversionPanelLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QTableWidget" name="tblConversionSettings">
+              <property name="alternatingRowColors">
+               <bool>true</bool>
+              </property>
+              <property name="editTriggers">
+               <set>QAbstractItemView::NoEditTriggers</set>
+              </property>
+              <property name="selectionBehavior">
+               <enum>QAbstractItemView::SelectRows</enum>
+              </property>
+              <property name="sortingEnabled">
+               <bool>false</bool>
+              </property>
+              <column>
+               <property name="text">
+                <string>采样率</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>编码格式</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>音质</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>文件数量</string>
+               </property>
+              </column>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="tblPlanResults">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="editTriggers">
+          <set>QAbstractItemView::NoEditTriggers</set>
+         </property>
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
+         </property>
+         <property name="sortingEnabled">
+          <bool>false</bool>
+         </property>
+         <column>
+          <property name="text">
+           <string>名称</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>类型</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>路径</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>短音效数</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>中音效数</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>长音效数</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabName">
+      <attribute name="title">
+       <string>按名称</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabNameLayout">
+       <item>
+        <layout class="QHBoxLayout" name="nameActionsLayout">
+         <item>
+          <widget class="QPushButton" name="btnNameAnalyze">
+           <property name="text">
+            <string>分析</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnNameApply">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>应用</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="cbxNameOverwriteConflicts">
+           <property name="text">
+            <string>覆盖已有其它 Conversion 的节点</string>
+           </property>
+           <property name="toolTip">
+            <string>分析出「当前 Conversion 不是映射表指定的那一个」的节点（表格里标红）。勾选时按映射表改写这些节点，不勾选时跳过它们、保留原有设置。</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="lblNameStatus">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+             <horstretch>1</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="text">
+            <string/>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>从根节点往下遍历：节点名包含配置的关键词时，就给该节点设置对应的 Conversion（同一节点命中多个关键词时按列表顺序取第一个）。</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      <item>
+        <widget class="MapEdit" name="nameMap" />
+       </item>
+       <item>
+        <widget class="QTableWidget" name="tblNamePlanResults">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="editTriggers">
+          <set>QAbstractItemView::NoEditTriggers</set>
+         </property>
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
+         </property>
+         <property name="sortingEnabled">
+          <bool>false</bool>
+         </property>
+         <column>
+          <property name="text">
+           <string>名称</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>类型</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>路径</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>匹配关键词</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Conversion</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>
  </widget>
- <resources/>
- <connections/>
+ <customwidgets>
+  <customwidget>
+   <class>MapEdit</class>
+   <extends>QWidget</extends>
+   <header>libraries.widgets.map_edit_widget</header>
+  </customwidget>
+ </customwidgets>
+ <resources />
+ <connections />
 </ui>

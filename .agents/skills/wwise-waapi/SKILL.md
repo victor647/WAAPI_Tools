@@ -42,6 +42,7 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 | 列表计数 / 分组 | `count_tool_items` / `group_tool_items` | 包裹任意返回列表的工具 |
 | 多步链式统计 | `aggregate_tool_chain(steps, group_by, min_count)` | 例：统计含 >1 个 MusicTrack 的 MusicSegment |
 | 音频源与体积 | `get_audio_sources` / `calculate_audio_source_size` | 源文件路径、磁盘占用 |
+| 自动转码（长短音效分开转码） | `auto_compression_plan`（只读出方案）→ `auto_compression_apply`（改工程，需 `confirmed=true`） | 按 AudioFileSource 播放时长分短/中/长档，改节点的 OverrideConversion + Conversion |
 | 改名 / 备注 / 启用 / 颜色 | `rename_object` / `set_object_notes` / `set_object_inclusion` / `set_object_color` | |
 | 结构操作 | `create_parent` / `convert_to_type` / `split_underscore_to_folder` / `create_play_event` | |
 | 删除 | `delete_object`（MCP 侧需 `confirmed=true`） | AI 侧对应 `delete_objects`，由软件按修改策略弹窗确认 |

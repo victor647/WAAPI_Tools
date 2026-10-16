@@ -7,7 +7,7 @@ from typing import Any
 
 from libraries.utils import path_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import project_utils
+from libraries.utils.wwise import project_utils, waapi_utils
 
 conventions = {}
 # 当前内存中规范数据实际来自哪个文件；保存时写回同一个文件
@@ -108,6 +108,17 @@ def _app_dir() -> str:
         return ""
 
 
+# 已连接 Wwise 时返回工程目录；未连接时直接返回空，不去查询：
+# WAAPIClient 构造本身会尝试连接，没开 Wwise 工程时会长时间阻塞，卡住启动流程
+def _project_directory() -> str:
+    try:
+        if not waapi_utils.is_connected():
+            return ""
+        return project_utils.get_project_directory()
+    except Exception:
+        return ""
+
+
 def _bundled_conventions_path() -> str:
     # 打包时随 exe 打入的工程规范副本（见 packager/WAAPI_Tools_GUI.spec 的 datas）
     if not getattr(sys, "frozen", False):
@@ -166,11 +177,7 @@ def _resolve_conventions_json_path(project_directory: str) -> str | None:
 
 # 返回当前生效的工程规范文件路径（找不到时返回 None）
 def get_conventions_path() -> str | None:
-    try:
-        project_directory = project_utils.get_project_directory()
-    except Exception:
-        project_directory = ""
-    return _resolve_conventions_json_path(project_directory)
+    return _resolve_conventions_json_path(_project_directory())
 
 
 # 保存工程规范到文件并刷新内存缓存
@@ -180,11 +187,7 @@ def save_conventions(new_conventions: dict) -> bool:
     path = _conventions_path or get_conventions_path()
     if not path:
         # 没有现成文件时：工程目录优先（每工程独立规范），取不到工程目录则写到应用目录
-        try:
-            project_directory = project_utils.get_project_directory()
-        except Exception:
-            project_directory = ""
-        directory = project_directory or _app_dir()
+        directory = _project_directory() or _app_dir()
         path = os.path.join(directory, CONVENTIONS_FILE_NAME) if directory else CONVENTIONS_FILE_NAME
     try:
         with open(path, "w", encoding="utf-8") as f:

@@ -444,6 +444,30 @@ class Ui_ProjectSettings(object):
 
         self.localizationLayout.addLayout(self.referenceLanguageRow)
 
+        self.silenceDurationRow = QHBoxLayout()
+        self.silenceDurationRow.setObjectName(u"silenceDurationRow")
+        self.lblSilenceDuration = QLabel(self.grpLocalization)
+        self.lblSilenceDuration.setObjectName(u"lblSilenceDuration")
+
+        self.silenceDurationRow.addWidget(self.lblSilenceDuration)
+
+        self.spbSilenceDuration = QDoubleSpinBox(self.grpLocalization)
+        self.spbSilenceDuration.setObjectName(u"spbSilenceDuration")
+        self.spbSilenceDuration.setDecimals(1)
+        self.spbSilenceDuration.setMinimum(0.100000000000000)
+        self.spbSilenceDuration.setMaximum(60.000000000000000)
+        self.spbSilenceDuration.setSingleStep(0.500000000000000)
+        self.spbSilenceDuration.setValue(2.000000000000000)
+
+        self.silenceDurationRow.addWidget(self.spbSilenceDuration)
+
+        self.silenceDurationSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.silenceDurationRow.addItem(self.silenceDurationSpacer)
+
+
+        self.localizationLayout.addLayout(self.silenceDurationRow)
+
 
         self.tabToolsLayout.addWidget(self.grpLocalization)
 
@@ -956,6 +980,14 @@ class Ui_ProjectSettings(object):
 #if QT_CONFIG(tooltip)
         self.iptLanguages.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u591a\u4e2a\u8bed\u8a00\u7528\u5206\u53f7\u5206\u9694\uff0c\u4f8b\u5982 Chinese;Japanese\u3002", None))
 #endif // QT_CONFIG(tooltip)
+        self.lblSilenceDuration.setText(QCoreApplication.translate("ProjectSettings", u"\u9759\u97f3\u586b\u8865\u65f6\u957f", None))
+#if QT_CONFIG(tooltip)
+        self.lblSilenceDuration.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u300c\u9759\u97f3\u586b\u8865\u7a7a\u7f3a\u300d\u4e3a\u7f3a\u5931\u8bed\u8a00\u65b0\u5efa\u7684\u9759\u97f3\u6e90\u957f\u5ea6\uff08\u79d2\uff09\u3002", None))
+#endif // QT_CONFIG(tooltip)
+#if QT_CONFIG(tooltip)
+        self.spbSilenceDuration.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ed8\u8ba4 2 \u79d2\uff0c\u53ef\u8c03\u8303\u56f4 0.1-60\u3002\u53ea\u5f71\u54cd\u65b0\u5efa\u7684\u9759\u97f3\u6e90\uff0c\u5df2\u6709\u6837\u672c\u4e0d\u53d7\u5f71\u54cd\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.spbSilenceDuration.setSuffix(QCoreApplication.translate("ProjectSettings", u" \u79d2", None))
         self.grpAudioPreview.setTitle(QCoreApplication.translate("ProjectSettings", u"\u97f3\u9891\u5206\u6790\u4e0e\u9884\u89c8", None))
         self.lblPreviewDisplayMode.setText(QCoreApplication.translate("ProjectSettings", u"\u663e\u793a\u6a21\u5f0f", None))
         self.cbbPreviewDisplayMode.setItemText(0, QCoreApplication.translate("ProjectSettings", u"\u6ce2\u5f62", None))

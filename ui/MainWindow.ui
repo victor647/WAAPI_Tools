@@ -772,17 +772,9 @@ Boss        包含 Boss
     <property name="title">
      <string>本地化</string>
     </property>
-    <widget class="QMenu" name="mnuFillSilence">
-     <property name="title">
-      <string>用静音填补空缺</string>
-     </property>
-     <addaction name="actFillSilenceForRefLanguage"/>
-     <addaction name="actFillSilenceForAllLanguages"/>
-    </widget>
     <addaction name="actLocalizeLanguages"/>
-    <addaction name="mnuFillSilence"/>
+    <addaction name="actFillSilence"/>
     <addaction name="separator"/>
-    <addaction name="actFilterByLanguage"/>
     <addaction name="actMultiLanguageCompare"/>
    </widget>
    <addaction name="mnuFile"/>
@@ -1209,14 +1201,9 @@ Boss        包含 Boss
     <string>静音填补其他语言</string>
    </property>
   </action>
-  <action name="actFillSilenceForRefLanguage">
+  <action name="actFillSilence">
    <property name="text">
-    <string>参考语言</string>
-   </property>
-  </action>
-  <action name="actFillSilenceForAllLanguages">
-   <property name="text">
-    <string>全部其他语言</string>
+    <string>用静音填补空缺</string>
    </property>
   </action>
   <action name="actRenameToShort">
@@ -1257,11 +1244,6 @@ Boss        包含 Boss
   <action name="actExportAllEvents">
    <property name="text">
     <string>导出全部事件播放列表</string>
-   </property>
-  </action>
-  <action name="actFilterByLanguage">
-   <property name="text">
-    <string>按当前语言筛选</string>
    </property>
   </action>
   <action name="actHasEventReference">

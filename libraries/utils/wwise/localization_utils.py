@@ -191,7 +191,7 @@ def import_silence_for_ref_language(sound: WwiseObject):
     ref_language = get_reference_language_name()
     source_path = get_wave_path_for_language(sound, ref_language)
     if not source_path:
-        return audio_source_utils.add_silence(sound, 2, ref_language)
+        return audio_source_utils.add_silence(sound, user_config.get_tool_silence_duration(), ref_language)
     return False
 
 # 为语音对象的所有未导入语言创建静音
@@ -202,5 +202,18 @@ def import_silence_for_all_languages(sound: WwiseObject):
     for language in get_all_language_names():
         source_path = get_wave_path_for_language(sound, language)
         if not source_path:
-            added |= audio_source_utils.add_silence(sound, 2, language)
+            added |= audio_source_utils.add_silence(sound, user_config.get_tool_silence_duration(), language)
     return added
+
+
+# 用静音填补空缺：语言范围跟随高级筛选的语言选项
+# 「只显示当前语言」只补当前语言；「全部语言」补齐全部未导入语言
+def fill_silence(sound: WwiseObject):
+    if sound.type != WwiseObjectType.Sound:
+        return False
+    if user_config.get_advanced_filter_settings().get("language_filter") != "active":
+        return import_silence_for_all_languages(sound)
+    language = get_current_language()
+    if not language or get_wave_path_for_language(sound, language):
+        return False
+    return audio_source_utils.add_silence(sound, user_config.get_tool_silence_duration(), language)

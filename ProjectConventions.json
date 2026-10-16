@@ -88,5 +88,19 @@
   "BankConvention": {
     "UseAutoDefinedBank": true,
     "SplitEventMedia": false
+  },
+  "VersionControl": {
+    "Mode": "svn",
+    "P4": {
+      "Server": "",
+      "Charset": "utf8",
+      "ChangelistDescription": "【WAAPI_Tools】自动创建的修改"
+    },
+    "SVN": {
+      "Executable": "svn",
+      "Username": "",
+      "Password": "",
+      "CommitMessage": "【WAAPI_Tools】自动创建的修改"
+    }
   }
 }

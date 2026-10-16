@@ -41,6 +41,11 @@ if os.path.isfile(user_config_file):
 conventions_file = os.path.join(root, "ProjectConventions.json")
 if os.path.isfile(conventions_file):
     datas.append((conventions_file, "."))
+# 应用图标：main.py 通过 path_utils.get_resource_path("icons/Icon.png") 设置窗口图标
+icon_png_file = os.path.join(root, "icons", "Icon.png")
+if os.path.isfile(icon_png_file):
+    datas.append((icon_png_file, "icons"))
+icon_ico_file = os.path.join(root, "icons", "Icon.ico")
 binaries = qt_material_binaries
 hiddenimports = qt_material_hidden
 
@@ -88,6 +93,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=icon_ico_file if os.path.isfile(icon_ico_file) else None,
 )
 
 coll = COLLECT(
