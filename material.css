@@ -505,6 +505,15 @@ QListView::indicator:indeterminate:disabled {
 
 /*  ------------------------------------------------------------------------  */
 /*  QTableView Indicator  */
+
+/* 选中行不反色：始终使用正常勾选图标；
+   选中时给指示器垫正常行底色，避免图标与整格高亮同色而看不清 */
+TableStandardModelCell::indicator:selected,
+QTableView::indicator:selected {
+  background-color: {{secondaryDarkColor}};
+  border-radius: 4px;
+}
+
 TableStandardModelCell::indicator:enabled:checked,
 TableStandardModelCell::indicator:enabled:checked:selected,
 TableStandardModelCell::indicator:enabled:checked:focus,
@@ -512,11 +521,6 @@ QTableView::indicator:enabled:checked,
 QTableView::indicator:enabled:checked:selected,
 QTableView::indicator:enabled:checked:focus {
   image: url(icon:/primary/checkbox_checked.svg);
-}
-
-TableStandardModelCell::indicator:checked:selected:active,
-QTableView::indicator:checked:selected:active {
-  image: url(icon:/primary/checkbox_checked_invert.svg);
 }
 
 TableStandardModelCell::indicator:disabled:checked,
@@ -537,11 +541,6 @@ QTableView::indicator:enabled:unchecked:focus {
   image: url(icon:/primary/checkbox_unchecked.svg);
 }
 
-TableStandardModelCell::indicator:unchecked:selected:active,
-QTableView::indicator:unchecked:selected:active {
-  image: url(icon:/primary/checkbox_unchecked_invert.svg);
-}
-
 TableStandardModelCell::indicator:disabled:unchecked,
 TableStandardModelCell::indicator:disabled:unchecked:selected,
 TableStandardModelCell::indicator:disabled:unchecked:focus,
@@ -558,11 +557,6 @@ QTableView::indicator:enabled:indeterminate,
 QTableView::indicator:enabled:indeterminate:selected,
 QTableView::indicator:enabled:indeterminate:focus {
   image: url(icon:/primary/checkbox_indeterminate.svg);
-}
-
-TableStandardModelCell::indicator:indeterminate:selected:active,
-QTableView::indicator:indeterminate:selected:active {
-  image: url(icon:/primary/checkbox_indeterminate_invert.svg);
 }
 
 TableStandardModelCell::indicator:disabled:indeterminate,

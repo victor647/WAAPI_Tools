@@ -1,4 +1,4 @@
-from libraries.utils.wwise import waapi_utils
+from libraries.utils.wwise import mixing_utils, waapi_utils
 from libraries.wwise_object import WwiseObject
 
 FORCE_TO_MONO_THRESHOLD = 0.1
@@ -64,7 +64,7 @@ class DesignInfo(object):
             if volume:
                 self.volume = volume
         if "OutputBus" in names:
-            bus = self._reference("OutputBus")
+            bus = mixing_utils.get_output_bus(self.wwise_object, self._properties)
             if bus:
                 self.output_bus = bus
         if "Attenuation" in names:

@@ -1,15 +1,14 @@
-import clipboard
+from windows.base_analysis_dialog import BaseAnalysisDialog
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QMenu, QTableWidgetItem
+from PySide6.QtWidgets import QDialog, QTableWidgetItem
 
-import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
+from libraries.table_view.table_context_menu import install_row_object_context
+from libraries.table_view.table_path_item import create_path_item
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
-from table.wwise_table_context_menu import add_common_object_actions
-from table.wwise_table_row_data import WwiseTableRowData
 from ui.SyncTrim_ui import Ui_SyncTrim
 
 # 表格列
@@ -20,35 +19,61 @@ COL_TRIM_START = 3
 
 
 # 查看并同步一批 AudioSource 的裁剪信息（TrimBegin/TrimEnd/Fade/Loop）
-class SyncTrimWindow(QDialog, Ui_SyncTrim):
+class SyncTrimWindow(BaseAnalysisDialog, Ui_SyncTrim):
 
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-        # 输入对象从主窗口临时获取（表格里可能是容器 / Sound 等任意对象，打开后会先展开成所有 AudioSource）
-        self.__input_sources = gv.get_tool_targets(WwiseObjectType.AudioSource, expand=True)
+        # 只从主窗口勾选对象取输入（表格里可能是容器 / Sound 等任意对象，打开后会先展开成所有 AudioSource）
+        self.__input_sources = self.collect_analysis_targets(
+            WwiseObjectType.AudioSource, expand=True
+        )
         self.__sources: list = []
         self.__usage: dict = {}
         self.__path_by_id: dict = {}
         self.__input_paths: list = []
         self.__input_by_path: dict = {}
         self.__found_by_path: dict = {}
-        self.setup_triggers()
         self.tblTrimInfo.setColumnCount(9)
         self.tblTrimInfo.setHorizontalHeaderLabels(
             ['源文件路径', '使用次数', 'AudioSource路径', 'TrimBegin', 'TrimEnd', 'FadeIn', 'FadeOut',
              'LoopBegin', 'LoopEnd']
         )
+        self.setup_triggers()
         self.refresh_sources()
 
     def setup_triggers(self):
-        self.tblTrimInfo.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tblTrimInfo.customContextMenuRequested.connect(self.show_context_menu)
-        self.tblTrimInfo.itemDoubleClicked.connect(self.show_object_in_wwise)
+        install_row_object_context(
+            self.tblTrimInfo,
+            self.objects_at_row,
+            path_columns=(COL_SOURCE_PATH, COL_OBJECT_PATH),
+            audio_path_resolver=self.audio_path_at_row,
+            audio_columns=(COL_SOURCE_PATH,),
+            extra_actions=self.add_extra_actions,
+            default_action="select",
+        )
+
+    def objects_at_row(self, row: int) -> list:
+        return [self.__sources[row]] if 0 <= row < len(self.__sources) else []
+
+    def audio_path_at_row(self, row: int) -> str:
+        sources = self.objects_at_row(row)
+        return audio_source_utils.get_source_absolute_path(sources[0]) if sources else ""
+
+    def add_extra_actions(self, menu, item, payload):
+        menu.addAction('使用此版本', lambda: self.sync_from_row(item.row()))
+        menu.addAction('重新查找引用对象', self.refresh_sources)
 
     # 打开 / 刷新：先把输入对象展开成 AudioSource，再按源文件去重、逐个文件查找工程内所有引用，
     # 最后读取裁剪信息
     def refresh_sources(self):
+        self.__input_sources = self.collect_analysis_targets(
+            WwiseObjectType.AudioSource, expand=True
+        )
+        if not self.__input_sources:
+            self.lblHint.setText('主窗口未勾选任何对象')
+            self.tblTrimInfo.setRowCount(0)
+            return
         self.lblHint.setText('正在查找源文件…')
         self.__input_paths = []
         self.__prefetched_source_pages: set = set()
@@ -142,7 +167,6 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
             f'共 {len(self.__sources)} 个 AudioSource 使用 {len(self.__input_by_path)} 个源文件'
         )
         self.reload_trim_info()
-
     # 重建表格并异步读取每个对象的裁剪信息
     def reload_trim_info(self):
         self.lblHint.setText(
@@ -152,15 +176,13 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
         self.__prefetched_trim_pages: set = set()
         self.__trim_properties_by_id: dict = {}
         for index, source in enumerate(self.__sources):
-            self.tblTrimInfo.setItem(index, COL_SOURCE_PATH, QTableWidgetItem(
-                WwiseTableRowData.get_path_text(self.__path_by_id.get(source.id, ''))
+            self.tblTrimInfo.setItem(index, COL_SOURCE_PATH, create_path_item(
+                self.__path_by_id.get(source.id, '')
             ))
             self.tblTrimInfo.setItem(index, COL_USAGE, QTableWidgetItem(
                 str(self.__usage.get(source.id, ''))
             ))
-            self.tblTrimInfo.setItem(index, COL_OBJECT_PATH, QTableWidgetItem(
-                WwiseTableRowData.get_path_text(source.path)
-            ))
+            self.tblTrimInfo.setItem(index, COL_OBJECT_PATH, create_path_item(source.path))
         batch_processor.create_async(
             self.__sources,
             self.fill_source_info,
@@ -206,27 +228,6 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
     def on_info_filled(self):
         resize_table_and_window(self.tblTrimInfo, self)
 
-    # 行右键菜单：复制单元格、通用对象动作、按本行同步裁剪、重新查找引用对象
-    def show_context_menu(self, position):
-        index = self.tblTrimInfo.indexAt(position)
-        if not index.isValid():
-            return
-        row = index.row()
-        menu = QMenu(self)
-        cell = self.tblTrimInfo.item(row, index.column())
-        if cell is not None and cell.text():
-            menu.addAction('复制', lambda: clipboard.copy(cell.text()))
-        if 0 <= row < len(self.__sources):
-            add_common_object_actions(menu, self.__sources[row], self)
-        sync_action = menu.addAction('使用此版本')
-        refresh_action = menu.addAction('重新查找引用对象')
-        chosen = menu.exec(self.tblTrimInfo.viewport().mapToGlobal(position))
-        if chosen == sync_action:
-            self.sync_from_row(row)
-        elif chosen == refresh_action:
-            # 工程里可能新增了引用该文件的 AudioSource，重新走一遍查找
-            self.refresh_sources()
-
     # 以指定行为基准，把所有使用同一 originalRelativeFilePath 的 AudioSource 裁剪信息改为该行数值
     def sync_from_row(self, row: int):
         if not 0 <= row < len(self.__sources):
@@ -257,9 +258,3 @@ class SyncTrimWindow(QDialog, Ui_SyncTrim):
     def on_sync_finished(self, source_name: str, relative_path: str, count: int):
         Logger().info(f'已将 {count} 个使用 [{relative_path}] 的 AudioSource 同步为 [{source_name}] 的裁剪设置')
         self.reload_trim_info()
-
-    # 双击跳转到Wwise中的对象
-    def show_object_in_wwise(self, item: QTableWidgetItem):
-        row = item.row()
-        if 0 <= row < len(self.__sources):
-            waapi_utils.select_objects_in_wwise([self.__sources[row]])

@@ -1,3 +1,4 @@
+from libraries.base_dialog import BaseDialog
 import os
 from enum import Enum
 
@@ -32,7 +33,7 @@ def format_file_size(num_bytes: int) -> str:
 
 
 # 音频预览窗口：显示波形，支持播放/暂停/停止与拖动进度
-class AudioPreviewWindow(QDialog, Ui_AudioPreview):
+class AudioPreviewWindow(BaseDialog, Ui_AudioPreview):
 
     def __init__(
         self,
@@ -43,6 +44,8 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         tail_silence_seconds: float = None,
         fade_in_seconds: float = None,
         fade_out_seconds: float = None,
+        trim_begin_seconds: float = None,
+        trim_end_seconds: float = None,
     ):
         super().__init__(parent)
         self.setupUi(self)
@@ -52,6 +55,8 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         self.__tail_silence_seconds = tail_silence_seconds
         self.__fade_in_seconds = fade_in_seconds
         self.__fade_out_seconds = fade_out_seconds
+        self.__trim_begin_seconds = trim_begin_seconds
+        self.__trim_end_seconds = trim_end_seconds
         self.__audio_data = None
         self.__sample_rate = 0
         self.__media_player = QMediaPlayer(self)
@@ -121,7 +126,7 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
         self.__sample_rate = sample_rate
         # 先按声道数初始化电平表，未播放时显示为下限
         self.loudnessMeter.set_levels([audio_utils.MIN_LOUDNESS_DB] * max(1, channels))
-        self.__apply_silence_markers(duration)
+        self.__apply_markers(duration)
         file_size = format_file_size(os.path.getsize(self.__file_path))
         loudness_db = audio_utils.calculate_loudness(
             self.__file_path, threshold_db=audio_utils.LOUDNESS_SILENCE_THRESHOLD_DB
@@ -154,27 +159,32 @@ class AudioPreviewWindow(QDialog, Ui_AudioPreview):
             channels = [chunk[:, index] for index in range(chunk.shape[1])]
         self.loudnessMeter.set_levels([audio_utils.calculate_loudness_from_data(channel) for channel in channels])
 
-    # SilenceTrim 模式下把头部/尾部静音转成黄色区域，把保留淡入淡出画成斜线
-    def __apply_silence_markers(self, duration: float):
-        if self.__mode != AudioPreviewMode.SilenceTrim:
-            return
+    # SilenceTrim 模式下标记静音/淡变；传入 Trim 时在波形区间外绘制遮罩
+    def __apply_markers(self, duration: float):
         duration_ms = int(duration * 1000)
         regions = []
         fade_markers = []
-        if self.__head_silence_seconds:
-            head_ms = int(min(duration, self.__head_silence_seconds) * 1000)
-            regions.append((0, head_ms))
-            # 淡入位于头静音的末尾、声音开始前：从 head - fadeIn 到 head
-            if self.__fade_in_seconds:
-                fade_start = max(0, head_ms - int(self.__fade_in_seconds * 1000))
-                fade_markers.append((fade_start, head_ms, 'in'))
-        if self.__tail_silence_seconds:
-            tail_start = int(max(0.0, duration - self.__tail_silence_seconds) * 1000)
-            regions.append((tail_start, duration_ms))
-            # 淡出位于尾静音的开头、声音结束之后：从 tail_start 到 tail_start + fadeOut
-            if self.__fade_out_seconds:
-                fade_end = min(duration_ms, tail_start + int(self.__fade_out_seconds * 1000))
-                fade_markers.append((tail_start, fade_end, 'out'))
+        if self.__mode == AudioPreviewMode.SilenceTrim:
+            if self.__head_silence_seconds:
+                head_ms = int(min(duration, self.__head_silence_seconds) * 1000)
+                regions.append((0, head_ms))
+                # 淡入位于头静音的末尾、声音开始前：从 head - fadeIn 到 head
+                if self.__fade_in_seconds:
+                    fade_start = max(0, head_ms - int(self.__fade_in_seconds * 1000))
+                    fade_markers.append((fade_start, head_ms, 'in'))
+            if self.__tail_silence_seconds:
+                tail_start = int(max(0.0, duration - self.__tail_silence_seconds) * 1000)
+                regions.append((tail_start, duration_ms))
+                # 淡出位于尾静音的开头、声音结束之后：从 tail_start 到 tail_start + fadeOut
+                if self.__fade_out_seconds:
+                    fade_end = min(duration_ms, tail_start + int(self.__fade_out_seconds * 1000))
+                    fade_markers.append((tail_start, fade_end, 'out'))
+        if self.__trim_begin_seconds is not None or self.__trim_end_seconds is not None:
+            trim_begin_ms = int(max(0.0, self.__trim_begin_seconds or 0.0) * 1000)
+            trim_end_ms = int(max(0.0, self.__trim_end_seconds or 0.0) * 1000)
+            self.waveform.set_active_region(trim_begin_ms, max(trim_begin_ms, duration_ms - trim_end_ms))
+        else:
+            self.waveform.set_active_region(None)
         self.waveform.set_silence_regions(regions)
         self.waveform.set_fade_markers(fade_markers)
 

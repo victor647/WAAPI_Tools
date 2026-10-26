@@ -7,7 +7,7 @@ from libraries.wwise_object import WwiseObject
 
 # 可能带 ActiveSourceList 的对象类型
 OWNER_TAGS = {
-    'Sound', 'AudioFileSource', 'ActorMixer', 'RandomSequenceContainer', 'SwitchContainer',
+    'Sound', 'AudioFileSource', 'ActorMixer', 'PropertyContainer', 'RandomSequenceContainer', 'SwitchContainer',
     'BlendContainer', 'MusicSegment', 'MusicTrack',
 }
 

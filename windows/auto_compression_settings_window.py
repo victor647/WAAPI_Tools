@@ -1,3 +1,4 @@
+from windows.base_analysis_dialog import BaseAnalysisDialog
 import clipboard
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QDialog, QHeaderView, QMenu, QMessageBox, QTableWidgetItem, QWidget
@@ -14,9 +15,10 @@ from libraries.utils.wwise import (
     conversion_settings_utils,
     project_utils,
     waapi_utils,
+    wwise_compat,
 )
 from libraries.wwise_object import WwiseObject, WwiseObjectType
-from table.wwise_table_context_menu import add_common_object_actions, connect_double_click_select
+from libraries.table_view.table_context_menu import install_row_object_context
 from table.wwise_table_row_data import WwiseTableRowData
 from ui.AutoCompressionSettings_ui import Ui_AutoCompressionSettings
 from windows.auto_compression_detail_window import AutoCompressionDetailWindow
@@ -69,8 +71,18 @@ COL_NAME_PLAN_CONVERSION = 4
 COL_KEYWORD = 0
 COL_KEYWORD_CONVERSION = 1
 
+# OutputBus 模式结果表的列
+COL_BUS_PLAN_NAME = 0
+COL_BUS_PLAN_TYPE = 1
+COL_BUS_PLAN_PATH = 2
+COL_BUS_PLAN_BUS = 3
+COL_BUS_PLAN_CONVERSION = 4
+# OutputBus 映射表的列
+COL_BUS = 0
+COL_BUS_CONVERSION = 1
 
-class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
+
+class AutoCompressionSettingsWindow(BaseAnalysisDialog, Ui_AutoCompressionSettings):
 
     _NO_PLAN_TOOLTIP = "没有可应用的节点：请先分析，或勾选「覆盖已有其它 Conversion 的节点」覆盖冲突节点。"
 
@@ -80,7 +92,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.__targets: dict[str, WwiseObject] = {}
         # 主窗口表格行（规范化路径）的「选中」列勾选状态：未勾选的行连同子树都不分析
         self.__row_checked_by_path: dict[str, bool] = {}
-        self.__target_type_counts = {"ActorMixer": 0, "Container": 0}
+        self.__target_type_counts = {"PropertyContainer": 0, "Container": 0}
         self.__audio_sources: dict[str, WwiseObject] = {}
         self.__duration_by_source_id: dict = {}
         self.__plans: list[compression_utils.ConversionAssignmentPlan] = []
@@ -101,7 +113,13 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.__name_mapping: list = []
         self.__name_failed_paths: list[str] = []
         self.__name_apply_total = 0
-        # 枚举阶段的模式：duration=按时长（同时收集音源与时长），name=按名称（只收集节点）
+        self.__bus_plans: list[compression_utils.BusConversionPlan] = []
+        self.__bus_plan_batches: list[list] = []
+        self.__bus_mapping: list = []
+        self.__bus_failed_paths: list[str] = []
+        self.__bus_apply_total = 0
+        self.__output_bus_by_target_id: dict = {}
+        # 枚举阶段的模式：duration=按时长（同时收集音源与时长），name/bus=只收集节点
         self.__enumerate_mode = "duration"
         self.__processing_stage = ""
         self.__summary = {}
@@ -111,6 +129,10 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.nameMap.set_fixed_row_count(6)
         # Conversion 列拉伸填满剩余宽度，下拉里能看全 Conversion 名字
         self.nameMap.set_column_stretch(COL_KEYWORD_CONVERSION)
+        # OutputBus 模式：总线 -> Conversion 映射表，两列都用下拉选择
+        self.busMap.set_headers(["OutputBus", "Conversion"])
+        self.busMap.set_fixed_row_count(6)
+        self.busMap.set_column_stretch(COL_BUS_CONVERSION)
         self.load_user_settings()
         self.setup_triggers()
         self.tblPlanResults.setItemDelegate(SeverityTableDelegate(self.tblPlanResults))
@@ -121,6 +143,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.tblConversionSettings.verticalHeader().setDefaultSectionSize(SETTING_ROW_HEIGHT)
         self.tblConversionSettings.verticalHeader().setMinimumSectionSize(SETTING_ROW_HEIGHT)
         self.tblNamePlanResults.setItemDelegate(SeverityTableDelegate(self.tblNamePlanResults))
+        self.tblBusPlanResults.setItemDelegate(SeverityTableDelegate(self.tblBusPlanResults))
         self.analysisRow.setAlignment(self.analysisPanel, Qt.AlignmentFlag.AlignTop)
         self.analysisRow.setAlignment(self.conversionPanel, Qt.AlignmentFlag.AlignTop)
         self._render_conversion_settings()
@@ -146,15 +169,31 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.cbxUseLong.toggled.connect(self._on_detection_toggled)
         self.cbxOverwriteConflicts.toggled.connect(self._on_overwrite_conflicts_toggled)
         self.cbxNameOverwriteConflicts.toggled.connect(self._on_overwrite_conflicts_toggled)
+        self.cbxBusOverwriteConflicts.toggled.connect(self._on_overwrite_conflicts_toggled)
         self.cbbConversionPlatform.currentIndexChanged.connect(self._on_platform_changed)
         self.btnNameAnalyze.clicked.connect(self.start_name_analysis)
         self.btnNameApply.clicked.connect(self.apply_name_plans)
-        self.tblPlanResults.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tblPlanResults.customContextMenuRequested.connect(self.show_context_menu)
-        connect_double_click_select(self.tblPlanResults, self._targets_at_row)
-        self.tblNamePlanResults.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tblNamePlanResults.customContextMenuRequested.connect(self.show_name_context_menu)
-        connect_double_click_select(self.tblNamePlanResults, self._name_targets_at_row)
+        self.btnBusAnalyze.clicked.connect(self.start_bus_analysis)
+        self.btnBusApply.clicked.connect(self.apply_bus_plans)
+        install_row_object_context(
+            self.tblPlanResults,
+            self._targets_at_row,
+            path_columns=(COL_PATH,),
+            extra_actions=self.add_plan_extra_actions,
+            default_action="select",
+        )
+        install_row_object_context(
+            self.tblNamePlanResults,
+            self._name_targets_at_row,
+            path_columns=(COL_NAME_PLAN_PATH,),
+            default_action="select",
+        )
+        install_row_object_context(
+            self.tblBusPlanResults,
+            self._bus_targets_at_row,
+            path_columns=(COL_BUS_PLAN_PATH,),
+            default_action="select",
+        )
 
     @staticmethod
     def _get_scan_roots(objects: list[WwiseObject]) -> list[WwiseObject]:
@@ -163,26 +202,15 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
     # 本次分析的目标：主窗口表格里勾选了「选中」列的可见对象（根去重）
     # 未勾选的对象连同其整棵子树都不参与分析；采集不到目标时给出提示并返回 None
     def _collect_scan_targets(self) -> list:
-        checked_objects = gv.get_checked_table_objects()
+        checked_objects, self.__row_checked_by_path = self.analysis_scope()
         roots = self._get_scan_roots(checked_objects)
         if not roots:
             if gv.get_table_objects():
-                message = (
-                    "主窗口表格里没有勾选任何对象（表格最左侧的「选中」列）。\n"
-                    "请先勾选要分析的对象。"
-                )
+                message = self.no_checked_objects_message()
             else:
                 message = "表格中没有可识别的对象。"
             QMessageBox.warning(self, "自动转码设置", message)
             return None
-        # 表格行的勾选状态：某对象取它自己或上层最近的表格行，那一行未勾选就整棵子树跳过
-        row_checked_by_path = {
-            compression_utils.normalized_path(obj.path): True
-            for obj in checked_objects if obj.path
-        }
-        for path in gv.get_unchecked_table_paths():
-            row_checked_by_path.setdefault(compression_utils.normalized_path(path), False)
-        self.__row_checked_by_path = row_checked_by_path
         return roots
 
     def load_user_settings(self):
@@ -198,7 +226,10 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self._sync_threshold_enabled()
         overwrite_conflicts = bool(saved.get("overwrite_conflicts", True))
         # 两个模式各有一个勾选框（同一份设置），初值保持一致
-        for checkbox in (self.cbxOverwriteConflicts, self.cbxNameOverwriteConflicts):
+        for checkbox in (
+            self.cbxOverwriteConflicts, self.cbxNameOverwriteConflicts,
+            self.cbxBusOverwriteConflicts,
+        ):
             checkbox.blockSignals(True)
             checkbox.setChecked(overwrite_conflicts)
             checkbox.blockSignals(False)
@@ -206,6 +237,12 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.nameMap.set_data([
             (str(item.get("keyword", "")), str(item.get("conversion", "")))
             for item in keyword_map
+            if isinstance(item, dict)
+        ])
+        bus_map = saved.get("output_bus_map") or []
+        self.busMap.set_data([
+            (str(item.get("bus", "")), str(item.get("conversion", "")))
+            for item in bus_map
             if isinstance(item, dict)
         ])
 
@@ -221,6 +258,10 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             "name_keyword_map": [
                 {"keyword": keyword, "conversion": conversion}
                 for keyword, conversion in self.nameMap.rows()
+            ],
+            "output_bus_map": [
+                {"bus": bus, "conversion": conversion}
+                for bus, conversion in self.busMap.rows()
             ],
         })
 
@@ -311,10 +352,16 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             saved.get("default_conversion"), saved.get("default_conversion_id"),
         )
         # 名称模式的候选 Conversion：下拉里列出工程里的全部 Conversion
+        conversion_names = [obj.name for obj in sorted(conversions, key=lambda item: item.name)]
         self.nameMap.set_column_choices(
-            COL_KEYWORD_CONVERSION,
-            [obj.name for obj in sorted(conversions, key=lambda item: item.name)],
+            COL_KEYWORD_CONVERSION, conversion_names,
         )
+        # OutputBus 模式：总线名与 Conversion 名都做成下拉
+        buses = waapi_utils.find_all_objects_by_type(WwiseObjectType.Bus)
+        self.busMap.set_column_choices(
+            COL_BUS, [obj.name for obj in sorted(buses, key=lambda item: item.name)]
+        )
+        self.busMap.set_column_choices(COL_BUS_CONVERSION, conversion_names)
         self._update_control_state()
 
     # 填充下拉框：优先按上次保存的 id 选中，其次按名称，都没有就选第一项
@@ -373,9 +420,12 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self._clear_analysis_results()
         self.pteResult.setPlainText("分析设置已修改，请重新分析后再应用。")
 
-    # 两个模式的「是否覆盖冲突节点」共用一份设置，勾选其一即同步另一个
+    # 三个模式的「是否覆盖冲突节点」共用一份设置，勾选其一即同步其余
     def _on_overwrite_conflicts_toggled(self, checked: bool):
-        for checkbox in (self.cbxOverwriteConflicts, self.cbxNameOverwriteConflicts):
+        for checkbox in (
+            self.cbxOverwriteConflicts, self.cbxNameOverwriteConflicts,
+            self.cbxBusOverwriteConflicts,
+        ):
             if checkbox.isChecked() != checked:
                 checkbox.blockSignals(True)
                 checkbox.setChecked(checked)
@@ -387,6 +437,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
     def _refresh_conflict_indicator(self):
         duration_conflicts = list(self.__conflict_plans)
         name_conflicts = [plan for plan in self.__name_plans if plan.conflict]
+        bus_conflicts = [plan for plan in self.__bus_plans if plan.conflict]
         self._update_conflict_checkbox(
             self.cbxOverwriteConflicts, duration_conflicts,
             "已有 Override 且不是本次方案指定的 Conversion 的节点（表格名称列标红）。"
@@ -395,6 +446,11 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self._update_conflict_checkbox(
             self.cbxNameOverwriteConflicts, name_conflicts,
             "当前 Conversion 不是映射表指定的那一个的节点（表格 Conversion 列标红）。"
+            "勾选时按映射表改写这些节点，不勾选时跳过它们、保留原有设置。",
+        )
+        self._update_conflict_checkbox(
+            self.cbxBusOverwriteConflicts, bus_conflicts,
+            "当前 Conversion 不是 OutputBus 映射指定的那一个的节点（表格 Conversion 列标红）。"
             "勾选时按映射表改写这些节点，不勾选时跳过它们、保留原有设置。",
         )
 
@@ -448,6 +504,13 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             if overwrite_conflicts or not plan.conflict
         ]
 
+    def _bus_plans_to_apply(self) -> list:
+        overwrite_conflicts = self.cbxBusOverwriteConflicts.isChecked()
+        return [
+            plan for plan in self.__bus_plans
+            if overwrite_conflicts or not plan.conflict
+        ]
+
     def _update_control_state(self):
         is_processing = bool(self.__processing_stage)
         has_plans = bool(self.__table_plans)
@@ -457,6 +520,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self._sync_threshold_enabled()
         self.cbxOverwriteConflicts.setEnabled(not is_processing)
         self.cbxNameOverwriteConflicts.setEnabled(not is_processing)
+        self.cbxBusOverwriteConflicts.setEnabled(not is_processing)
         self.btnAnalyze.setEnabled(not is_processing)
         self.tblPlanResults.setEnabled(not is_processing and has_plans)
         # 分析出的 Override 节点必须整体应用（去掉上层会让下层继承关系错乱），因此不做部分勾选
@@ -468,6 +532,12 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.btnNameApply.setEnabled(not is_processing and bool(name_pending_plans))
         self.btnNameApply.setToolTip(
             "" if is_processing or name_pending_plans else self._NO_PLAN_TOOLTIP
+        )
+        self.btnBusAnalyze.setEnabled(not is_processing)
+        bus_pending_plans = self._bus_plans_to_apply()
+        self.btnBusApply.setEnabled(not is_processing and bool(bus_pending_plans))
+        self.btnBusApply.setToolTip(
+            "" if is_processing or bus_pending_plans else self._NO_PLAN_TOOLTIP
         )
 
     def start_analysis(self):
@@ -503,7 +573,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             )
         )
         self.__targets.clear()
-        self.__target_type_counts = {"ActorMixer": 0, "Container": 0}
+        self.__target_type_counts = {"PropertyContainer": 0, "Container": 0}
         self.__audio_sources.clear()
         self.__duration_by_source_id.clear()
         self.__plans.clear()
@@ -519,7 +589,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.__enumerate_mode = "duration"
         self.__processing_stage = "analyze"
         self._update_control_state()
-        self.pteResult.setPlainText("正在枚举表格对象下的 ActorMixer、Container 与 AudioFileSource…")
+        self.pteResult.setPlainText("正在枚举表格对象下的 PropertyContainer、Container 与 AudioFileSource…")
         started = batch_processor.create_async(
             table_objects,
             self._enumerate_root_object,
@@ -536,7 +606,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
 
     def _enumerate_root_object(self, _index: int, root: WwiseObject) -> bool:
         targets, audio_sources = compression_utils.discover_targets_and_sources(
-            root, include_sources=self.__enumerate_mode != "name"
+            root, include_sources=self.__enumerate_mode not in ("name", "bus")
         )
         for obj in targets:
             if obj.id in self.__targets:
@@ -546,8 +616,8 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
                 continue
             self.__targets[obj.id] = obj
             object_type = (obj.wwise_dict or {}).get("type", "")
-            if object_type == WwiseObjectType.ActorMixer.value:
-                self.__target_type_counts["ActorMixer"] += 1
+            if wwise_compat.is_property_container_type(object_type):
+                self.__target_type_counts["PropertyContainer"] += 1
             else:
                 self.__target_type_counts["Container"] += 1
         for obj in audio_sources:
@@ -561,7 +631,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         if not self.__targets:
             self.__processing_stage = ""
             self._update_control_state()
-            QMessageBox.warning(self, "自动转码设置", "表格对象下没有找到 ActorMixer。")
+            QMessageBox.warning(self, "自动转码设置", "表格对象下没有找到 PropertyContainer（旧版称 ActorMixer）。")
             return
         source_pages = list(waapi_utils.iter_object_pages(list(self.__audio_sources.values())))
         if not source_pages:
@@ -622,7 +692,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         if not self.__targets:
             self.__processing_stage = ""
             self._update_control_state()
-            QMessageBox.warning(self, "自动转码设置", "表格对象下没有找到 ActorMixer。")
+            QMessageBox.warning(self, "自动转码设置", "表格对象下没有找到 PropertyContainer（旧版称 ActorMixer）。")
             return
 
         use_short, use_long = self._detection_flags()
@@ -686,7 +756,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             counts.append(f"长 {summary['long_count']}")
         return (
             f"共包含音频文件：{len(self.__audio_sources)} 个（{'，'.join(counts)}，"
-            f"分析节点：{len(self.__plans)} 个（ActorMixer {self.__target_type_counts['ActorMixer']}，"
+            f"分析节点：{len(self.__plans)} 个（PropertyContainer {self.__target_type_counts['PropertyContainer']}，"
             f"Container {self.__target_type_counts['Container']}）；需要 Override 的节点 {len(self.__override_plans)} 个。"
         )
 
@@ -779,21 +849,12 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         plan = self._plan_at_row(row)
         return [plan.target] if plan is not None else []
 
-    # 行右键菜单：路径列可复制完整路径，行上提供通用对象动作（在Wwise中选中）
-    def show_context_menu(self, position):
-        index = self.tblPlanResults.indexAt(position)
-        if not index.isValid():
+    def add_plan_extra_actions(self, menu, item, payload):
+        if item.column() not in COUNT_COLUMNS:
             return
-        plan = self._plan_at_row(index.row())
-        if plan is None:
-            return
-        menu = QMenu(self)
-        if index.column() == COL_PATH:
-            menu.addAction('复制', lambda: self.copy_object_path(plan.target))
-        if index.column() in COUNT_COLUMNS:
+        plan = self._plan_at_row(item.row())
+        if plan is not None:
             menu.addAction('详情', lambda: self.show_plan_details(plan))
-        add_common_object_actions(menu, plan.target, self)
-        menu.exec(self.tblPlanResults.viewport().mapToGlobal(position))
 
     # 右键「详情」：列出该节点包含的每个音频文件的时长与分档判定
     def show_plan_details(self, plan: compression_utils.ConversionAssignmentPlan):
@@ -889,7 +950,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
     def _on_apply_interrupted(self):
         self.__processing_stage = ""
         self._update_control_state()
-        QMessageBox.warning(self, "自动转码设置", "Conversion 应用被中断，部分 ActorMixer 可能已修改。")
+        QMessageBox.warning(self, "自动转码设置", "Conversion 应用被中断，部分 PropertyContainer 可能已修改。")
 
     # region 按名称模式
     # 读取映射表并解析成 (关键词, WwiseObject)；配置有问题时弹窗并返回 None
@@ -1034,20 +1095,6 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         plan = self._name_plan_at_row(row)
         return [plan.target] if plan is not None else []
 
-    # 名称模式结果表的右键菜单：复制路径 + 通用对象动作
-    def show_name_context_menu(self, position):
-        index = self.tblNamePlanResults.indexAt(position)
-        if not index.isValid():
-            return
-        plan = self._name_plan_at_row(index.row())
-        if plan is None:
-            return
-        menu = QMenu(self)
-        if index.column() == COL_NAME_PLAN_PATH:
-            menu.addAction('复制', lambda: self.copy_object_path(plan.target))
-        add_common_object_actions(menu, plan.target, self)
-        menu.exec(self.tblNamePlanResults.viewport().mapToGlobal(position))
-
     def apply_name_plans(self):
         plans = self._name_plans_to_apply()
         if not plans:
@@ -1088,7 +1135,7 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
             )
 
     def _apply_name_plan_batch(self, _index: int, plans: list) -> bool:
-        self.__name_failed_paths.extend(compression_utils.apply_name_conversion_plans(plans))
+        self.__name_failed_paths.extend(compression_utils.apply_override_conversion_plans(plans))
         return True
 
     def _on_name_apply_finished(self):
@@ -1110,6 +1157,229 @@ class AutoCompressionSettingsWindow(QDialog, Ui_AutoCompressionSettings):
         self.__processing_stage = ""
         self._update_control_state()
         QMessageBox.warning(self, "自动转码设置", "名称模式任务被中断，部分对象可能已修改。")
+
+    # region 跟随 OutputBus 模式
+    # 读取映射表并解析成 (Bus, Conversion)；配置有问题时弹窗并返回 None
+    def _read_bus_mapping(self) -> list:
+        rows = self.busMap.rows()
+        if not rows:
+            QMessageBox.warning(self, "自动转码设置", "请先配置「OutputBus → Conversion」映射。")
+            return None
+        buses_by_name = {
+            obj.name: obj for obj in waapi_utils.find_all_objects_by_type(WwiseObjectType.Bus)
+        }
+        conversions_by_name = {
+            obj.name: obj
+            for obj in waapi_utils.find_all_objects_by_type(WwiseObjectType.Conversion)
+        }
+        mapping = []
+        for bus_name, conversion_name in rows:
+            if not bus_name:
+                QMessageBox.warning(self, "自动转码设置", "OutputBus 不能为空。")
+                return None
+            bus = buses_by_name.get(bus_name)
+            if bus is None:
+                QMessageBox.warning(self, "自动转码设置", f"找不到 Bus 对象：{bus_name}")
+                return None
+            conversion = conversions_by_name.get(conversion_name)
+            if conversion is None:
+                QMessageBox.warning(self, "自动转码设置", f"找不到 Conversion 对象：{conversion_name}")
+                return None
+            mapping.append((bus, conversion))
+        return mapping
+
+    # OutputBus 模式分析：枚举表格对象下的节点，按当前有效 OutputBus 匹配映射
+    def start_bus_analysis(self):
+        mapping = self._read_bus_mapping()
+        if mapping is None:
+            return
+        table_objects = self._collect_scan_targets()
+        if table_objects is None:
+            return
+        if batch_processor.is_busy():
+            QMessageBox.warning(self, "自动转码设置", batch_processor.busy_message("分析"))
+            return
+
+        self.__bus_mapping = mapping
+        self.__bus_plans.clear()
+        self.__bus_plan_batches.clear()
+        self.__bus_failed_paths.clear()
+        self.__output_bus_by_target_id.clear()
+        self.__targets.clear()
+        self.__override_states.clear()
+        self.__bus_apply_total = 0
+        self._refresh_conflict_indicator()
+        self.__enumerate_mode = "bus"
+        self.__processing_stage = "bus-analyze"
+        self._update_control_state()
+        self.lblBusStatus.setText("正在枚举对象…")
+        started = batch_processor.create_async(
+            table_objects,
+            self._enumerate_root_object,
+            "自动转码设置：枚举对象",
+            "name",
+            on_finished=self._on_bus_enumerate_finished,
+            on_interrupted=self._on_bus_interrupted,
+            progress_text_func=lambda _index, obj: obj.name,
+        )
+        if not started:
+            self.__processing_stage = ""
+            self._update_control_state()
+            QMessageBox.warning(self, "自动转码设置", batch_processor.busy_message("分析"))
+
+    def _on_bus_enumerate_finished(self):
+        if not self.__targets:
+            self.__processing_stage = ""
+            self._update_control_state()
+            QMessageBox.warning(self, "自动转码设置", "表格对象下没有找到可配置的节点。")
+            return
+        pages = list(waapi_utils.iter_object_pages(list(self.__targets.values())))
+        if not pages:
+            self._on_bus_state_finished()
+            return
+        self.lblBusStatus.setText(
+            f"已枚举 {len(self.__targets)} 个节点，正在分页读取 OutputBus…"
+        )
+        started = batch_processor.create_async(
+            pages,
+            self._read_bus_state_page,
+            "自动转码设置：读取 OutputBus",
+            on_finished=self._on_bus_state_finished,
+            on_interrupted=self._on_bus_interrupted,
+            progress_text_func=lambda _index, page: f"{len(page)} 个节点",
+        )
+        if not started:
+            self.__processing_stage = ""
+            self._update_control_state()
+            QMessageBox.warning(
+                self, "自动转码设置", batch_processor.busy_message("读取 OutputBus")
+            )
+
+    # 一页同时读回有效 OutputBus 与现有 Override 状态（冲突判定用）
+    def _read_bus_state_page(self, _index: int, page: list) -> bool:
+        for target_id, values in compression_utils.read_page_bus_states(page).items():
+            self.__output_bus_by_target_id[target_id] = values
+            self.__override_states[target_id] = values
+        return True
+
+    def _on_bus_state_finished(self):
+        self.__processing_stage = ""
+        self.__bus_plans = compression_utils.build_bus_conversion_plans(
+            list(self.__targets.values()), self.__output_bus_by_target_id, self.__bus_mapping
+        )
+        compression_utils.mark_conversion_conflicts(self.__bus_plans, self.__override_states)
+        self._render_bus_plan_results()
+        self._refresh_conflict_indicator()
+        self._update_control_state()
+
+    def _render_bus_plan_results(self):
+        table = self.tblBusPlanResults
+        table.setSortingEnabled(False)
+        table.setRowCount(len(self.__bus_plans))
+        for row, plan in enumerate(self.__bus_plans):
+            name_item = QTableWidgetItem(plan.target.name)
+            name_item.setData(Qt.ItemDataRole.UserRole, plan.target.id)
+            table.setItem(row, COL_BUS_PLAN_NAME, name_item)
+            table.setItem(row, COL_BUS_PLAN_TYPE, QTableWidgetItem(plan.target.type.name))
+            path_item = QTableWidgetItem(WwiseTableRowData.get_path_text(plan.target.path))
+            path_item.setData(Qt.ItemDataRole.UserRole, plan.target.id)
+            table.setItem(row, COL_BUS_PLAN_PATH, path_item)
+            table.setItem(row, COL_BUS_PLAN_BUS, QTableWidgetItem(plan.bus.name))
+            conversion_item = QTableWidgetItem(plan.conversion.name)
+            # 现有 Conversion 与映射表不一致的节点：Conversion 列标红，悬停看差异
+            if plan.conflict:
+                conversion_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Danger)
+                conversion_item.setToolTip(
+                    f"已有其它 Override：{plan.existing_conversion_name or '（未知）'}；"
+                    f"应用后改为 {plan.conversion.name}"
+                )
+            table.setItem(row, COL_BUS_PLAN_CONVERSION, conversion_item)
+        table.setSortingEnabled(True)
+        # 列宽按内容自动（不撑宽窗口），剩余宽度给「路径」列
+        auto_adjust_window_width(table, self, resize_columns=True, resize_window=False)
+        table.horizontalHeader().setSectionResizeMode(
+            COL_BUS_PLAN_PATH, QHeaderView.ResizeMode.Stretch
+        )
+        self.lblBusStatus.setText(
+            f"匹配到 {len(self.__bus_plans)} 个节点。"
+            if self.__bus_plans else "没有节点的 OutputBus 命中配置的映射。"
+        )
+
+    def _bus_plan_at_row(self, row: int):
+        item = self.tblBusPlanResults.item(row, COL_BUS_PLAN_NAME)
+        if item is None:
+            return None
+        target_id = item.data(Qt.ItemDataRole.UserRole)
+        return next((plan for plan in self.__bus_plans if plan.target.id == target_id), None)
+
+    def _bus_targets_at_row(self, row: int) -> list:
+        plan = self._bus_plan_at_row(row)
+        return [plan.target] if plan is not None else []
+
+    def apply_bus_plans(self):
+        plans = self._bus_plans_to_apply()
+        if not plans:
+            QMessageBox.information(
+                self, "自动转码设置",
+                "没有需要应用的节点：请先分析，或勾选「覆盖已有其它 Conversion 的节点」。",
+            )
+            return
+        if batch_processor.is_busy():
+            QMessageBox.warning(
+                self, "自动转码设置", batch_processor.busy_message("应用 Conversion")
+            )
+            return
+
+        page_size = max(1, user_config.get_tool_page_size())
+        self.__bus_plan_batches = [
+            plans[index:index + page_size]
+            for index in range(0, len(plans), page_size)
+        ]
+        self.__bus_apply_total = len(plans)
+        self.__bus_failed_paths.clear()
+        self.__processing_stage = "bus-apply"
+        self._update_control_state()
+        started = batch_processor.create_async(
+            self.__bus_plan_batches,
+            self._apply_bus_plan_batch,
+            "自动转码设置：按 OutputBus 应用 Conversion",
+            on_finished=self._on_bus_apply_finished,
+            on_interrupted=self._on_bus_interrupted,
+            progress_text_func=lambda _index, plans_batch: f"{len(plans_batch)} 个节点",
+            undo_group="自动转码设置",
+        )
+        if not started:
+            self.__processing_stage = ""
+            self._update_control_state()
+            QMessageBox.warning(
+                self, "自动转码设置", batch_processor.busy_message("应用 Conversion")
+            )
+
+    def _apply_bus_plan_batch(self, _index: int, plans: list) -> bool:
+        self.__bus_failed_paths.extend(compression_utils.apply_override_conversion_plans(plans))
+        return True
+
+    def _on_bus_apply_finished(self):
+        self.__processing_stage = ""
+        self._update_control_state()
+        failed_count = len(set(self.__bus_failed_paths))
+        applied_count = self.__bus_apply_total - failed_count
+        skipped_count = len(self.__bus_plans) - self.__bus_apply_total
+        text = f"已应用节点：{self.__bus_apply_total} 个（成功 {applied_count}，失败 {failed_count}"
+        text += f"，跳过冲突节点 {skipped_count} 个）。" if skipped_count else "）。"
+        self.lblBusStatus.setText(text)
+        Logger().info(text)
+        if failed_count:
+            QMessageBox.warning(
+                self, "自动转码设置", f"{failed_count} 个目标对象设置失败，详情见日志。"
+            )
+
+    def _on_bus_interrupted(self):
+        self.__processing_stage = ""
+        self._update_control_state()
+        QMessageBox.warning(self, "自动转码设置", "OutputBus 模式任务被中断，部分对象可能已修改。")
+
+    # endregion 跟随 OutputBus 模式
 
     def closeEvent(self, event):
         if self.__processing_stage:

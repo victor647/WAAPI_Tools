@@ -230,6 +230,38 @@
          </layout>
         </widget>
        </item>
+       <item>
+        <widget class="QGroupBox" name="grpLocalizationSettings">
+         <property name="title">
+          <string>本地化设置</string>
+         </property>
+         <layout class="QHBoxLayout" name="localizationSettingsLayout">
+          <item>
+           <widget class="QCheckBox" name="cbxLanguageInFileName">
+            <property name="text">
+             <string>语音文件名包含语言名</string>
+            </property>
+            <property name="toolTip">
+             <string>开启后，「导入本地化语言」在切换语言时会把文件名中的语言名一并替换（如 foo_Chinese.wav → foo_English.wav）；关闭时只替换 Originals 下的语言子目录，文件名保持不变。</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="localizationSettingsSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
       <item>
         <widget class="QWidget" name="wgtNamingContent">
         <layout class="QHBoxLayout" name="namingColumns">
@@ -350,6 +382,16 @@
         <widget class="QCheckBox" name="cbxAutoFetchChildren">
          <property name="text">
           <string>工具执行前自动获取子对象</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="cbxFindFilterCheckedOnly">
+         <property name="text">
+          <string>查找/筛选只对选中对象生效</string>
+         </property>
+         <property name="toolTip">
+          <string>勾选后，找父级/找子级/找引用/高级查找以及表格筛选只处理「选中」列勾选的行，未勾选的行原样保留并始终显示；取消勾选则对全部可见行生效。</string>
          </property>
         </widget>
        </item>
@@ -549,6 +591,16 @@
          </property>
          <property name="text">
           <string>记录明细日志（批量逐对象、WAAPI 调用流水）</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="cbxDumpOnlyWritable">
+         <property name="toolTip">
+          <string>勾选时，「导出全部属性（JSON）」只写可写属性：跳过 id/name/path/children/descendants 等只读访问器，以及列表、无 id 的复合值；取消勾选则导出 schema 里的全部属性值。</string>
+         </property>
+         <property name="text">
+          <string>导出属性时仅包含可写属性</string>
          </property>
         </widget>
        </item>
@@ -931,6 +983,50 @@
          </layout>
         </widget>
        </item>
+       <item>
+        <widget class="QGroupBox" name="grpRandomCount">
+         <property name="title">
+          <string>优化随机数量</string>
+         </property>
+         <layout class="QVBoxLayout" name="randomCountLayout">
+          <item>
+           <widget class="QLabel" name="lblRandomCountHint">
+            <property name="text">
+             <string>每个平台一列，设置允许保留启用的 Random Container 子对象数量；未单独配置的平台使用默认值 3。</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tblRandomAllowedCounts">
+            <property name="maximumSize">
+             <size>
+              <width>16777215</width>
+              <height>80</height>
+             </size>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>60</height>
+             </size>
+            </property>
+            <property name="alternatingRowColors">
+             <bool>true</bool>
+            </property>
+            <property name="selectionBehavior">
+             <enum>QAbstractItemView::SelectRows</enum>
+            </property>
+            <attribute name="verticalHeaderVisible">
+             <bool>false</bool>
+            </attribute>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
         <item>
          <spacer name="toolsSpacer">
           <property name="orientation">
@@ -961,7 +1057,11 @@
           </widget>
          </item>
          <item row="0" column="1">
-          <widget class="QComboBox" name="cbbVcsMode"/>
+          <widget class="QComboBox" name="cbbVcsMode">
+           <property name="toolTip">
+            <string>用于主窗口「集成视图 - 作者」列：读取对象所在 WorkUnit 最后一次提交的提交人。SVN 读本地工作副本（较快）；P4 需连接服务器（首次较慢）。修改后需重启软件生效。</string>
+           </property>
+          </widget>
          </item>
          <item row="1" column="0">
           <widget class="QLabel" name="lblP4Server">
@@ -1054,19 +1154,12 @@
            <property name="text">
             <string>测试连接</string>
            </property>
+           <property name="toolTip">
+            <string>用当前配置读取一次版本信息，验证服务器、工作副本与账号是否可用。</string>
+           </property>
           </widget>
          </item>
         </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="lblVcsHint">
-         <property name="wordWrap">
-          <bool>true</bool>
-         </property>
-         <property name="text">
-          <string>版本控制用于主窗口「集成视图 - 作者」列：显示对象所在 WorkUnit 文件最后一次提交的提交人。SVN 走 svn info（读本地工作副本，不访问服务器，较快）；P4 走 fstat + describe（需要能连上服务器，首次查询较慢）。提交描述/提交信息用于本工具自动创建 changelist 或提交时填写。设置保存在 user_config.json 的 version_control / p4 / svn 节，修改后需重启软件生效。</string>
-         </property>
-        </widget>
        </item>
        <item>
         <spacer name="vcsSpacer">
@@ -1098,7 +1191,11 @@
           </widget>
          </item>
          <item row="0" column="1">
-          <widget class="QComboBox" name="cbbAiMode"/>
+          <widget class="QComboBox" name="cbbAiMode">
+           <property name="toolTip">
+            <string>代理模式走本地/公司代理地址；官方 API 模式按「服务提供方」直连。</string>
+           </property>
+          </widget>
          </item>
          <item row="1" column="0">
           <widget class="QLabel" name="lblAiProvider">
@@ -1108,7 +1205,11 @@
           </widget>
          </item>
          <item row="1" column="1">
-          <widget class="QComboBox" name="cbbAiProvider"/>
+          <widget class="QComboBox" name="cbbAiProvider">
+           <property name="toolTip">
+            <string>Claude 使用 Anthropic 原生协议，必须填写模型名；其余厂商走 OpenAI 兼容协议。</string>
+           </property>
+          </widget>
          </item>
          <item row="2" column="0">
           <widget class="QLabel" name="lblAiProxy">
@@ -1169,7 +1270,10 @@
          <item row="6" column="0" colspan="2">
           <widget class="QCheckBox" name="cbxAiEnableScript">
            <property name="text">
-            <string>允许 AI 执行临时脚本（run_wwise_script；IDE 调试器下可能不稳定，默认关闭）</string>
+            <string>允许 AI 执行临时脚本（run_wwise_script）</string>
+           </property>
+           <property name="toolTip">
+            <string>IDE 调试器下可能不稳定，默认关闭。</string>
            </property>
           </widget>
          </item>
@@ -1221,19 +1325,13 @@
           </widget>
          </item>
          <item row="9" column="1">
-          <widget class="QComboBox" name="cbbAiMutationPolicy"/>
+          <widget class="QComboBox" name="cbbAiMutationPolicy">
+           <property name="toolTip">
+            <string>只读＝拒绝一切改动；改动前弹窗确认＝AI 改工程前由你点确认；直接执行＝不再询问。</string>
+           </property>
+          </widget>
          </item>
         </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="lblAiHint">
-         <property name="wordWrap">
-          <bool>true</bool>
-         </property>
-         <property name="text">
-          <string>连接模式：代理模式走本地/公司代理地址；官方 API 模式按“服务提供方”直连（OpenAI / DeepSeek / 通义千问 / Kimi / 智谱 GLM / Gemini / Claude / 自定义）。Claude 使用 Anthropic 原生协议，必须填写模型名；其余厂商走 OpenAI 兼容协议。修改策略：只读＝拒绝一切改动；改动前弹窗确认＝AI 要改工程时由你本人点确认；直接执行＝不再询问。设置保存在 user_config.json 的 ai 节，修改后下一次发送指令生效，主窗口模型下拉框会在重启后同步。</string>
-         </property>
-        </widget>
        </item>
        <item>
         <spacer name="aiSpacer">

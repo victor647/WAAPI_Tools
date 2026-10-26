@@ -1,10 +1,11 @@
+from libraries.base_dialog import BaseDialog
 from PySide6.QtWidgets import QCheckBox, QDialog
 
 from ui.ExportObjectList_ui import Ui_ExportObjectList
 
 
 # 选择导出属性的对话框：勾选当前视图中的列作为CSV导出字段
-class ExportObjectListWindow(QDialog, Ui_ExportObjectList):
+class ExportObjectListWindow(BaseDialog, Ui_ExportObjectList):
 
     def __init__(self, headers: list[str]):
         super().__init__()

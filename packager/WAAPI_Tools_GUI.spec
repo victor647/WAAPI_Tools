@@ -31,16 +31,16 @@ datas = [
     (os.path.join(root, "material.css"), "."),
     (os.path.join(root, "ai_assistant_prompt.md"), "."),
 ] + qt_material_datas
-# 工程根目录的用户配置随包携带：exe 目录无 user_config.json 时由
-# libraries/utils/user_config.py 复制出来，作为用户初始化的数据来源
-user_config_file = os.path.join(root, "user_config.json")
-if os.path.isfile(user_config_file):
-    datas.append((user_config_file, "."))
-# 工程规范文件同理：工程目录与 exe 目录都没有时由
-# data/project_conventions.py 复制出来，作为工程规范的初始数据
-conventions_file = os.path.join(root, "ProjectConventions.json")
-if os.path.isfile(conventions_file):
-    datas.append((conventions_file, "."))
+# 打包只带「默认值模板」，不要用仓库根目录的配置：
+# 否则开发机上的临时设置（主题/窗口尺寸/AI 模型/工程规范调整）会变成新用户的默认值。
+# 模板由 package_gui.py 在打包前调用 packager/default_configs.py 用代码默认值重新生成。
+defaults_dir = os.path.join(packager_dir, "defaults")
+for default_name in ("user_config.json", "ProjectConventions.json"):
+    default_file = os.path.join(defaults_dir, default_name)
+    if os.path.isfile(default_file):
+        datas.append((default_file, "."))
+    else:
+        print(f"WARNING: 缺少默认配置模板 {default_file}，运行时将使用代码内置默认值")
 # 应用图标：main.py 通过 path_utils.get_resource_path("icons/Icon.png") 设置窗口图标
 icon_png_file = os.path.join(root, "icons", "Icon.png")
 if os.path.isfile(icon_png_file):

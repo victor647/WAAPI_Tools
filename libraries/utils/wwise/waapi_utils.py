@@ -37,17 +37,30 @@ def _record_created(obj) -> None:
         _created_objects.append(obj)
 
 
-def close_client():
+def close_client(graceful: bool = True):
     # 未连接成功时单例里没有实例，此时无需（也无法）关闭，直接跳过
     client = WAAPIClient.get_existing()
     if client is not None:
-        client.disconnect()
+        client.disconnect(graceful=graceful)
 
 
 # 是否已连接到 Wwise（供业务层判断连接状态，避免直接依赖 WAAPIClient）
 def is_connected() -> bool:
     client = WAAPIClient.get_existing()
     return bool(client and client.is_connected())
+
+
+# 订阅 WAAPI 主题；回调可能在工作线程触发
+def subscribe_topic(topic: str, callback, options: dict = None):
+    client = WAAPIClient.get_existing()
+    if client is None:
+        return None
+    return client.subscribe_topic(topic, callback, options)
+
+
+def unsubscribe_topic(event_handler) -> bool:
+    client = WAAPIClient.get_existing()
+    return bool(client and client.unsubscribe_topic(event_handler))
 
 
 # region Query
@@ -72,22 +85,22 @@ def get_referenced_object(obj: WwiseObject, property_name: str):
     return WwiseObject(obj) if obj else None
 
 
-def get_object_property(obj: WwiseObject, property_name: str):
+def get_object_property(obj: WwiseObject, property_name: str, platform=None):
     # 该类型不含此属性时直接返回，省掉一次必然拿不到值的 WAAPI 往返
     if not obj.has_property(property_name):
         return None
-    return WAAPIClient().get_object_property(obj.wwise_dict, property_name)
+    return WAAPIClient().get_object_property(obj.wwise_dict, property_name, platform=platform)
 
 
-def get_object_properties(obj: WwiseObject, property_names: list) -> dict:
+def get_object_properties(obj: WwiseObject, property_names: list, platform=None) -> dict:
     available_names = [name for name in property_names if obj.has_property(name)]
     if not available_names:
         return {}
-    return WAAPIClient().get_object_properties(obj.wwise_dict, available_names)
+    return WAAPIClient().get_object_properties(obj.wwise_dict, available_names, platform=platform)
 
 
 # 一次读取多个对象的多个属性；返回 {对象ID: {属性名: 值}}，比逐个对象查询少很多 WAAPI 往返
-def get_objects_properties(objects: list, property_names: list) -> dict:
+def get_objects_properties(objects: list, property_names: list, platform=None) -> dict:
     wwise_objects = [obj for obj in objects if obj and obj.is_valid]
     if not wwise_objects:
         return {}
@@ -96,7 +109,20 @@ def get_objects_properties(objects: list, property_names: list) -> dict:
                        if any(obj.has_property(name) for obj in wwise_objects)]
     if not available_names:
         return {}
-    return WAAPIClient().get_objects_properties([obj.wwise_dict for obj in wwise_objects], available_names)
+    return WAAPIClient().get_objects_properties(
+        [obj.wwise_dict for obj in wwise_objects], available_names, platform=platform
+    )
+
+
+# 按给定的属性/引用名批量读取原始值，不做本地类型表过滤
+# 用于「导出全部属性」这类需要完整 schema 的场景：名称来自 get_property_and_reference_names
+def get_objects_properties_raw(objects: list, property_names: list) -> dict:
+    wwise_objects = [obj for obj in objects if obj and obj.is_valid]
+    if not wwise_objects or not property_names:
+        return {}
+    return WAAPIClient().get_objects_properties(
+        [obj.wwise_dict for obj in wwise_objects], list(property_names)
+    )
 
 
 # 按「查询分页大小」设置把对象列表分批：批量查询/批量处理前统一用它切分，避免单次请求过大
@@ -149,6 +175,15 @@ def get_child_objects(obj: WwiseObject, include_descendants=False) -> list[Wwise
     return _dict_list_to_wobjs(WAAPIClient().get_child_objects(obj.wwise_dict, include_descendants=include_descendants))
 
 
+def get_children_of_objects(objects: list, return_fields: list = None) -> list[WwiseObject]:
+    return _dict_list_to_wobjs(
+        WAAPIClient().get_children_of_objects(
+            [obj.wwise_dict for obj in objects if obj and obj.is_valid],
+            return_fields=return_fields,
+        )
+    )
+
+
 def get_descendants_of_type(obj: WwiseObject, child_type, return_fields: list = None) -> list[WwiseObject]:
     if isinstance(child_type, (list, set, tuple)):
         types = [item.value if isinstance(item, WwiseObjectType) else item for item in child_type]
@@ -159,12 +194,32 @@ def get_descendants_of_type(obj: WwiseObject, child_type, return_fields: list = 
     )
 
 
+# 批量查询多个根对象的全部后代（可按类型过滤），避免逐对象各发一次查询
+def get_descendants_of_objects(objects: list, child_types=None, return_fields: list = None) -> list[WwiseObject]:
+    if isinstance(child_types, (list, set, tuple)):
+        types = [item.value if isinstance(item, WwiseObjectType) else item for item in child_types]
+    elif child_types is None:
+        types = None
+    else:
+        types = child_types.value if isinstance(child_types, WwiseObjectType) else child_types
+    return _dict_list_to_wobjs(
+        WAAPIClient().get_descendants_of_objects(
+            [obj.wwise_dict for obj in objects if obj and obj.is_valid], types, return_fields=return_fields
+        )
+    )
+
+
 def get_global_objects() -> list[WwiseObject]:
     return _dict_list_to_wobjs(WAAPIClient().get_global_objects())
 
 
 def get_full_info_from_obj_id(obj_id) -> WwiseObject:
     return _dict_to_wobj(WAAPIClient().get_full_info_from_obj_id(obj_id))
+
+
+def query_waql(waql: str, return_fields: list = None) -> list:
+    # 通用只读查询：返回原始 dict（可能包含自定义返回表达式字段），不包装成 WwiseObject
+    return WAAPIClient().get_objects_by_waql(waql, return_fields)
 
 
 def find_object_by_path(path: str) -> WwiseObject:
@@ -222,11 +277,24 @@ def set_object_property(obj: WwiseObject, property_name: str, value, platform=No
     return WAAPIClient().set_object_property(obj.wwise_dict, property_name, value, platform=platform)
 
 
+def get_object_property_linked(obj: WwiseObject, property_name: str, platform: str) -> bool | None:
+    return WAAPIClient().get_object_property_linked(obj.wwise_dict, property_name, platform)
+
+
+def set_object_property_linked(obj: WwiseObject, property_name: str, platform: str, linked: bool) -> bool:
+    return WAAPIClient().set_object_property_linked(obj.wwise_dict, property_name, platform, linked)
+
+
 def set_objects_property_values(assignments: list[tuple[WwiseObject, object]], property_name: str) -> bool:
     return WAAPIClient().set_objects_property_values(
         [(obj.wwise_dict, value) for obj, value in assignments],
         property_name,
     )
+
+
+# 一次给单个对象设置多个属性
+def set_object_property_values(obj: WwiseObject, property_values: dict) -> bool:
+    return WAAPIClient().set_object_property_values(obj.wwise_dict, property_values)
 
 
 def set_object_reference(obj: WwiseObject, reference_type: str, value: WwiseObject) -> bool:
@@ -265,6 +333,16 @@ def remove_switch_mappings(obj: WwiseObject) -> bool:
 # region AudioSource
 def import_audio_file(wave_path: str, sound: WwiseObject, language='SFX') -> WwiseObject:
     created = _dict_to_wobj(WAAPIClient().import_audio_file(wave_path, sound.wwise_dict, language=language))
+    _record_created(created)
+    return created
+
+
+def import_audio_source(sound: WwiseObject, wave_path: str, language='SFX', source_name='',
+                        originals_subfolder='') -> WwiseObject:
+    created = _dict_to_wobj(WAAPIClient().import_audio_source(
+        sound.wwise_dict, wave_path, language=language, source_name=source_name,
+        originals_subfolder=originals_subfolder,
+    ))
     _record_created(created)
     return created
 

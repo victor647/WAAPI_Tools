@@ -1,3 +1,4 @@
+from windows.base_analysis_dialog import BaseAnalysisDialog
 import json
 import webbrowser
 
@@ -5,17 +6,21 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QDialog, QMessageBox, QTableWidgetItem
 
-import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
+from libraries.table_view.table_path_item import create_path_item
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import waapi_utils
 from libraries.wwise_object import WwiseObject
-from table.wwise_table_row_data import WwiseTableRowData
+from libraries.table_view.table_context_menu import install_row_object_context
 from ui.PropertyQuery_ui import Ui_PropertyQuery
 
 # Wwise 对象属性说明文档（官方 wobjects 索引页）
 PROPERTY_DOC_URL = 'https://www.audiokinetic.com/zh/library/2025.1.10_9233/?source=SDK&id=wobjects_index.html'
+
+# 对象信息列：名称 / 类型 / 路径
+COL_NAME = 0
+COL_PATH = 2
 
 # 常用属性快捷项（与查询输入框共用同一份属性名列表）
 COMMON_PROPERTY_NAMES = [
@@ -38,13 +43,13 @@ COMMON_PROPERTY_NAMES = [
 
 
 # 属性查询窗口：对传入对象列表批量读取指定属性，把结果输出为表格
-class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
+class PropertyQueryWindow(BaseAnalysisDialog, Ui_PropertyQuery):
 
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-        # 从主窗口临时取当前对象，保证与表格同步
-        self.__objects: list[WwiseObject] = gv.get_tool_targets()
+        # 只取主窗口「选中」列已勾选的对象
+        self.__objects: list[WwiseObject] = self.collect_analysis_targets()
         self.__property_names: list[str] = []
         self.__results = []
         self.__row_types: list[str] = []
@@ -68,7 +73,13 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
         common_view = self.cbbCommonProperties.view()
         common_view.pressed.connect(self._remember_common_pressed_state)
         common_view.clicked.connect(self._on_common_property_clicked)
-        self.tblPropertyResults.itemDoubleClicked.connect(self.select_object_in_wwise)
+        self.tblPropertyResults.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        install_row_object_context(
+            self.tblPropertyResults,
+            self.objects_at_row,
+            path_columns=(COL_PATH,),
+            default_action="select",
+        )
 
     # 往可复选下拉框里填充常用属性名
     def _setup_common_property_combo(self):
@@ -140,9 +151,9 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
             name_item = QTableWidgetItem(obj.name)
             # 排序后行序会变化，用对象 id 保证双击仍能定位到正确对象
             name_item.setData(Qt.ItemDataRole.UserRole, obj.id)
-            self.tblPropertyResults.setItem(index, 0, name_item)
+            self.tblPropertyResults.setItem(index, COL_NAME, name_item)
             self.tblPropertyResults.setItem(index, 1, QTableWidgetItem(obj.type.name))
-            self.tblPropertyResults.setItem(index, 2, QTableWidgetItem(WwiseTableRowData.get_path_text(obj.path)))
+            self.tblPropertyResults.setItem(index, COL_PATH, create_path_item(obj.path))
 
     # 按输入属性名对全部对象发起查询
     def start_query(self):
@@ -262,10 +273,11 @@ class PropertyQueryWindow(QDialog, Ui_PropertyQuery):
             return json.dumps(value, ensure_ascii=False)
         return str(value)
 
-    # 双击行在 Wwise 中定位对象
-    def select_object_in_wwise(self, item):
-        row_item = self.tblPropertyResults.item(item.row(), 0)
-        obj_id = row_item.data(Qt.ItemDataRole.UserRole) if row_item else None
+    # 行对象：名称列 UserRole 中存对象 id，排序后也能正确解析
+    def objects_at_row(self, row: int) -> list:
+        name_item = self.tblPropertyResults.item(row, COL_NAME)
+        obj_id = name_item.data(Qt.ItemDataRole.UserRole) if name_item else None
+        if obj_id is None:
+            return []
         target = next((obj for obj in self.__objects if obj.id == obj_id), None)
-        if target is not None:
-            waapi_utils.select_objects_in_wwise([target])
+        return [target] if target is not None else []

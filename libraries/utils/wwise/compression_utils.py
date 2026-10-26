@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from libraries.utils import user_config
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import audio_source_utils, waapi_utils
+from libraries.utils.wwise import audio_source_utils, mixing_utils, waapi_utils, wwise_compat
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 
@@ -23,12 +23,12 @@ WINDOW_SETTINGS_KEY = "auto_compression_settings"
 DEFAULT_SHORT_THRESHOLD = 0.5
 DEFAULT_LONG_THRESHOLD = 5.0
 
-# 目标节点类型：ActorMixer 与各种 Container
+# 目标节点类型：PropertyContainer（旧版 ActorMixer）与各种 Container
 CONTAINER_TYPE_VALUES = tuple(dict.fromkeys(
     object_type.value for object_type in WwiseObjectType if object_type.value.endswith("Container")
 ))
 TARGET_DISCOVERY_TYPE_VALUES = (
-    WwiseObjectType.ActorMixer.value,
+    *wwise_compat.property_container_type_names(),
     *CONTAINER_TYPE_VALUES,
 )
 
@@ -54,6 +54,15 @@ class ConversionAssignmentPlan:
 class NameConversionPlan:
     target: WwiseObject
     keyword: str
+    conversion: WwiseObject
+    conflict: bool = False
+    existing_conversion_name: str = ""
+
+
+@dataclass
+class BusConversionPlan:
+    target: WwiseObject
+    bus: WwiseObject
     conversion: WwiseObject
     conflict: bool = False
     existing_conversion_name: str = ""
@@ -191,8 +200,8 @@ def build_name_conversion_plans(targets: list, mapping: list) -> list:
     return plans
 
 
-# 应用名称模式的方案：命中的节点打开 OverrideConversion 并指向对应 Conversion
-def apply_name_conversion_plans(plans: list) -> list[str]:
+# 应用「命中即覆盖」的方案（名称模式 / OutputBus 模式）：打开 OverrideConversion 并指向对应 Conversion
+def apply_override_conversion_plans(plans: list) -> list[str]:
     if not plans:
         return []
 
@@ -219,6 +228,33 @@ def apply_name_conversion_plans(plans: list) -> list[str]:
     ]
 
 
+# 按 OutputBus 匹配：节点当前有效 OutputBus 命中映射就设置对应 Conversion
+# 与名称模式一致：父节点已命中时不再匹配其子节点；同一总线在映射里出现多次时取第一个
+def build_bus_conversion_plans(targets: list, output_bus_by_target_id: dict, mapping: list) -> list:
+    conversion_by_bus_id = {
+        _normalized_object_id(bus.id): conversion
+        for bus, conversion in mapping
+        if bus and conversion
+    }
+    matched_paths: set = set()
+    plans = []
+    for target in sorted(
+        targets, key=lambda obj: (obj.path.count("\\") if obj.path else 0, obj.path)
+    ):
+        if any(prefix in matched_paths for prefix in _path_prefixes(target.path)):
+            continue
+        bus = mixing_utils.get_output_bus(target, output_bus_by_target_id.get(target.id) or {})
+        bus_id = _normalized_object_id(bus.id) if bus else ""
+        if not bus_id:
+            continue
+        conversion = conversion_by_bus_id.get(bus_id)
+        if conversion is None:
+            continue
+        plans.append(BusConversionPlan(target=target, bus=bus, conversion=conversion))
+        matched_paths.add(normalized_path(target.path))
+    return plans
+
+
 # 按档位后缀在工程里找 Conversion；找不到就复制默认档的 Conversion 再改名
 # 返回 (各档 Conversion, 本次新建的档位集合)；新建的对象还没写进 WorkUnit，参数只能沿用默认档
 # 表格对象里只保留「不是其它对象后代」的根，避免同一棵子树被重复扫描
@@ -235,11 +271,12 @@ def scan_roots(objects: list) -> list:
     ]
 
 
-# 单个根下的目标节点与音频源：ActorMixer 全收，Container 只收位于某个 ActorMixer 之下且支持 Conversion 的
+# 单个根下的目标节点与音频源：PropertyContainer/ActorMixer 全收，
+# Container 只收位于某个 PropertyContainer 之下且支持 Conversion 的
 # include_sources=False 时（按名称模式）不查音频源，省一次后代查询
 def discover_targets_and_sources(root: WwiseObject, include_sources: bool = True) -> tuple:
     root_type = (root.wwise_dict or {}).get("type", "")
-    target_nodes = [root] if root_type == WwiseObjectType.ActorMixer.value or root_type.endswith(
+    target_nodes = [root] if wwise_compat.is_property_container_type(root_type) or root_type.endswith(
         "Container"
     ) else []
     target_nodes.extend(waapi_utils.get_descendants_of_type(root, TARGET_DISCOVERY_TYPE_VALUES))
@@ -248,22 +285,22 @@ def discover_targets_and_sources(root: WwiseObject, include_sources: bool = True
         if root_type == WwiseObjectType.AudioSource.value:
             audio_sources.append(root)
         audio_sources.extend(waapi_utils.get_descendants_of_type(root, WwiseObjectType.AudioSource))
-    actor_mixer_paths = {
+    property_container_paths = {
         obj.path.rstrip("\\")
         for obj in target_nodes
-        if (obj.wwise_dict or {}).get("type") == WwiseObjectType.ActorMixer.value and obj.path
+        if wwise_compat.is_property_container_type((obj.wwise_dict or {}).get("type", "")) and obj.path
     }
     targets = []
     for obj in target_nodes:
         object_type = (obj.wwise_dict or {}).get("type", "")
-        if object_type == WwiseObjectType.ActorMixer.value:
+        if wwise_compat.is_property_container_type(object_type):
             targets.append(obj)
         elif (
             isinstance(object_type, str)
             and object_type.endswith("Container")
             and obj.has_property("Conversion")
             and obj.has_property("OverrideConversion")
-            and any(obj.path.startswith(path + "\\") for path in actor_mixer_paths)
+            and any(obj.path.startswith(path + "\\") for path in property_container_paths)
         ):
             targets.append(obj)
     sources = [
@@ -283,6 +320,13 @@ def read_page_source_durations(page: list) -> dict:
 # 读取一批目标节点当前的 OverrideConversion 与 Conversion（窗口按页调用以步进进度条）
 def read_page_override_states(page: list) -> dict:
     return waapi_utils.get_objects_properties(page, list(OVERRIDE_STATE_PROPERTIES))
+
+
+# OutputBus 模式：一次读回有效 OutputBus 与现有 Override 状态（用于冲突提示）
+def read_page_bus_states(page: list) -> dict:
+    return waapi_utils.get_objects_properties_raw(
+        page, ["OutputBus", *OVERRIDE_STATE_PROPERTIES]
+    )
 
 
 # Wwise 回传的 GUID 带花括号且大小写不固定，比较前统一规范化

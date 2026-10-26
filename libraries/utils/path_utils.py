@@ -236,6 +236,8 @@ def compact_path(path: str) -> str:
 
 # Wwise 顶级根目录名称集合（覆盖 Hierarchy、Events、Banks 等根）
 WWISE_ROOT_FOLDERS = {
+    "containers",
+    "busses",
     "actor-mixer hierarchy",
     "interactive music hierarchy",
     "master-mixer hierarchy",

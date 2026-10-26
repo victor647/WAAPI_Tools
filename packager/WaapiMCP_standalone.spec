@@ -32,7 +32,8 @@ fastmcp_datas, fastmcp_binaries, fastmcp_hidden = _safe_collect("fastmcp")
 slim_datas, slim_binaries, slim_hidden = _safe_collect("fastmcp_slim")
 
 datas = (
-    bundle["mcp_datas"]
+    [(os.path.join(root, "ai_assistant_prompt.md"), ".")]
+    + bundle["mcp_datas"]
     + bundle["rich_datas"]
     + bundle["pydantic_datas"]
     + bundle["pydantic_core_datas"]

@@ -41,3 +41,11 @@ def get_tool_targets(target_types=None, expand: bool = None) -> list:
     if window is None:
         return list(active_objects)
     return window.collect_tool_targets(target_types, expand)
+
+
+# 分析类工具目标：只取主窗口「选中」列已勾选的对象，未勾选行的子树不参与
+def get_checked_tool_targets(target_types=None, expand: bool = None) -> list:
+    window = main_window
+    if window is None:
+        return list(active_objects)
+    return window.collect_tool_targets(target_types, expand, checked_only=True)

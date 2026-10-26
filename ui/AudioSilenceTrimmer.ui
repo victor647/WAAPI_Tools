@@ -230,7 +230,7 @@
      <item>
       <widget class="QRadioButton" name="rbnModeWwise">
        <property name="toolTip">
-        <string>不修改源文件，改为在 Wwise 里设置 AudioFileSource 的 TrimBegin / TrimEnd，让播放区间跳过识别出的静音（淡入淡出时长照常保留在裁剪区间内）。</string>
+        <string>不修改源文件，改为在 Wwise 里设置 AudioFileSource 的 TrimBegin / TrimEnd 与 FadeIn / FadeOut。TrimBegin / TrimEnd 都是从头算起的绝对时间位置（TrimEnd = 文件总时长 − 尾部裁剪量）；保留「保留淡入/淡出」长度的静音作为淡变区，效果与「裁剪源文件」模式一致。</string>
        </property>
        <property name="text">
         <string>Wwise内部裁剪（改Trim值，不动文件）</string>

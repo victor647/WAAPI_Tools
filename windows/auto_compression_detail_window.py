@@ -1,10 +1,9 @@
-import clipboard
+from libraries.base_dialog import BaseDialog
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QMenu, QTableWidgetItem
+from PySide6.QtWidgets import QDialog, QTableWidgetItem
 
 from libraries.utils.qt_utils import resize_table_and_window
-from libraries.utils.log_utils import Logger
-from table.wwise_table_context_menu import add_common_object_actions, connect_double_click_select
+from libraries.table_view.table_context_menu import install_row_object_context
 from ui.AutoCompressionDetail_ui import Ui_AutoCompressionDetail
 
 
@@ -15,7 +14,7 @@ COL_CATEGORY = 2
 
 # 自动转码详情：列出某个节点包含的每个音频文件的时长与分档判定
 # entries 为 [{'source': WwiseObject, 'duration': float, 'category_text': str}, ...]
-class AutoCompressionDetailWindow(QDialog, Ui_AutoCompressionDetail):
+class AutoCompressionDetailWindow(BaseDialog, Ui_AutoCompressionDetail):
 
     def __init__(self, entries: list, title: str = "音效详情", parent=None):
         super().__init__(parent)
@@ -26,9 +25,11 @@ class AutoCompressionDetailWindow(QDialog, Ui_AutoCompressionDetail):
         self.__fill_rows()
 
     def setup_triggers(self):
-        self.tblAudioDetails.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tblAudioDetails.customContextMenuRequested.connect(self.show_context_menu)
-        connect_double_click_select(self.tblAudioDetails, self.__objects_at_row)
+        install_row_object_context(
+            self.tblAudioDetails,
+            self.__objects_at_row,
+            default_action="select",
+        )
 
     # 某一行对应的 Wwise 对象（供双击在 Wwise 中选中使用）
     def __objects_at_row(self, row: int) -> list:
@@ -56,19 +57,3 @@ class AutoCompressionDetailWindow(QDialog, Ui_AutoCompressionDetail):
         self.tblAudioDetails.setSortingEnabled(True)
         resize_table_and_window(self.tblAudioDetails, self)
 
-    # 行右键菜单：复制路径、在 Wwise 中选中（含音频源预览）
-    def show_context_menu(self, position):
-        index = self.tblAudioDetails.indexAt(position)
-        if not index.isValid():
-            return
-        entry = self.__entries[index.row()]
-        menu = QMenu(self)
-        menu.addAction("复制路径", lambda: self.copy_object_path(entry["source"]))
-        add_common_object_actions(menu, entry["source"], self)
-        menu.exec(self.tblAudioDetails.viewport().mapToGlobal(position))
-
-    # 复制对象的完整路径（表格里显示的是缩写形式）
-    @staticmethod
-    def copy_object_path(source):
-        clipboard.copy(source.path)
-        Logger().info(f"已复制到剪贴板：{source.path}")

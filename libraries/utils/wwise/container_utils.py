@@ -1,7 +1,7 @@
 import re
 
 from data import project_conventions
-from libraries.utils.wwise import waapi_utils, mixing_utils
+from libraries.utils.wwise import waapi_utils, mixing_utils, wwise_compat
 from libraries.wwise_object import WwiseObjectType, WwiseObject
 
 
@@ -81,7 +81,7 @@ def assign_to_generic_path(obj: WwiseObject) -> bool:
 # 将一个对象根据自己，队友(可选)和敌人拆分成子对象
 def split_by_net_role(obj: WwiseObject, has_teammate: bool, has_enemy: bool) -> bool:
     # Actor Mixer和Virtual Folder无法被放在SwitchContainer下面
-    if obj.type == WwiseObjectType.ActorMixer or obj.type == WwiseObjectType.Folder:
+    if wwise_compat.is_property_container(obj) or obj.type == WwiseObjectType.Folder:
         return False
     if not has_teammate and not has_enemy:
         return False
@@ -106,7 +106,7 @@ def split_by_net_role(obj: WwiseObject, has_teammate: bool, has_enemy: bool) -> 
         waapi_utils.rename_object(obj_enemy, original_name + suffix_3p)
     waapi_utils.rename_object(new_parent, original_name)
     # 创建并分配bus
-    original_bus = waapi_utils.get_referenced_object(obj, 'OutputBus')
+    original_bus = mixing_utils.get_output_bus(obj)
     if original_bus and not original_bus.name:
         original_bus = waapi_utils.get_full_info_from_obj_id(original_bus.id)
     if original_bus and original_bus.name != 'Master Audio Bus':

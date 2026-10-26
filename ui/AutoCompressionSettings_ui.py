@@ -269,6 +269,66 @@ class Ui_AutoCompressionSettings(object):
         self.tabNameLayout.addWidget(self.tblNamePlanResults)
 
         self.tabModes.addTab(self.tabName, "")
+        self.tabBus = QWidget()
+        self.tabBus.setObjectName(u"tabBus")
+        self.tabBusLayout = QVBoxLayout(self.tabBus)
+        self.tabBusLayout.setObjectName(u"tabBusLayout")
+        self.busActionsLayout = QHBoxLayout()
+        self.busActionsLayout.setObjectName(u"busActionsLayout")
+        self.btnBusAnalyze = QPushButton(self.tabBus)
+        self.btnBusAnalyze.setObjectName(u"btnBusAnalyze")
+
+        self.busActionsLayout.addWidget(self.btnBusAnalyze)
+
+        self.btnBusApply = QPushButton(self.tabBus)
+        self.btnBusApply.setObjectName(u"btnBusApply")
+        self.btnBusApply.setEnabled(False)
+
+        self.busActionsLayout.addWidget(self.btnBusApply)
+
+        self.cbxBusOverwriteConflicts = QCheckBox(self.tabBus)
+        self.cbxBusOverwriteConflicts.setObjectName(u"cbxBusOverwriteConflicts")
+
+        self.busActionsLayout.addWidget(self.cbxBusOverwriteConflicts)
+
+        self.lblBusStatus = QLabel(self.tabBus)
+        self.lblBusStatus.setObjectName(u"lblBusStatus")
+        sizePolicy3.setHeightForWidth(self.lblBusStatus.sizePolicy().hasHeightForWidth())
+        self.lblBusStatus.setSizePolicy(sizePolicy3)
+        self.lblBusStatus.setWordWrap(True)
+
+        self.busActionsLayout.addWidget(self.lblBusStatus)
+
+
+        self.tabBusLayout.addLayout(self.busActionsLayout)
+
+        self.busMap = MapEdit(self.tabBus)
+        self.busMap.setObjectName(u"busMap")
+
+        self.tabBusLayout.addWidget(self.busMap)
+
+        self.tblBusPlanResults = QTableWidget(self.tabBus)
+        if (self.tblBusPlanResults.columnCount() < 5):
+            self.tblBusPlanResults.setColumnCount(5)
+        __qtablewidgetitem15 = QTableWidgetItem()
+        self.tblBusPlanResults.setHorizontalHeaderItem(0, __qtablewidgetitem15)
+        __qtablewidgetitem16 = QTableWidgetItem()
+        self.tblBusPlanResults.setHorizontalHeaderItem(1, __qtablewidgetitem16)
+        __qtablewidgetitem17 = QTableWidgetItem()
+        self.tblBusPlanResults.setHorizontalHeaderItem(2, __qtablewidgetitem17)
+        __qtablewidgetitem18 = QTableWidgetItem()
+        self.tblBusPlanResults.setHorizontalHeaderItem(3, __qtablewidgetitem18)
+        __qtablewidgetitem19 = QTableWidgetItem()
+        self.tblBusPlanResults.setHorizontalHeaderItem(4, __qtablewidgetitem19)
+        self.tblBusPlanResults.setObjectName(u"tblBusPlanResults")
+        self.tblBusPlanResults.setAlternatingRowColors(True)
+        self.tblBusPlanResults.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tblBusPlanResults.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tblBusPlanResults.setSortingEnabled(False)
+
+        self.tabBusLayout.addWidget(self.tblBusPlanResults)
+
+        self.tabModes.addTab(self.tabBus, "")
 
         self.verticalLayout.addWidget(self.tabModes)
 
@@ -357,5 +417,26 @@ class Ui_AutoCompressionSettings(object):
         ___qtablewidgetitem14 = self.tblNamePlanResults.horizontalHeaderItem(4)
         ___qtablewidgetitem14.setText(QCoreApplication.translate("AutoCompressionSettings", u"Conversion", None))
         self.tabModes.setTabText(self.tabModes.indexOf(self.tabName), QCoreApplication.translate("AutoCompressionSettings", u"\u6309\u540d\u79f0", None))
+        self.btnBusAnalyze.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u5206\u6790", None))
+        self.btnBusApply.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u5e94\u7528", None))
+        self.cbxBusOverwriteConflicts.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u8986\u76d6\u5df2\u6709\u5176\u5b83 Conversion \u7684\u8282\u70b9", None))
+#if QT_CONFIG(tooltip)
+        self.cbxBusOverwriteConflicts.setToolTip(QCoreApplication.translate("AutoCompressionSettings", u"\u5206\u6790\u51fa\u300c\u5f53\u524d Conversion \u4e0d\u662f OutputBus \u6620\u5c04\u6307\u5b9a\u7684\u90a3\u4e00\u4e2a\u300d\u7684\u8282\u70b9\uff08\u8868\u683c\u91cc\u6807\u7ea2\uff09\u3002\u52fe\u9009\u65f6\u6309\u6620\u5c04\u8868\u6539\u5199\u8fd9\u4e9b\u8282\u70b9\uff0c\u4e0d\u52fe\u9009\u65f6\u8df3\u8fc7\u5b83\u4eec\u3001\u4fdd\u7559\u539f\u6709\u8bbe\u7f6e\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.lblBusStatus.setText("")
+#if QT_CONFIG(tooltip)
+        self.lblBusStatus.setToolTip(QCoreApplication.translate("AutoCompressionSettings", u"\u4ece\u6839\u8282\u70b9\u5f80\u4e0b\u904d\u5386\uff1a\u8282\u70b9\u7684\u6709\u6548 OutputBus\uff08\u542b\u4ece\u4e0a\u5c42\u7ee7\u627f\u7684\u603b\u7ebf\uff09\u547d\u4e2d\u6620\u5c04\u65f6\uff0c\u5c31\u7ed9\u8be5\u8282\u70b9\u8bbe\u7f6e\u5bf9\u5e94\u7684 Conversion\uff1b\u7236\u8282\u70b9\u5df2\u547d\u4e2d\u65f6\u4e0d\u518d\u5339\u914d\u5176\u5b50\u8282\u70b9\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        ___qtablewidgetitem15 = self.tblBusPlanResults.horizontalHeaderItem(0)
+        ___qtablewidgetitem15.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u540d\u79f0", None))
+        ___qtablewidgetitem16 = self.tblBusPlanResults.horizontalHeaderItem(1)
+        ___qtablewidgetitem16.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u7c7b\u578b", None))
+        ___qtablewidgetitem17 = self.tblBusPlanResults.horizontalHeaderItem(2)
+        ___qtablewidgetitem17.setText(QCoreApplication.translate("AutoCompressionSettings", u"\u8def\u5f84", None))
+        ___qtablewidgetitem18 = self.tblBusPlanResults.horizontalHeaderItem(3)
+        ___qtablewidgetitem18.setText(QCoreApplication.translate("AutoCompressionSettings", u"OutputBus", None))
+        ___qtablewidgetitem19 = self.tblBusPlanResults.horizontalHeaderItem(4)
+        ___qtablewidgetitem19.setText(QCoreApplication.translate("AutoCompressionSettings", u"Conversion", None))
+        self.tabModes.setTabText(self.tabModes.indexOf(self.tabBus), QCoreApplication.translate("AutoCompressionSettings", u"\u8ddf\u968f OutputBus", None))
     # retranslateUi
 

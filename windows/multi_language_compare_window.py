@@ -1,23 +1,29 @@
+from windows.base_analysis_dialog import BaseAnalysisDialog
 import math
 import os
 
-import clipboard
 import numpy
 import soundfile
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QMenu, QMessageBox, QTableWidgetItem
+from PySide6.QtWidgets import QDialog, QMessageBox, QTableWidgetItem
 
 import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_number_item import NumberTableItem
+from libraries.table_view.table_path_item import create_path_item, full_path_from_item
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from libraries.utils import audio_utils, path_utils, user_config
+from libraries.utils import audio_utils, user_config
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, localization_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
-from table.wwise_table_context_menu import add_common_object_actions, connect_double_click_select
+from libraries.table_view.table_context_menu import (
+    CellCapability,
+    CellPayload,
+    ColumnSpec,
+    TableContextMenu,
+)
 from ui.MultiLanguageCompare_ui import Ui_MultiLanguageCompare
 
 # 响度标准 / 宽容度沿用响度调整工具的持久化设置（同一个 user_config 项）
@@ -58,7 +64,7 @@ def language_from_properties(properties: dict) -> str:
 
 
 # 多语言对比：一行一个非 SFX Sound，每种语言显示该语言 AudioSource 的响度与时长
-class MultiLanguageCompareWindow(QDialog, Ui_MultiLanguageCompare):
+class MultiLanguageCompareWindow(BaseAnalysisDialog, Ui_MultiLanguageCompare):
 
     def __init__(self):
         super().__init__()
@@ -89,9 +95,31 @@ class MultiLanguageCompareWindow(QDialog, Ui_MultiLanguageCompare):
         self.spbTolerance.valueChanged.connect(self.save_loudness_settings)
         self.tblCompare.setSortingEnabled(True)
         self.tblCompare.horizontalHeader().sortIndicatorChanged.connect(self.sync_row_indexes)
-        self.tblCompare.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tblCompare.customContextMenuRequested.connect(self.show_context_menu)
-        connect_double_click_select(self.tblCompare, self.objects_at_row)
+        self.__context_menu = TableContextMenu(
+            self.tblCompare,
+            self.build_context_columns(),
+            self.context_payload,
+            parent=self,
+        )
+        self.__context_menu.install()
+
+    def build_context_columns(self) -> dict[int, ColumnSpec]:
+        columns = {
+            COL_NAME: ColumnSpec(
+                CellCapability.TEXT | CellCapability.WWISE_OBJECT,
+                default_action="select",
+            ),
+            COL_PATH: ColumnSpec(
+                CellCapability.TEXT | CellCapability.WWISE_OBJECT | CellCapability.WWISE_OBJECT_PATH,
+                default_action="select",
+            ),
+        }
+        for column in range(COL_METRIC_START, self.tblCompare.columnCount()):
+            columns[column] = ColumnSpec(
+                CellCapability.TEXT | CellCapability.WWISE_OBJECT | CellCapability.AUDIO_FILE_PATH,
+                default_action="select",
+            )
+        return columns
 
     # 读取共享设置（响度标准 / 宽容度）与本窗口的参考语言
     def load_settings(self):
@@ -148,10 +176,12 @@ class MultiLanguageCompareWindow(QDialog, Ui_MultiLanguageCompare):
     def refresh_rows(self):
         if self.is_busy():
             return
-        # 每次刷新都临时取主窗口当前 Sound，保证与表格同步
-        self.__input_sounds = gv.get_tool_targets(WwiseObjectType.Sound)
+        # 只取主窗口「选中」列已勾选对象下的 Sound
+        self.__input_sounds = self.collect_analysis_targets(WwiseObjectType.Sound)
         if not self.__input_sounds:
-            Logger().warning('表格中没有可用于「多语言对比」的 Sound')
+            self.__rows = []
+            self.tblCompare.setRowCount(0)
+            Logger().warning('勾选对象下没有可用于「多语言对比」的 Sound')
             return
         self.__rows = []
         batch_processor.create_async(
@@ -258,10 +288,11 @@ class MultiLanguageCompareWindow(QDialog, Ui_MultiLanguageCompare):
             name_item = QTableWidgetItem(row_data['sound'].name)
             name_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             self.tblCompare.setItem(row_data['row'], COL_NAME, name_item)
-            path_item = QTableWidgetItem(path_utils.get_display_path(row_data['sound'].path))
+            path_item = create_path_item(row_data['sound'].path)
             path_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             self.tblCompare.setItem(row_data['row'], COL_PATH, path_item)
         self.__sync_reference_languages()
+        self.__context_menu.set_columns(self.build_context_columns())
         resize_table_and_window(self.tblCompare, self)
 
     # 参考语言下拉：按当前语言列重建，尽量保留上次的选择
@@ -480,10 +511,25 @@ class MultiLanguageCompareWindow(QDialog, Ui_MultiLanguageCompare):
         if not reference:
             QMessageBox.warning(self, '统一响度', '请先选择参考语言。')
             return
+        selected_rows = self.get_selected_rows()
+        if not selected_rows:
+            QMessageBox.warning(self, '统一响度', '没有勾选任何 Sound，请先勾选需要处理的 Sound。')
+            return
+        # 每个存在的语言源都应有响度结果（无信号会记为下限值）；None 表示还没测到
+        unanalyzed_count = len([
+            row_data for row_data in selected_rows
+            if any(row_data['loudness'].get(language) is None for language in row_data['sources'])
+        ])
+        if unanalyzed_count:
+            message = (f'勾选的 {len(selected_rows)} 个 Sound 中有 {unanalyzed_count} 个还没有响度分析结果。\n'
+                       '请等待分析完成，或点击「刷新」重新分析后再统一响度。')
+            Logger().warning(message.replace('\n', ' '))
+            QMessageBox.warning(self, '尚未分析', message)
+            return
         pending = {}
         skipped_count = 0
         no_reference_count = 0
-        for row_data in self.get_selected_rows():
+        for row_data in selected_rows:
             reference_loudness = row_data['loudness'].get(reference)
             if reference_loudness is None or reference_loudness <= audio_utils.MIN_LOUDNESS_DB:
                 no_reference_count += 1
@@ -581,20 +627,16 @@ class MultiLanguageCompareWindow(QDialog, Ui_MultiLanguageCompare):
                 '已调整为不削波的最大响度：\n\n' + '\n'.join(lines),
             )
 
-    # 行右键菜单：复制单元格 / 通用对象动作（语言列对应该语言的 AudioSource）
-    def show_context_menu(self, position):
-        item = self.tblCompare.itemAt(position)
-        if item is None:
-            return
-        row_data = self.row_data_at(item.row())
-        if row_data is None:
-            return
-        target = self.object_at_cell(row_data, item.column())
-        menu = QMenu(self)
-        if item.text():
-            menu.addAction('复制', lambda: clipboard.copy(item.text()))
-        if target is not None:
-            add_common_object_actions(menu, target, self)
-        if not menu.actions():
-            return
-        menu.exec(self.tblCompare.viewport().mapToGlobal(position))
+    def context_payload(self, row: int, column: int) -> CellPayload:
+        item = self.tblCompare.item(row, column)
+        row_data = self.row_data_at(row)
+        target = self.object_at_cell(row_data, column) if row_data is not None else None
+        audio_path = ""
+        if target is not None and target.type == WwiseObjectType.AudioSource:
+            audio_path = audio_source_utils.get_source_absolute_path(target)
+        return CellPayload(
+            text=item.text() if item is not None else "",
+            wwise_object=target,
+            wwise_path=full_path_from_item(item) if column == COL_PATH else "",
+            audio_file_path=audio_path,
+        )

@@ -9,7 +9,9 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 
 - `libraries/tool_registry.py`：中立工具注册表（`name / description / parameters / handler / mutating`），
   不依赖 Qt 与 fastmcp；`libraries/wwise_tool_catalog.py` 是原 MCP 薄封装迁入的实现。
-  两者合计约 110 个后台工具，AI 助手与 MCP **同源同名**。
+  两者合计约 113 个后台工具，AI 助手与 MCP **同源同名**。
+- 工具带 `group`：`core` 常驻；SoundBank / 本地化 / RTPC 效果 / 源文件 / 自动转码 / 高级脚本
+  默认收起，AI 用 `load_tools` 按需加载（MCP 仍一次暴露全部）。
 - `waapi_mcp/registry_mcp_tools.py`：把注册表工具批量注册为 MCP tool（`WaapiMCP.exe`）；
   `run_wwise_script` 受 `ai.enable_script_tool` 控制，默认不注册。
 - 软件内 AI 助手：注册表工具 + AI 专用工具（表格 / 大结果文件 / `gui_*` / 脚本）。
@@ -17,6 +19,18 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 - 业务代码优先 `from libraries.utils.wwise import waapi_utils`（传 `WwiseObject` / `WwiseObjectType`）；
   只有 MCP 薄封装或底层改动才直接用 `WAAPIClient`（`libraries/waapi_client.py`，dict 层）。
 - `WAAPIClient` 内部用锁串行化 `call`（界面/批处理/AI 共用一条 websocket），不要依赖并发调用。
+
+## 工具发现（MCP / 外部 Agent 必读）
+
+不要凭训练数据猜工具名、参数或返回结构。按下面顺序发现：
+
+1. `get_guidelines`：会话开始时调用一次，返回完整使用指南（路由、安全约定、WAQL、2025+ 兼容）。
+2. `list_tool_groups`：查看可用的专业分组与工具名。
+3. `load_tools(group=...)`：加载分组（仅 AI 侧生效；MCP 已暴露全部工具）。
+4. `get_tool_examples(name, keywords)`：看真实调用示例。
+5. `get_tool_schema(name)` / `get_tool_reference(name)`：看参数、输出 schema 与深文档。
+
+注册表工具自带 `output_schema`（重点工具）与 `examples`；新加工具时请一并补充。
 
 ## 参数与结果约定（AI 与 MCP 通用）
 
@@ -41,13 +55,65 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 | 按属性筛选（Volume/Pitch…） | `find_objects_by_property(object_ids, property_name, op, value, child_type?, scan_limit?)` | 与「属性查询」窗口同口径：逐对象 `get_object_properties`，某类型首次读不到即视为该类型无此属性，结果含 `types_without_property` |
 | 列表计数 / 分组 | `count_tool_items` / `group_tool_items` | 包裹任意返回列表的工具 |
 | 多步链式统计 | `aggregate_tool_chain(steps, group_by, min_count)` | 例：统计含 >1 个 MusicTrack 的 MusicSegment |
+| 任意 WAQL 查询（覆盖不了的场景） | `waql_query(waql, return_fields?, limit?)` | 支持 where/select/orderby/take、列表函数、返回表达式 |
 | 音频源与体积 | `get_audio_sources` / `calculate_audio_source_size` | 源文件路径、磁盘占用 |
-| 自动转码（长短音效分开转码） | `auto_compression_plan`（只读出方案）→ `auto_compression_apply`（改工程，需 `confirmed=true`） | 按 AudioFileSource 播放时长分短/中/长档，改节点的 OverrideConversion + Conversion |
+| 自动转码（长短音效分开转码） | `auto_compression_plan`（只读出方案）→ `auto_compression_apply`（改工程，需 `confirmed=true`） | 在 `auto_compression` 分组，AI 侧先 `load_tools("auto_compression")`；按 AudioFileSource 时长分档并改 OverrideConversion + Conversion |
 | 改名 / 备注 / 启用 / 颜色 | `rename_object` / `set_object_notes` / `set_object_inclusion` / `set_object_color` | |
 | 结构操作 | `create_parent` / `convert_to_type` / `split_underscore_to_folder` / `create_play_event` | |
 | 删除 | `delete_object`（MCP 侧需 `confirmed=true`） | AI 侧对应 `delete_objects`，由软件按修改策略弹窗确认 |
 | 试听 | `play_sound` / `stop_sound` | 返回 `transport_id` |
 | 撤销 | `begin_undo_group` / `end_undo_group` / `undo` / `redo` | AI 批量任务会自动包撤销组 |
+
+## WAQL 速查
+
+WAQL 是 Wwise 的查询语言，`waql_query` 直接把它交给 `ak.wwise.core.object.get`（只读）。
+
+```text
+from type Sound where @Volume < 0 orderby name take 50
+from object "\Containers\Default Work Unit\MySound" select descendants where type = "MusicTrack"
+from type Event select children select target
+"{GUID}" select referencesTo where type = "Action" select parent
+```
+
+- 源：`from type X` / `from object "路径或GUID"` / `from search "词"` / `from project`。
+- 变换：`where`、`select`、`orderby [reverse]`、`distinct`、`skip N`、`take N`、`reverse`。
+- 列表函数：`count()` / `count(cond)`、`any()` / `any(cond)`、`all(cond)`、`first()` / `last()`、
+  `at(N)`、`where(cond)`，可点号串联。
+- 比较：`=` `!=` `<` `<=` `>` `>=` `:`（前缀/模糊）`= /正则/`，`and` / `or` / `!()`。
+- 返回表达式：`OutputBus.name as bus`、`@RTPC.{propertyName, controlInput} as rtpcs`。
+- 坑：没有算术运算；字符串只能双引号；`from type` 走索引（比 `where type = ...` 快）；
+  `distinct` 可能改变顺序；`select` 在查询里必须返回对象，不能 `select name`。
+
+## Wwise 2025+ 兼容
+
+- 物理根目录：2025 起音频与音乐统一在 `\Containers`，总线在 `\Busses`；旧版本才是
+  `\Actor-Mixer Hierarchy` / `\Interactive Music Hierarchy` / `\Master-Mixer Hierarchy`。
+  `\Events`、`\Conversion Settings`、`\Game Parameters` 未变。
+- 对象类型：2026 起 `ActorMixer` 改名为 `PropertyContainer`。
+- 代码统一走 `libraries/utils/wwise/wwise_compat.py`，不要在业务代码里硬编码旧根或旧类型。
+- 需要顶层目录时用：
+  `from type workunit where workunittype = "folder" and parent = null`。
+
+## Event ActionType
+
+| 值 | 动作 | 值 | 动作 |
+|----|------|----|------|
+| 1 | Play | 2 | Stop |
+| 3 | Stop All | 4 | Mute |
+| 5 | UnMute | 6 | UnMute All |
+| 7 | Pause | 8 | Pause All |
+| 9 | Resume | 10 | Resume All |
+| 11 | Set Bus Volume | 12 | Set Voice Volume |
+| 13 | Set Voice Pitch | 14 | Reset Bus Volume |
+| 16 | Reset Voice Volume | 18 | Reset Pitch |
+| 20 | Enable State | 21 | Disable State |
+| 22 | Set State | 23 | Set Switch |
+| 26 | Set LPF | 29 | Set HPF |
+| 34 | Break | 35 | Trigger |
+| 36 | Seek | 37 | Seek All |
+| 38 | Set Game Parameter | 39 | Reset Game Parameter |
+| 40 | Release Envelope | 41 | Post Event |
+| 42 | Reset Playlist | 43 | Set Effect |
 
 ## AI 专用（无界面环境不可用）
 

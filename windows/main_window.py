@@ -1,4 +1,6 @@
 from collections.abc import Callable
+from datetime import datetime
+from functools import partial
 import json
 import threading
 
@@ -20,12 +22,14 @@ from libraries.utils import single_instance
 from libraries.utils.log_utils import Logger, set_log_theme
 from libraries.waapi_client import WAAPIClient
 from libraries.wwise_object import WwiseObject, WwiseObjectType
+from libraries.utils.wwise import compression_utils
 from table.wwise_object_table_gui import WwiseTableImpl
 from table.wwise_object_table import WwiseTableDisplayMode
 from table.wwise_table_headers import CHECK_BOX_COL, COMMON_HEADERS, ENABLE_COL, TABLE_DISPLAY_MODE_LABELS, PATH_COL
 from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSilenceTrimWindow
 from windows.loudness_adjustment_window import LoudnessAdjustmentWindow as LoudnessAdjustmentWindow
 from windows.multi_language_compare_window import MultiLanguageCompareWindow as MultiLanguageCompareWindow
+from windows.optimize_random_count_window import OptimizeRandomCountWindow as OptimizeRandomCountWindow
 from windows.advanced_filter_window import AdvancedFilterWindow as AdvancedFilterWindow
 from windows.advanced_find_window import AdvancedFindWindow as AdvancedFindWindow
 from windows.sync_trim_window import SyncTrimWindow as SyncTrimWindow
@@ -36,14 +40,16 @@ from windows.project_validation_window import ProjectValidation as ProjectValida
 from windows.work_unit_import_window import WorkUnitImporter as WorkUnitImporter
 from windows.project_settings_window import ProjectSettingsWindow as ProjectSettingsWindow
 from windows.media_size_window import MediaSizeWindow as MediaSizeWindow
+from windows.media_duplicate_window import MediaDuplicateWindow as MediaDuplicateWindow
 from windows.property_query_window import PropertyQueryWindow as PropertyQueryWindow
 from windows.auto_compression_settings_window import AutoCompressionSettingsWindow as AutoCompressionSettingsWindow
 from waapi import CannotConnectToWaapiException
-from PySide6.QtWidgets import QApplication, QDialog, QMainWindow, QMenu, QMessageBox, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMainWindow, QMenu, QMessageBox, QTableWidgetItem
 from ui.MainWindow_ui import Ui_MainWindow
 from windows.export_object_list_window import ExportObjectListWindow as ExportObjectListWindow
 from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_utils, soundbank_utils, \
-    localization_utils, project_utils, event_utils, container_utils, migration_utils, waapi_utils, mixing_utils
+    localization_utils, project_utils, event_utils, container_utils, migration_utils, waapi_utils, mixing_utils, \
+    wwise_compat
 from libraries.utils import ai_utils, io_utils, path_utils, user_config
 from libraries.utils.wwise import workunit_utils
 
@@ -202,6 +208,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._undo_group_position: int = 0
         self._restoring_history: bool = False
         self.__eventFilterBase = None
+        # 与 Event 筛选起点一起记录的勾选范围，切换「有引用/无引用」时沿用同一批对象
+        self.__eventFilterCheckedIds = None
         self.__languageFilterBase = None
         self._full_mode_origin: list[WwiseObject] | None = None
         self._full_mode_entry_ids: tuple | None = None
@@ -566,6 +574,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         window.show()
         window.exec()
         Logger().debug(f"关闭工具窗口：{name}")
+        from libraries.base_dialog import bring_to_foreground
+        bring_to_foreground(self)
 
     # 是否有任务正在运行（工具批处理或 AI 任务）：同一时间只允许一个
     def is_busy(self) -> bool:
@@ -723,6 +733,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 文件菜单
         self.actImportObjectList.triggered.connect(self.import_object_list)
         self.actExportObjectList.triggered.connect(self.export_object_list)
+        self.actDumpObjectProperties.triggered.connect(self.dump_all_properties)
         self.actProjectSettings.triggered.connect(self.open_project_settings_window)
         # 编辑菜单
         self.actUndo.triggered.connect(self.undo_last_group)
@@ -731,11 +742,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_batch_processor(self.actDeleteObjects, lambda index, obj: waapi_utils.delete_object(obj), expand=False)
         # 通用菜单（改变类型为仅表格类型列右键）
         self.setup_batch_processor(self.actCreateWorkUnit, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.WorkUnit), expand=False)
-        self.setup_batch_processor(self.actCreateActorMixer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.ActorMixer), expand=False)
+        self.setup_batch_processor(
+            self.actCreateActorMixer,
+            lambda index, obj: common_utils.create_parent(
+                obj, WwiseObjectType(wwise_compat.default_property_container_type())
+            ),
+            expand=False,
+        )
         self.setup_batch_processor(self.actCreateVirtualFolder, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.Folder), expand=False)
         self.setup_batch_processor(self.actCreateBlendContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.BlendContainer), expand=False)
         self.setup_batch_processor(self.actCreateRandomSequenceContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.RandomContainer), expand=False)
         self.setup_batch_processor(self.actCreateSwitchContainer, lambda index, obj: common_utils.create_parent(obj, WwiseObjectType.SwitchContainer), expand=False)
+        # 通用菜单：改变类型（改完会回填两个类型共有的属性，表格行按路径刷新）
+        for action, target_type in (
+            (self.actConvertToActorMixer, lambda: WwiseObjectType(wwise_compat.default_property_container_type())),
+            (self.actConvertToBlendContainer, WwiseObjectType.BlendContainer),
+            (self.actConvertToRandomContainer, WwiseObjectType.RandomContainer),
+            (self.actConvertToSwitchContainer, WwiseObjectType.SwitchContainer),
+            (self.actConvertToVirtualFolder, WwiseObjectType.Folder),
+            (self.actConvertToWorkUnit, WwiseObjectType.WorkUnit),
+        ):
+            action.triggered.connect(
+                partial(self._on_convert_action_triggered, target_type, action.text())
+            )
 
         self.setup_batch_processor(self.actMoveToSelection, lambda index, obj: common_utils.move_to_selection(obj), expand=False)
         self.setup_batch_processor(self.actCopyFromSelection, lambda index, obj: common_utils.copy_from_selection(obj), expand=False)
@@ -767,9 +796,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_batch_processor(self.actTidyOriginalFolders, lambda index, obj: audio_source_utils.tidy_original_folders(obj), WwiseObjectType.Sound)
         self.actDeleteUnusedAKDFiles.triggered.connect(audio_source_utils.delete_unused_akd_files)
         # 本地化菜单
-        self.setup_batch_processor(self.actLocalizeLanguages, lambda index, obj: localization_utils.localize_languages(obj), WwiseObjectType.Sound)
+        # 语言范围由 localize_languages 按高级筛选处理，采集目标时忽略语言筛选
+        self.setup_batch_processor(self.actLocalizeLanguages, lambda index, obj: localization_utils.localize_languages(obj), WwiseObjectType.Sound, ignore_language_filter=True)
         # 静音填补的语言范围跟随高级筛选的语言选项，目标对象本身不受该筛选限制
         self.setup_batch_processor(self.actFillSilence, lambda index, obj: localization_utils.fill_silence(obj), WwiseObjectType.Sound, ignore_language_filter=True)
+        # 转为 Voice / Sound：参考语言与 IsVoice 的处理在 localization_utils 内完成
+        self.setup_batch_processor(self.actConvertToVoice, lambda index, obj: localization_utils.convert_to_voice(obj), WwiseObjectType.Sound, ignore_language_filter=True)
+        self.setup_batch_processor(self.actConvertToSound, lambda index, obj: localization_utils.convert_to_sound(obj), WwiseObjectType.Sound, ignore_language_filter=True)
         # 混音菜单
         self.setup_batch_processor(self.actDownMixFader, lambda index, obj: mixing_utils.down_mix_fader(obj))
         self.setup_batch_processor(self.actVolumeToGain, lambda index, obj: mixing_utils.volume_to_gain(obj))
@@ -788,6 +821,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_batch_processor(self.actSplitTo1P2P, lambda index, obj: container_utils.split_by_net_role(obj, True, False), expand=False)
         self.setup_batch_processor(self.actGroupAsRandom, lambda index, obj: container_utils.group_as_random(obj), WwiseObjectType.Sound)
         self.setup_batch_processor(self.actRenameRandomChildren, lambda index, obj: container_utils.rename_random_children(obj), WwiseObjectType.RandomContainer)
+        self.actOptimizeRandomCount.triggered.connect(self.open_optimize_random_count_window)
         # Event菜单
         self.setup_batch_processor(self.actCreatePlayEvent, lambda index, obj: event_utils.create_play_event(obj), (
             WwiseObjectType.Sound, WwiseObjectType.RandomContainer, WwiseObjectType.BlendContainer,
@@ -808,6 +842,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actGenerateEventBankMap.triggered.connect(soundbank_utils.generate_event_bank_map)
         # 统计菜单
         self.actCalculateMediaSize.triggered.connect(self.calculate_media_size)
+        self.actMediaDuplicate.triggered.connect(self.open_media_duplicate_window)
         self.actPropertyQuery.triggered.connect(self.open_property_query_window)
         # GameSync菜单
         self.actCopyRtpcFromSelection.triggered.connect(self.copy_rtpc_from_selection)
@@ -863,6 +898,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             del self._undo_group_names[0]
         self._undo_group_position = len(self._undo_group_names)
         self.update_undo_action_texts()
+
+    # 顶部菜单「改变类型为」：把表格当前可见对象整体改为指定类型
+    # 改类型前后的属性搬运在 common_utils.convert_to_type 里完成，表格行在批量结束后按路径刷新
+    def _on_convert_action_triggered(self, target_type: WwiseObjectType, action_name: str, _checked: bool = False):
+        if callable(target_type):
+            target_type = target_type()
+        self.change_table_objects_type(target_type, action_name)
+
+    def change_table_objects_type(self, target_type: WwiseObjectType, action_name: str = ""):
+        title = f"改变类型为 {action_name}" if action_name else "改变类型"
+        if self.is_busy():
+            Logger().warning(self.busy_message(title))
+            return
+        objects = self.get_visible_objects()
+        if not objects:
+            Logger().warning("表格为空，暂无可改变类型的对象")
+            return
+        self.add_undo_group_name(title)
+        Logger().info(f"执行工具「{title}」：{len(objects)} 个目标对象")
+        self.table.convert_visible_rows_to_type(target_type, title)
 
     # 按当前指针刷新「撤销/重做」菜单项文案（指针处没有对应组时显示纯动作名）
     def update_undo_action_texts(self):
@@ -1118,6 +1173,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if only_in_use and workunit_path_by_source_id is None:
             workunit_path_by_source_id = self.collect_source_workunit_path_by_id()
         self.table.filter_in_use_only(only_in_use, workunit_path_by_source_id)
+        # 「查找/筛选只对选中对象生效」：未勾选的行不参与筛选，始终保持显示
+        if user_config.get_tool_find_filter_checked_only():
+            self.table.show_unchecked_rows()
         # 关键词/类型/启用等筛选全部执行完后，一次性输出筛选结果
         shown_count = sum(
             1
@@ -1194,6 +1252,80 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             for row_data in self.table.get_active_rows(checked=True, visible=True)
         ]
 
+    # 勾选根对象 + 「最近表格行是否勾选」路径映射；用于排除未勾选行的整棵子树
+    def get_checked_scope(self) -> tuple[list[WwiseObject], dict]:
+        checked_objects = self.get_checked_visible_objects()
+        row_checked_by_path = {
+            compression_utils.normalized_path(obj.path): True
+            for obj in checked_objects if obj.path
+        }
+        for path in self.get_unchecked_visible_paths():
+            row_checked_by_path.setdefault(
+                compression_utils.normalized_path(path), False
+            )
+        return checked_objects, row_checked_by_path
+
+    # 分析类工具没有勾选任何对象时的统一提示
+    def warn_no_checked_objects(self, tool_name: str):
+        message = (
+            '主窗口表格里没有勾选任何对象（表格最左侧的「选中」列）。\n'
+            '请先勾选要分析的对象。'
+        )
+        Logger().warning(message)
+        QMessageBox.warning(self, tool_name, message)
+
+    # 打开分析工具前确认勾选范围内存在目标类型对象
+    def require_checked_targets(
+        self, tool_name: str, target_types=None, expand: bool = None
+    ) -> bool:
+        targets = self.collect_tool_targets(
+            target_types, expand, checked_only=True
+        )
+        if targets:
+            return True
+        if not self.get_checked_visible_objects():
+            self.warn_no_checked_objects(tool_name)
+        else:
+            self.warn_no_target_objects(tool_name)
+        return False
+
+    # 查找/筛选取范围：勾选「选中」列的行作为目标，未勾选的行原样保留
+    # 关闭「查找/筛选只对选中对象生效」时，目标为全部可见对象，保留列表为空
+    def resolve_find_scope(self) -> tuple[list[WwiseObject], list[WwiseObject]]:
+        visible_objects = self.get_visible_objects()
+        checked_ids = self.get_checked_scope_ids()
+        if checked_ids is None:
+            return list(visible_objects), []
+        return (
+            [obj for obj in visible_objects if obj.id in checked_ids],
+            [obj for obj in visible_objects if obj.id not in checked_ids],
+        )
+
+    # 「只对选中对象生效」时返回勾选行的对象 id；关闭时返回 None 表示不限制
+    def get_checked_scope_ids(self) -> set[str] | None:
+        if not user_config.get_tool_find_filter_checked_only():
+            return None
+        return {obj.id for obj in self.get_checked_visible_objects()}
+
+    # 查找结果可能与保留行重叠，按对象 id 去重并保持顺序
+    @staticmethod
+    def dedupe_objects(objects: list[WwiseObject]) -> list[WwiseObject]:
+        seen_ids = set()
+        result = []
+        for obj in objects:
+            if obj is None or not obj.id or obj.id in seen_ids:
+                continue
+            seen_ids.add(obj.id)
+            result.append(obj)
+        return result
+
+    # 查找类操作没有目标对象时的统一提示
+    def warn_no_find_targets(self):
+        if user_config.get_tool_find_filter_checked_only():
+            Logger().warning('没有勾选任何对象，请先在表格最左侧「选中」列勾选要查找的对象')
+        else:
+            Logger().warning('表格中没有可查找的对象')
+
     # 获取当前筛选后仍可见、但没有勾选「选中」列的对象路径：分析类工具要跳过它们及其子树
     def get_unchecked_visible_paths(self) -> list[str]:
         return [
@@ -1226,7 +1358,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 统一的工具执行前对象采集：按「工具执行前自动获取子对象」决定是否展开子级，
     # 可按目标类型筛选（target_types 为 None 表示不筛类型），并遵循高级筛选的语言设置；
     # ignore_language_filter=True 时跳过语言筛选，改用高级筛选应用前的对象列表
-    def collect_tool_targets(self, target_types=None, expand: bool = None, ignore_language_filter: bool = False) -> list[WwiseObject]:
+    def collect_tool_targets(self, target_types=None, expand: bool = None, ignore_language_filter: bool = False,
+                             checked_only: bool = False) -> list[WwiseObject]:
         if target_types is not None and isinstance(target_types, WwiseObjectType):
             target_types = {target_types}
         elif target_types is not None:
@@ -1241,8 +1374,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         active_language = (
             localization_utils.get_current_language() if language_filter_active else None
         )
+        row_checked_by_path = {}
+        # 分析类工具只取勾选行；未勾选行的整棵子树稍后一起排除
+        if checked_only:
+            visible_objects, row_checked_by_path = self.get_checked_scope()
         # 语言筛选会把其它语言的语音从表格里移除，忽略该筛选时回到筛选前的列表
-        if ignore_language_filter and self.__languageFilterBase is not None:
+        elif ignore_language_filter and self.__languageFilterBase is not None:
             visible_objects = list(self.__languageFilterBase)
         else:
             visible_objects = self.get_visible_objects()
@@ -1274,6 +1411,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             object_type = (obj.wwise_dict or {}).get('type', '')
             if target_types is not None and WwiseObjectType(object_type) not in target_types:
                 return
+            if checked_only and compression_utils.is_excluded_by_rows(
+                obj.path, row_checked_by_path
+            ):
+                return
             if obj.id not in seen_ids:
                 if (
                     language_filter_active
@@ -1292,28 +1433,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 查找父级对象
     def find_parent(self):
+        targets, kept = self.resolve_find_scope()
+        if not targets:
+            self.warn_no_find_targets()
+            return
         ancestor_mode = self.cbxRecursiveFind.isChecked()
-        visible_objects = self.get_visible_objects()
-        found_objects = list(visible_objects) if self.cbxKeepSelf.isChecked() else []
-        for obj in visible_objects:
+        found_objects = list(kept)
+        if self.cbxKeepSelf.isChecked():
+            found_objects.extend(targets)
+        for obj in targets:
             if ancestor_mode:
                 for ancestor in waapi_utils.get_ancestor_objects(obj):
                     found_objects.append(ancestor)
             else:
                 found_objects.append(waapi_utils.get_parent_object(obj))
-        gv.active_objects = found_objects
+        gv.active_objects = self.dedupe_objects(found_objects)
         self.table.refresh_table(True)
         self.apply_table_filter()
         self._history_append_current_if_changed()
 
     # 查找子级对象
     def find_children(self):
-        visible_objects = self.get_visible_objects()
-        all_children = list(visible_objects) if self.cbxKeepSelf.isChecked() else []
-        for obj in visible_objects:
+        targets, kept = self.resolve_find_scope()
+        if not targets:
+            self.warn_no_find_targets()
+            return
+        all_children = list(kept)
+        if self.cbxKeepSelf.isChecked():
+            all_children.extend(targets)
+        for obj in targets:
             for child in waapi_utils.get_child_objects(obj, self.cbxRecursiveFind.isChecked()):
                 all_children.append(child)
-        gv.active_objects = all_children
+        gv.active_objects = self.dedupe_objects(all_children)
         self.table.refresh_table(True)
         self.apply_table_filter()
         self._history_append_current_if_changed()
@@ -1323,14 +1474,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if isinstance(type_names, str):
             type_names = [type_names]
         target_types = {WwiseObjectType(name) for name in (type_names or []) if name and name != '全部类型'}
-        visible_objects = self.get_visible_objects()
-        if not visible_objects:
-            Logger().warning('表格中没有可查找的对象')
+        targets, kept = self.resolve_find_scope()
+        if not targets:
+            self.warn_no_find_targets()
             return
         recursive = self.cbxRecursiveFind.isChecked()
-        found_objects = list(visible_objects) if self.cbxKeepSelf.isChecked() else []
-        seen_ids = {obj.id for obj in found_objects}
-        for obj in visible_objects:
+        found_objects = list(kept)
+        seen_ids = {obj.id for obj in kept}
+        if self.cbxKeepSelf.isChecked():
+            for obj in targets:
+                if obj.id not in seen_ids:
+                    seen_ids.add(obj.id)
+                    found_objects.append(obj)
+        for obj in targets:
             # 递归 + 指定类型时用按类型查后代的接口（单次 WAQL，比全量分页更快）
             if target_types and recursive:
                 children = waapi_utils.get_descendants_of_type(obj, target_types)
@@ -1343,19 +1499,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     continue
                 seen_ids.add(child.id)
                 found_objects.append(child)
-        if not found_objects:
+        if len(found_objects) == len(kept):
             Logger().warning('没有查找到符合条件的子对象')
             return
         gv.active_objects = found_objects
         self.table.refresh_table(True)
         self.apply_table_filter()
         self._history_append_current_if_changed()
-        Logger().info(f'共查找到 {len(found_objects)} 个对象')
+        Logger().info(f'共查找到 {len(found_objects) - len(kept)} 个对象')
 
     # 查找引用当前表格对象的所有对象，逐一查询并去重后加入表格
     def find_references(self):
-        visible_objects = self.get_visible_objects()
-        audio_sources = [obj for obj in visible_objects if obj.type == WwiseObjectType.AudioSource]
+        targets, kept = self.resolve_find_scope()
+        if not targets:
+            self.warn_no_find_targets()
+            return
+        audio_sources = [obj for obj in targets if obj.type == WwiseObjectType.AudioSource]
         source_properties = waapi_utils.get_objects_properties(
             audio_sources, ['originalRelativeFilePath'])
         references_by_path = {}
@@ -1366,9 +1525,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     waapi_utils.find_audio_sources_by_original_path(relative_path)
                     if relative_path else []
                 )
-        found_objects = list(visible_objects) if self.cbxKeepSelf.isChecked() else []
+        found_objects = list(kept)
+        if self.cbxKeepSelf.isChecked():
+            found_objects.extend(targets)
         seen_ids = {obj.id for obj in found_objects}
-        for obj in visible_objects:
+        for obj in targets:
             if obj.type == WwiseObjectType.AudioSource:
                 relative_path = source_properties.get(obj.id, {}).get('originalRelativeFilePath')
                 references = references_by_path.get(relative_path, [])
@@ -1378,7 +1539,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if reference.id not in seen_ids:
                     seen_ids.add(reference.id)
                     found_objects.append(reference)
-        gv.active_objects = found_objects
+        gv.active_objects = self.dedupe_objects(found_objects)
         self.table.refresh_table(True)
         self.apply_table_filter()
         self._history_append_current_if_changed()
@@ -1400,12 +1561,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not property_name:
             Logger().warning('请输入要查找的属性名称')
             return
-        objects = self.get_visible_objects()
-        if not objects:
-            Logger().warning('表格中没有可查找的对象')
+        targets, kept = self.resolve_find_scope()
+        if not targets:
+            self.warn_no_find_targets()
             return
-        found_objects: list[WwiseObject] = []
-        seen_ids: set[str] = set()
+        found_objects: list[WwiseObject] = list(kept)
+        seen_ids: set[str] = {obj.id for obj in kept}
 
         def process(index, obj):
             target = waapi_utils.get_referenced_object(obj, property_name)
@@ -1415,16 +1576,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return True
 
         def finished():
-            if not found_objects:
+            if len(found_objects) == len(kept):
                 Logger().warning(f'没有对象在属性「{property_name}」上返回有效对象')
                 return
             gv.active_objects = found_objects
             self.show_obj_list()
             self._history_append_current_if_changed()
-            Logger().info(f'属性「{property_name}」查找到 {len(found_objects)} 个对象')
+            Logger().info(f'属性「{property_name}」查找到 {len(found_objects) - len(kept)} 个对象')
 
         batch_processor.create_async(
-            objects, process, f'查找属性 {property_name}', 'name', on_finished=finished
+            targets, process, f'查找属性 {property_name}', 'name', on_finished=finished
         )
 
     # 恢复表格/日志分隔条位置：两侧都可拖动，窗口变高时按比例一起变高
@@ -1448,11 +1609,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.__languageFilterBase is None:
             self.__languageFilterBase = list(self.get_visible_objects())
         active_language = localization_utils.get_current_language()
-        visible_objects = self.get_visible_objects()
-        languages_by_id = localization_utils.get_sound_languages(visible_objects)
-        gv.active_objects = [
+        targets, kept = self.resolve_find_scope()
+        languages_by_id = localization_utils.get_sound_languages(targets)
+        gv.active_objects = kept + [
             obj
-            for obj in visible_objects
+            for obj in targets
             if not localization_utils.is_filtered_out_by_language(
                 obj, active_language, languages_by_id.get(obj.id)
             )
@@ -1472,12 +1633,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def filter_by_event_reference(self, with_ref: bool):
         if self.__eventFilterBase is None:
             self.__eventFilterBase = list(self.get_visible_objects())
-        gv.active_objects = [
-            obj
-            for obj in self.__eventFilterBase
-            if (with_ref and event_utils.has_event_reference(obj))
-            or (not with_ref and not event_utils.has_event_reference(obj))
-        ]
+            self.__eventFilterCheckedIds = self.get_checked_scope_ids()
+        checked_ids = self.__eventFilterCheckedIds
+
+        def should_keep(obj: WwiseObject) -> bool:
+            # 未勾选的行不参与筛选，原样保留
+            if checked_ids is not None and obj.id not in checked_ids:
+                return True
+            has_reference = event_utils.has_event_reference(obj)
+            return has_reference if with_ref else not has_reference
+
+        gv.active_objects = [obj for obj in self.__eventFilterBase if should_keep(obj)]
         self.show_obj_list()
 
     # 重置「Event 引用」筛选：恢复为当前表格中的全部行
@@ -1586,6 +1752,99 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         suffix = f"，{missing_count}个路径未找到" if missing_count else ""
         Logger().info(f"导入完成，共导入{len(objects)}个对象{suffix}")
 
+    # 导出全部属性：把表格中所有对象的属性/引用值 dump 成 JSON（只读，不改工程）
+    def dump_all_properties(self):
+        objects = self.get_visible_objects()
+        if not objects:
+            Logger().warning("表格为空，暂无可导出的对象")
+            return
+        if self.is_busy():
+            Logger().warning(self.busy_message("导出全部属性"))
+            return
+        file_path, _selected_filter = QFileDialog.getSaveFileName(
+            self, "导出全部属性",
+            f"Wwise_AllProperties_{datetime.now():%Y%m%d_%H%M%S}.json",
+            "JSON (*.json)",
+        )
+        if not file_path:
+            return
+        # 同一类型的属性和引用名完全一致：按类型分组，再按「查询分页大小」分页读取，
+        # 每页一次批量查询，进度条每页步进一次
+        page_size = max(1, user_config.get_tool_page_size())
+        objects_by_type: dict[str, list[WwiseObject]] = {}
+        for obj in objects:
+            objects_by_type.setdefault(obj.type.value, []).append(obj)
+        tasks = []
+        for type_name, type_objects in objects_by_type.items():
+            for start in range(0, len(type_objects), page_size):
+                tasks.append((type_name, type_objects[start:start + page_size]))
+        self.__dump_objects = list(objects)
+        self.__dump_file_path = file_path
+        self.__dump_properties_by_id = {}
+        self.__dump_names_by_type = {}
+        # 「设置 → 工具行为 → 导出属性时仅包含可写属性」
+        self.__dump_only_writable = user_config.get_dump_only_writable_properties()
+        Logger().info(f"开始导出 {len(objects)} 个对象的全部属性…")
+        started = batch_processor.create_async(
+            tasks,
+            self._dump_object_page,
+            "导出全部属性",
+            on_finished=self._on_dump_finished,
+            progress_text_func=lambda _index, task: f"{task[0]}（{len(task[1])} 个）",
+        )
+        if not started:
+            Logger().warning(self.busy_message("导出全部属性"))
+
+    # 批处理线程：读取一页同类型对象的全部属性（属性/引用名按类型缓存）
+    def _dump_object_page(self, _index: int, task: tuple) -> bool:
+        type_name, page_objects = task
+        names = self.__dump_names_by_type.get(type_name)
+        if names is None:
+            names = list(waapi_utils.get_property_and_reference_names(page_objects[0]))
+            if self.__dump_only_writable:
+                names = [name for name in names if common_utils.is_writable_property_name(name)]
+            self.__dump_names_by_type[type_name] = names
+        values = waapi_utils.get_objects_properties_raw(page_objects, names) if names else {}
+        for obj in page_objects:
+            self.__dump_properties_by_id[obj.id] = values.get(obj.id, {})
+        return True
+
+    # 全部读完后按表格顺序组装并写入 JSON
+    def _on_dump_finished(self):
+        entries = [
+            {
+                "id": obj.id,
+                "name": obj.name,
+                "type": obj.type.value,
+                "path": obj.path,
+                "properties": self._dump_property_values(obj.id),
+            }
+            for obj in self.__dump_objects
+        ]
+        payload = {
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "platform": project_utils.get_current_platform_name(),
+            "object_count": len(entries),
+            "objects": entries,
+        }
+        if not io_utils.export_to_json_path(payload, self.__dump_file_path):
+            QMessageBox.warning(
+                self, "导出全部属性", f"写入 JSON 文件失败：\n{self.__dump_file_path}"
+            )
+            return
+        Logger().info(f"已导出 {len(entries)} 个对象的全部属性：{self.__dump_file_path}")
+        QMessageBox.information(
+            self, "导出全部属性",
+            f"已导出 {len(entries)} 个对象的全部属性：\n{self.__dump_file_path}",
+        )
+
+    # 单个对象写进 JSON 的属性值：仅可写模式下再丢掉列表与无 id 的复合值
+    def _dump_property_values(self, object_id: str) -> dict:
+        values = self.__dump_properties_by_id.get(object_id, {})
+        if not self.__dump_only_writable:
+            return values
+        return common_utils.writable_property_values(values)
+
     # 导入Work Unit
     @staticmethod
     def import_from_work_unit():
@@ -1613,53 +1872,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 打开音频末尾静音裁剪窗口
     def open_audio_silence_trimmer_window(self):
-        if not self.collect_tool_targets(WwiseObjectType.AudioSource):
-            self.warn_no_target_objects('静音裁剪')
-            return
         self.open_tool_window("静音裁剪", AudioSilenceTrimWindow)
 
     # 打开同步裁剪窗口，列出主窗口表格中的所有 AudioSource 及其裁剪信息
     def open_sync_trim_window(self):
-        # 该工具按源文件工作：固定展开子级拿全 AudioSource，用户不必先「查找子对象」
-        if not self.collect_tool_targets(WwiseObjectType.AudioSource, expand=True):
-            self.warn_no_target_objects('同步裁剪')
-            return
         self.open_tool_window("同步裁剪", SyncTrimWindow)
 
     # 打开响度调整窗口，统一表格中所有 AudioSource 的响度
     def open_loudness_adjustment_window(self):
-        if not self.collect_tool_targets(WwiseObjectType.AudioSource):
-            self.warn_no_target_objects('响度调整')
-            return
         self.open_tool_window("响度调整", LoudnessAdjustmentWindow)
 
     def open_auto_compression_settings_window(self):
-        if not self.get_visible_objects():
-            QMessageBox.warning(self, "自动转码设置", "表格中没有可识别的对象。")
-            return
         self.open_tool_window("自动转码设置", lambda: AutoCompressionSettingsWindow(self))
 
     # 打开多语言对比窗口：按每个 Sound 的直系 AudioSource 分语言对比响度与时长
     def open_multi_language_compare_window(self):
-        if not self.collect_tool_targets(WwiseObjectType.Sound):
-            self.warn_no_target_objects('多语言对比')
-            return
-        compare_window = MultiLanguageCompareWindow()
-        compare_window.show()
-        compare_window.exec()
+        self.open_tool_window("多语言对比", MultiLanguageCompareWindow)
 
     # 打开媒体资源大小统计窗口（按每个对象逐项展示）
     def calculate_media_size(self):
-        if not self.get_visible_objects():
-            Logger().warning('表格中没有可统计的对象')
-            return
         self.open_tool_window("媒体资源大小统计", MediaSizeWindow)
+
+    # 打开媒体查重窗口，从 SoundBanksInfo.xml 找出同源多 wem 的情况
+    def open_media_duplicate_window(self):
+        self.open_tool_window("媒体查重", MediaDuplicateWindow)
 
     # 打开属性查询窗口，对表格可见对象批量读取指定属性
     def open_property_query_window(self):
-        if not self.collect_tool_targets():
-            Logger().warning('表格中没有可查询的对象')
-            return
         self.open_tool_window("属性查询", PropertyQueryWindow)
 
     # 添加列表对象到选中的Bank中
@@ -1672,6 +1911,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 打开Bank的列表分配窗口
     def open_bank_assignment_matrix_window(self):
         self.open_tool_window("Bank分配矩阵", lambda: BankAssignmentMatrix(self))
+
+    # 打开优化随机数量窗口：统计各平台 Random Container 的启用数量并按当前平台优化
+    def open_optimize_random_count_window(self):
+        self.open_tool_window("优化随机数量", OptimizeRandomCountWindow)
 
     # 替换对象上的RTPC
     def copy_rtpc_from_selection(self):
@@ -1714,20 +1957,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             gv.progress_bar.close()
         self.hide()
         event.accept()
-        # 通知后台线程停止并做短暂等待（进程退出时 exit_process 会统一兜底结束）
+        # 先停掉后台线程：它们可能正在调用 WAAPI，不能带着在途调用直接退出
         if self._ai_worker and self._ai_worker.isRunning():
             self._ai_worker.stop_requested()
-            self._ai_worker.wait(300)
+            self._ai_worker.wait(2000)
         if self._ai_model_worker and self._ai_model_worker.isRunning():
-            self._ai_model_worker.wait(200)
+            self._ai_model_worker.wait(1000)
         # 停止所有正在运行的批处理线程
         if gv.batch_processor and hasattr(gv.batch_processor, "isRunning"):
             gv.batch_processor.stop()
             if gv.batch_processor.isRunning():
-                gv.batch_processor.wait(500)
-        # 关闭WAAPI连接
+                gv.batch_processor.wait(3000)
+        # 关闭WAAPI连接：应用退出时不做优雅断开，避免与在途调用并发以及无超时等待 GOODBYE
         try:
-            waapi_utils.close_client()
+            waapi_utils.close_client(graceful=False)
         except Exception as e:
             Logger().error(f"关闭WAAPI连接时出错: {e}")
         Logger().debug("应用程序已关闭")

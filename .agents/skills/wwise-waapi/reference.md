@@ -50,3 +50,48 @@
 - 换 Wwise 版本后重新生成：
   `python .agents/skills/wwise-waapi/scripts/gen_object_properties.py`
   （默认读 `G:\H74\Sound\Wwise_2023.1.18.8899\SDK\Help\WwiseSDK-Windows.chm`，可用 `--chm` 指定）。
+
+## 常用属性 / 引用 / 列表（筛选与 RTPC 时参考）
+
+属性读取用 `@PropertyName`（对象上的直接值）或 `PropertyName`（带 override 解析），大小写不敏感。
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `Volume` | dB | 声音/容器音量，-96 ~ +12 |
+| `Pitch` | cents | 音高，1200 = 2 倍速 |
+| `Lowpass` / `Highpass` | 0-100 | 递归低通/高通 |
+| `BusVolume` | dB | 总线音量 |
+| `MakeUpGain` | dB | 最终补偿增益 |
+| `InitialDelay` | s | 播放前延迟 |
+| `PlaybackSpeed` | 倍率 | 播放速度 |
+| `Inclusion` | bool | 是否进 SoundBank |
+| `IsStreamingEnabled` / `IsLoopingEnabled` / `IsLoopingInfinite` / `LoopCount` | bool/int | 流式与循环 |
+| `NormalOrShuffle` / `RandomAvoidRepeating` | int/bool | Random 容器行为 |
+| `SwitchBehavior` / `BlendBehavior` | int | Switch/Blend 行为 |
+| `Tempo` / `TimeSignatureUpper` / `TimeSignatureLower` | 数值 | 音乐节拍 |
+
+Override 开关：`OverrideOutput`、`OverrideGameAuxSends`、`OverrideUserAuxSends`、
+`OverrideEffect`、`OverrideColor`。
+
+常用引用：`OutputBus`、`UserAuxSend0..3`、`Attenuation`、`Conversion`、`AudioDevice`、
+`SwitchGroupOrStateGroup`、`DefaultSwitchOrState`、`Target`（Action）、`Effect`（EffectSlot）。
+
+- Effects 是 `EffectSlot` 列表：`effects.at(0).Effect` 才是插件本身；
+  `where effects.any(effect.pluginname : "EQ")` 可筛选带 EQ 的总线。
+- RTPC 是列表：`rtpc.any(propertyname = "Volume")`、`@RTPC.{propertyName, controlInput}`。
+- 层级规则：Sound 可挂在 PropertyContainer / Random / Switch / Blend / WorkUnit / Folder 下；
+  MusicTrack 只能挂在 MusicSegment 下；MusicSegment 可挂在 MusicSwitch/MusicPlaylist/WorkUnit/Folder 下。
+
+## MCP 工具分组与发现
+
+- MCP 侧仍一次暴露全部工具；AI 侧只常驻 `core`，其余分组用 `load_tools(group=...)` 加载。
+- 分组：`auto_compression`、`soundbank`、`localization`、`rtpc_effects`、`source_files`、`advanced`。
+- 发现工具：`get_guidelines`、`list_tool_groups`、`load_tools`、`get_tool_examples`、
+  `get_tool_schema`、`get_tool_reference`；重点工具带 `output_schema` 与 `examples`。
+
+## Wwise 2025 / 2026 兼容
+
+- 2025+ 根目录：`\Containers`（音频+音乐）、`\Busses`；旧版为三个 `* Hierarchy`。
+- 2026+ 类型：`ActorMixer` → `PropertyContainer`。
+- 统一走 `libraries/utils/wwise/wwise_compat.py` 的 `containers_root()` / `busses_root()` /
+  `is_property_container_type()` / `resolve_wrapper_type()`；不要新增硬编码。

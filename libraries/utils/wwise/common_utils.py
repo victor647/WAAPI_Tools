@@ -1,7 +1,8 @@
 import os.path
 from data import project_conventions
-from libraries.utils.wwise import audio_source_utils, soundbank_utils, event_utils, waapi_utils
+from libraries.utils.wwise import audio_source_utils, soundbank_utils, event_utils, waapi_utils, wwise_compat
 from libraries.wwise_object import WwiseObject, WwiseObjectType
+from libraries.wwise_object_properties import BUILTIN_ACCESSORS
 from libraries.utils.log_utils import Logger
 
 
@@ -32,20 +33,19 @@ def get_full_name(obj: WwiseObject, name: str) -> str:
 # 优化对象的名称长度
 def optimize_name_length(obj: WwiseObject) -> bool:
     obj_path = obj.path
-    obj_type = obj.type
-    if obj_path.startswith('\\Actor-Mixer Hierarchy'):
+    # 2025+ 音频与音乐都在 \Containers 下，先按对象类型区分音乐层级
+    if wwise_compat.is_music_object(obj):
+        if obj.type in (WwiseObjectType.MusicSegment, WwiseObjectType.MusicTrack):
+            return False
+        return rename_to_short_name(obj)
+    if wwise_compat.is_containers_path(obj_path):
         if obj.type == WwiseObjectType.Sound:
             if audio_source_utils.sound_play_from_plugin(obj):
                 return rename_to_short_name(obj)
             return rename_to_full_name(obj)
         return rename_to_short_name(obj)
-    elif obj_path.startswith('\\Interactive Music Hierarchy'):
-        if obj_type == 'MusicSegment' or obj_type == 'MusicTrack':
-            return False
-        return rename_to_short_name(obj)
-    else:
-        print(f"{obj_type} [{obj.name}] does not need to follow naming length convention.")
-        return False
+    print(f"{obj.type} [{obj.name}] does not need to follow naming length convention.")
+    return False
 
 # 重命名为不包含重复名称的最简名称
 def rename_to_short_name(obj: WwiseObject) -> bool:
@@ -226,6 +226,7 @@ INCLUSION_SETTABLE_TYPES = {
     WwiseObjectType.Folder,
     WwiseObjectType.WorkUnit,
     WwiseObjectType.ActorMixer,
+    WwiseObjectType.PropertyContainer,
     WwiseObjectType.Sound,
     WwiseObjectType.RandomContainer,
     WwiseObjectType.BlendContainer,
@@ -247,10 +248,11 @@ def is_object_included(
     check_ancestors=True,
     inclusion_cache: dict[str, bool] | None = None,
     property_values_by_id: dict[str, dict] = None,
+    platform=None,
 ) -> bool:
     if 'Hierarchy' not in obj.path:
         return True
-    cache_key = obj.id if check_ancestors else ""
+    cache_key = f'{obj.id}@{platform}' if check_ancestors and platform else (obj.id if check_ancestors else "")
     if cache_key and inclusion_cache is not None and cache_key in inclusion_cache:
         return inclusion_cache[cache_key]
     if obj.type == WwiseObjectType.AudioSource:
@@ -265,6 +267,7 @@ def is_object_included(
             parent,
             inclusion_cache=inclusion_cache,
             property_values_by_id=property_values_by_id,
+            platform=platform,
         )
         if cache_key and inclusion_cache is not None:
             inclusion_cache[cache_key] = included
@@ -273,7 +276,7 @@ def is_object_included(
     included = (
         properties.get('Inclusion')
         if properties is not None and 'Inclusion' in properties
-        else waapi_utils.get_object_property(obj, 'Inclusion')
+        else waapi_utils.get_object_property(obj, 'Inclusion', platform=platform)
     )
     if included is None:
         if cache_key and inclusion_cache is not None:
@@ -289,6 +292,7 @@ def is_object_included(
             parent,
             inclusion_cache=inclusion_cache,
             property_values_by_id=property_values_by_id,
+            platform=platform,
         )
     if cache_key and inclusion_cache is not None:
         inclusion_cache[cache_key] = included
@@ -297,6 +301,36 @@ def is_object_included(
 # 启用对象
 def set_object_inclusion(obj: WwiseObject, included: bool) -> bool:
     return waapi_utils.set_object_property(obj, 'Inclusion', included)
+
+
+# 解除属性在指定平台上的链接，之后对该平台的修改不会影响其它平台
+def unlink_object_property(obj: WwiseObject, property_name: str, platform: str) -> bool:
+    if not platform:
+        return False
+    return waapi_utils.set_object_property_linked(obj, property_name, platform, False)
+
+
+# 查询属性在指定平台上是否仍链接到默认值；返回 None 表示当前 Wwise 版本不支持查询
+def is_object_property_linked(obj: WwiseObject, property_name: str, platform: str) -> bool | None:
+    if not platform:
+        return None
+    return waapi_utils.get_object_property_linked(obj, property_name, platform)
+
+
+# 把属性重新链接回默认值，是 unlink_object_property 的逆向操作
+def link_object_property(obj: WwiseObject, property_name: str, platform: str) -> bool:
+    if not platform:
+        return False
+    return waapi_utils.set_object_property_linked(obj, property_name, platform, True)
+
+
+# 只修改指定平台上的启用状态：先 unlink，再写入平台值
+def set_object_inclusion_for_platform(obj: WwiseObject, included: bool, platform: str) -> bool:
+    if not platform:
+        return False
+    if not unlink_object_property(obj, 'Inclusion', platform):
+        return False
+    return waapi_utils.set_object_property(obj, 'Inclusion', included, platform=platform)
 
 # 获取对象的颜色
 def get_object_color(obj: WwiseObject) -> int:
@@ -425,11 +459,83 @@ def split_underscore_to_folder(obj: WwiseObject) -> bool:
     waapi_utils.move_object(obj, folder)
     return waapi_utils.rename_object(obj, obj_name[len(folder_name) + 1:])
 
-# 将对象转换类型
+# 内置访问器基本都是只读的，只有下面这些能写回
+WRITABLE_BUILTIN_PROPERTIES = frozenset(("notes",))
+
+
+# 属性/引用能否写回：内置访问器（id/name/path/children/descendants 等）只读，直接跳过
+def is_writable_property_name(name: str) -> bool:
+    lower = name.lower()
+    return lower not in BUILTIN_ACCESSORS or lower in WRITABLE_BUILTIN_PROPERTIES
+
+
+# 从属性值里挑出能写回的项：普通标量属性 + 带 id 的引用；列表与无 id 的复合值写不回去
+def writable_property_values(values: dict) -> dict:
+    return {
+        name: value for name, value in values.items()
+        if value is not None and not isinstance(value, list)
+        and (not isinstance(value, dict) or value.get("id"))
+    }
+
+
+# 读取对象的全部属性/引用当前值：返回 {小写名称: 值}
+# 只读内置访问器不读取：既写不回去，像 descendants/children 还会返回大量数据
+def read_all_property_values(obj: WwiseObject) -> dict:
+    names = [
+        name for name in waapi_utils.get_property_and_reference_names(obj)
+        if is_writable_property_name(name)
+    ]
+    snapshot = {}
+    if names:
+        values = waapi_utils.get_objects_properties_raw([obj], names).get(obj.id, {})
+        snapshot = {name.lower(): value for name, value in values.items()}
+    # 备注不一定出现在属性名列表里，单独补读一次，避免改类型后丢备注
+    if "notes" not in snapshot:
+        notes = waapi_utils.get_object_property(obj, "Notes")
+        if notes:
+            snapshot["notes"] = notes
+    return snapshot
+
+
+# 把属性快照写回对象：只写目标类型也有的属性/引用，跳过只读访问器、列表与空值
+# target_names 为目标对象当前的属性/引用名（用它的大小写，值从快照里按小写查）
+# 返回写入失败的名称
+def restore_property_values(obj: WwiseObject, snapshot: dict, target_names: list) -> list:
+    failed = []
+    scalar_values = {}
+    for name in target_names:
+        lower = name.lower()
+        value = snapshot.get(lower)
+        if value is None or isinstance(value, list):
+            continue
+        if not is_writable_property_name(lower):
+            continue
+        if lower == "notes":
+            if not waapi_utils.set_object_notes(obj, str(value)):
+                failed.append(name)
+        elif isinstance(value, dict):
+            if value.get("id") and not waapi_utils.set_object_reference(
+                obj, name, WwiseObject(value)
+            ):
+                failed.append(name)
+        else:
+            scalar_values[name] = value
+    # 普通属性一次批量写入，失败再逐个重试，避免个别属性不可写拖垮整批
+    if scalar_values and not waapi_utils.set_object_property_values(obj, scalar_values):
+        for name, value in scalar_values.items():
+            if not waapi_utils.set_object_property(obj, name, value):
+                failed.append(name)
+    return failed
+
+
+# 将对象转换类型：改类型会新建对象，因此先把旧对象上的全部属性读出来，改完再写回共有部分
 def convert_to_type(obj: WwiseObject, target_type: WwiseObjectType) -> bool:
     if obj.type == target_type:
         return False
     references = waapi_utils.get_object_references(obj)
+    snapshot = read_all_property_values(obj)
+    if not snapshot:
+        Logger().warning(f"读取属性失败，改变类型后不会恢复属性：{obj.path}")
     # 先在父级创建一个不同名的新对象
     parent = waapi_utils.get_parent_object(obj)
     original_name = obj.name
@@ -449,6 +555,18 @@ def convert_to_type(obj: WwiseObject, target_type: WwiseObjectType) -> bool:
                 waapi_utils.assign_switch_mapping(new_obj, mapping['stateOrSwitch'])
     if waapi_utils.delete_object(obj):
         waapi_utils.rename_object(new_obj, original_name)
+    if snapshot:
+        refreshed = waapi_utils.get_full_info_from_obj_id(new_obj.id)
+        if refreshed.is_valid:
+            new_obj = refreshed
+        # 只写回两个类型 schema 共有的属性/引用
+        target_names = waapi_utils.get_property_and_reference_names(new_obj)
+        failed_names = restore_property_values(new_obj, snapshot, target_names)
+        if failed_names:
+            Logger().warning(
+                f"改变类型后有 {len(failed_names)} 个属性未能恢复：{obj.path}"
+                f"（{'，'.join(failed_names)}）"
+            )
     # 刷新引用
     for reference in references:
         if reference.type == WwiseObjectType.SoundBank:

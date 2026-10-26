@@ -18,7 +18,7 @@ from typing import Callable
 from libraries import tool_registry
 from libraries.utils import ai_utils, path_utils, user_config
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import common_utils, event_utils, waapi_utils
+from libraries.utils.wwise import common_utils, event_utils, waapi_utils, wwise_compat
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 # 每个工具结果回传给模型的最大字符数，避免长列表撑爆上下文
@@ -65,6 +65,7 @@ MUTATING_TOOL_NAMES = frozenset({
 # create_parent / convert_type 支持的目标类型（与 GUI 右键菜单一致）
 _WRAPPER_TYPE_NAMES = [
     "ActorMixer",
+    "PropertyContainer",
     "BlendContainer",
     "RandomSequenceContainer",
     "SwitchContainer",
@@ -228,6 +229,8 @@ def _to_target_type(args: dict, *, create_parent: bool) -> str:
     type_name = args.get("target_type")
     if type_name not in _WRAPPER_TYPE_NAMES:
         raise AiToolError(f"target_type 仅支持 {'/'.join(_WRAPPER_TYPE_NAMES)}")
+    # ActorMixer 在 2026+ 已改名 PropertyContainer，按工程版本映射到实际可创建的类型
+    type_name = wwise_compat.resolve_wrapper_type(type_name)
     obj = WwiseObject.from_id(object_id)
     if create_parent:
         created = common_utils.create_parent(obj, WwiseObjectType(type_name))
@@ -704,7 +707,7 @@ def _object_ids_schema(description: str, required: bool = True) -> dict:
     }
 
 
-def build_tool_schemas() -> list[dict]:
+def build_tool_schemas(active_groups=None) -> list[dict]:
     # 供 chat/completions 的 tools 参数使用（function calling 格式）
     def function_schema(name: str, description: str, parameters: dict) -> dict:
         return {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
@@ -714,7 +717,7 @@ def build_tool_schemas() -> list[dict]:
     script_enabled = user_config.get_ai_enable_script_tool()
     schemas = [
         spec.to_openai_schema()
-        for spec in tool_registry.list_tools()
+        for spec in tool_registry.grouped_tool_specs(active_groups)
         if spec.name != "run_wwise_script" or script_enabled
     ]
     schemas.extend([
@@ -1295,7 +1298,8 @@ def run_assistant(
 
     system_prompt = build_system_prompt(objects, max_context_objects)
     conversation_signature, messages = _conversation_seed(objects, prompt, system_prompt)
-    schemas = build_tool_schemas()
+    tool_registry.reset_active_groups()
+    schemas = build_tool_schemas(tool_registry.active_groups())
     result = AIAssistantResult()
 
     def log(text: str):
@@ -1372,6 +1376,8 @@ def run_assistant(
     try:
         for turn in range(1, max_turns + 1):
             raise_if_stopped()
+            # load_tools 可能在本轮之前加载了新分组，每轮重建一次工具列表
+            schemas = build_tool_schemas(tool_registry.active_groups())
             data = chat_interruptible()
             message = data.get("message") if isinstance(data, dict) else None
             if not isinstance(message, dict):

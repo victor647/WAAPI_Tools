@@ -1,3 +1,4 @@
+from libraries.base_dialog import BaseDialog
 import itertools
 
 from data import project_conventions
@@ -9,7 +10,7 @@ from ui.BankAssignmentMatrix_ui import Ui_BankAssignmentMatrix
 
 
 # 资源和Bank矩阵分配
-class BankAssignmentMatrix(QDialog, Ui_BankAssignmentMatrix):
+class BankAssignmentMatrix(BaseDialog, Ui_BankAssignmentMatrix):
 
     def __init__(self, main_window):
         super().__init__()

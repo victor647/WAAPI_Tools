@@ -1,10 +1,13 @@
+from libraries.base_dialog import BaseDialog
 import os
 import shutil
 import logging
 import xml.etree.ElementTree as ElementTree
 from libraries.utils import io_utils, user_config
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import audio_source_utils, game_sync_utils, project_utils, waapi_utils, mixing_utils
+from libraries.utils.wwise import (
+    audio_source_utils, game_sync_utils, project_utils, waapi_utils, mixing_utils, wwise_compat,
+)
 from PySide6.QtWidgets import QDialog
 
 from libraries.wwise_object import WwiseObjectType, WwiseObject
@@ -21,7 +24,7 @@ def _ref_to_wobj(ref: WwiseObject) -> WwiseObject:
 
 
 # 导入WorkUnit到另一个Wwise工程
-class WorkUnitImporter(QDialog, Ui_WorkUnitImporter):
+class WorkUnitImporter(BaseDialog, Ui_WorkUnitImporter):
 
     def __init__(self):
         super().__init__()
@@ -75,7 +78,12 @@ class WorkUnitImporter(QDialog, Ui_WorkUnitImporter):
         root, path = io_utils.import_from_xml('wwu')
         if not root or not path:
             return
-        index = path.find('Actor-Mixer Hierarchy')
+        # 2025+ 的 Work Unit 根是 Containers / Busses，旧版本是各 Hierarchy
+        found = [path.find(folder) for folder in wwise_compat.HIERARCHY_FOLDER_NAMES]
+        index = min((item for item in found if item >= 0), default=-1)
+        if index < 0:
+            Logger().warning(f"未能从 Work Unit 路径中识别 Wwise 层级根：{path}")
+            return
         rel_path = path[index:]
         self.__sourceProjectPath = path[:index]
         self.__objectCount = 0

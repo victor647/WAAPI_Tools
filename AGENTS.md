@@ -31,6 +31,7 @@
 - Avoid calling `WAAPIClient` directly from business logic when an equivalent `waapi_utils` facade function exists.
 - `waapi_mcp/` is allowed to call `WAAPIClient` directly for GUID/dict thin wrappers, or to call existing `libraries/utils/wwise/*_utils.py` functions when exposing higher-level operations.
 - `libraries/` code is reused by other tools. Change it conservatively; if a change affects shared behavior, call out the impact and add focused verification.
+- `libraries/` 只放跨项目通用能力；包含本工程业务规则、主窗口表格范围、窗口分析流程等逻辑的代码必须放在项目层（如 `windows/`、`table/`、`data/`），不要放进 `libraries/`。
 
 ## Wwise and Batch Operations
 
@@ -44,9 +45,24 @@
 
 - 新增或修改 `windows/*_window.py` 时，界面布局必须先写在 `ui/<Name>.ui` 里，再用 pyuic 生成 `ui/<Name>_ui.py`（`pyside6-uic ui/<Name>.ui -o ui/<Name>_ui.py`），窗口类继承 `Ui_*` 并调用 `setupUi`；不要在窗口逻辑代码中手工添加控件/布局/菜单。调整已有窗口的布局同样只改 `.ui` 并重新生成，不要直接在逻辑代码里改 UI。
 - 所有按钮 / action / 控件的信号绑定统一放在 `setup_triggers` 方法中（由 `__init__` 调用），不要在 `__init__` 或其它方法里散落绑定代码。
+- 工具窗口不添加“关闭”按钮；关闭统一使用窗口标题栏关闭按钮或 Esc。
 - 所有允许用户在界面设置的选项都必须持久化到 `user_config`，以窗口为节点（`window_settings.<window_key>`），开窗读取、关窗/变化时保存；详见 workflow 文件。
+- 表格路径列、右键菜单、双击选中与列宽处理必须遵守下方「表格路径列与右键菜单（强制）」。
 - 详细流程与约定见 `.agents/rules/ui-window-workflow.md`。
 - `.ui` 控件 objectName 使用类型缩写前缀（`act`/`btn`/`cbb`/`cbx`/`lbl`/`rbn`/`ipt`/`pte`/`txe`/`spb`/`tbl`/`grp`/`mnu` 等，完整表见 workflow 文件），如 `btnSave`、`cbxTurboMode`。
+
+## 表格路径列与右键菜单（强制）
+
+所有显示 Wwise 对象路径的表格都必须遵守以下规则；新增或修改窗口时逐项检查，不要各写一套：
+
+- 路径显示统一走 `path_utils.get_display_path`：`QTableWidget` 使用 `libraries/table_view/table_path_item.py` 的 `create_path_item(path)`，模型表格使用 `WwiseTableRowData.get_path_text` / `set_path_cell`。禁止直接 `QTableWidgetItem(obj.path)` 或其它方式显示原始长路径。
+- 完整路径必须保留在单元格 Tooltip 和 `Qt.UserRole` 中；「复制路径」只能复制完整路径，不能复制缩写后的显示文本。
+- 承载 Wwise 对象的表格行，右键菜单统一调用 `table/wwise_table_context_menu.py` 的 `add_common_object_actions`；双击选中统一用 `connect_double_click_select`。窗口只追加自己的专属动作，不要重复实现通用项。
+- 新增只读结果表时，优先声明 `CellCapability` 列规格并通过 `libraries/table_view/table_context_menu.py` 的 `TableContextMenu` / `install_row_object_context` 接入右键与双击，不要在每个窗口重复实现复制、选中、预览、播放等通用动作。
+- 同一列右键菜单只能出现一个“复制”项：路径列复制完整路径，名称列复制名称，其它文本列复制显示文本；不得再额外追加“复制名称/复制路径”等同义项。
+- 若表格需要按列复制：路径列复制完整路径，名称列复制名称，其它列复制单元格文本。
+- 名称列不要用 `ResizeToContents` 让长名称把路径/指标列挤出去；路径列用 `Stretch` 或 `Interactive`，必要时设置合理初始宽度。
+- 提交前确认路径单元格、完整路径复制、右键菜单、双击选中、列宽五项均已接入公共实现。
 
 ## Logging
 

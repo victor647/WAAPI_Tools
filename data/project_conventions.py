@@ -31,6 +31,9 @@ DEFAULT_EVENT_PLAY_PREFIX = False
 DEFAULT_EVENT_REF_DARK_COLOR = True
 DEFAULT_EVENT_REF_NOTES = True
 
+# 本地化设置默认值：文件名与 Wwise 默认规范一致，不包含语言名
+DEFAULT_LANGUAGE_IN_FILE_NAME = False
+
 # 支持的版本控制类型
 VCS_MODES = ('p4', 'svn')
 
@@ -76,6 +79,9 @@ DEFAULT_CONVENTIONS = {
         "PlayPrefix": DEFAULT_EVENT_PLAY_PREFIX,
         "RefDarkColor": DEFAULT_EVENT_REF_DARK_COLOR,
         "RefNotes": DEFAULT_EVENT_REF_NOTES,
+    },
+    "LocalizationConvention": {
+        "LanguageInFileName": DEFAULT_LANGUAGE_IN_FILE_NAME,
     },
     "BankConvention": {
         "UseAutoDefinedBank": DEFAULT_USE_AUTO_DEFINED_BANK,
@@ -314,6 +320,14 @@ def use_full_name_in_sound() -> bool:
     return conventions['FullNameInSound']
 
 
+# 本地化设置：语音文件名是否包含语言名（导入时需同时替换文件名）
+def use_language_in_file_name() -> bool:
+    section = _convention_section('LocalizationConvention')
+    if 'LanguageInFileName' in section:
+        return bool(section['LanguageInFileName'])
+    return DEFAULT_LANGUAGE_IN_FILE_NAME
+
+
 # —— 版本控制设置（集成视图「作者」列、文件移动时用；随工程保存在 VersionControl 节点）——
 def get_version_control_section() -> dict:
     return _convention_section('VersionControl')
@@ -450,6 +464,59 @@ def get_container_suffix_pattern(container_type: str) -> str:
     if container_type not in conventions['ContainerSuffix']:
         return ''
     return conventions['ContainerSuffix'][container_type]
+
+
+# Random Container 子对象命名规则
+def get_random_container_child_pattern() -> str:
+    return get_container_suffix_pattern('Random')
+
+
+# 名称是否符合 Random Container 子对象命名规范；未配置正则时不限制
+def is_random_container_child_name(obj_name: str) -> bool:
+    pattern = get_random_container_child_pattern()
+    if not pattern:
+        return True
+    try:
+        return re.search(pattern, obj_name or '') is not None
+    except re.error:
+        return False
+
+
+# Random Container 子对象排序键：优先按后缀里的数字，其次按后缀文本
+def get_random_container_child_sort_key(obj_name: str):
+    pattern = get_random_container_child_pattern()
+    if not pattern:
+        return None
+    try:
+        match = re.search(pattern, obj_name or '')
+    except re.error:
+        return None
+    if not match:
+        return None
+    suffix = match.group(0)
+    digits = re.search(r'\d+', suffix)
+    if digits:
+        return 0, int(digits.group()), (obj_name or '').lower()
+    return 1, suffix.lower(), (obj_name or '').lower()
+
+
+# Random Container 子对象去掉数字后缀后的基础名称；不符合规范时返回 None
+def get_random_container_base_name(obj_name: str) -> str | None:
+    name = (obj_name or '').strip()
+    if not name:
+        return None
+    pattern = get_random_container_child_pattern()
+    if not pattern:
+        if re.search(r'_\d+$', name) is None:
+            return None
+        return re.sub(r'_\d+$', '', name) or None
+    try:
+        match = re.search(pattern, name)
+    except re.error:
+        return None
+    if not match:
+        return None
+    return name[:match.start()].strip() or None
 
 
 # 获取1P/2P/3P的后缀

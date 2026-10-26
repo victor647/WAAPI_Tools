@@ -15,6 +15,8 @@ class WwiseObjectType(Enum):
     Folder = "Folder"
     WorkUnit = "WorkUnit"
     ActorMixer = "ActorMixer"
+    # Wwise 2026 起 ActorMixer 改名为 PropertyContainer（旧版本仍用 ActorMixer）
+    PropertyContainer = "PropertyContainer"
     Sound = "Sound"
     AudioSource = "AudioFileSource"
     ExternalSource = "ExternalSource"
@@ -88,7 +90,6 @@ class WwiseObjectType(Enum):
     #PluginDataSource = "PluginDataSource"
     #Position = "Position"
     Project = "Project"
-    #PropertyContainer = "PropertyContainer"
     Query = "Query"
     #SearchCriteria = "SearchCriteria"
     #SidechainMix = "SidechainMix"

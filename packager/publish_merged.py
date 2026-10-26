@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import stat
 import sys
 import time
 from pathlib import Path
@@ -55,9 +56,11 @@ from build_meta import commit_build, prepare_build, staged_version  # noqa: E402
 class PublishLockedError(RuntimeError):
     """目标文件被其它进程占用，且无法改名让位。"""
 
-    def __init__(self, paths: list[Path]):
+    def __init__(self, paths: list[Path], side: str = ""):
         self.paths = list(paths)
-        super().__init__("目标文件被占用: " + ", ".join(str(p) for p in self.paths))
+        self.side = side
+        prefix = f"{side} " if side else ""
+        super().__init__(f"{prefix}目标文件被占用: " + ", ".join(str(p) for p in self.paths))
 
 
 def _is_lock_error(exc: OSError) -> bool:
@@ -75,17 +78,36 @@ def _aside_path(path: Path) -> Path:
     return candidate
 
 
-def _move_aside(path: Path) -> Path:
+def _is_file_locked(path: Path) -> bool:
+    # 运行中的 exe 会拒绝写句柄，用只读+写打开探测即可判断是否被占用
+    if not path.exists():
+        return False
+    try:
+        with open(path, "r+b"):
+            return False
+    except OSError as e:
+        if not _is_lock_error(e):
+            return False
+        # 只读属性（而不是被占用）也会导致写入失败：交给 _copy_file 的让位逻辑处理
+        try:
+            if not (os.stat(path).st_mode & stat.S_IWRITE):
+                return False
+        except OSError:
+            pass
+        return True
+
+
+def _move_aside(path: Path, side: str = "") -> Path:
     # 把被占用的目标改名让位：正在运行的进程继续用旧文件，发布目录能写入新文件
     target = _aside_path(path)
     try:
         os.rename(path, target)
     except OSError as e:
-        raise PublishLockedError([path]) from e
+        raise PublishLockedError([path], side=side) from e
     return target
 
 
-def _copy_file(src: Path, dst: Path) -> bool:
+def _copy_file(src: Path, dst: Path, side: str = "") -> bool:
     # 覆盖目标文件；先重试，仍被占用则让位后再写入
     last_error = None
     for _ in range(COPY_RETRY_ATTEMPTS):
@@ -97,16 +119,20 @@ def _copy_file(src: Path, dst: Path) -> bool:
                 raise
             last_error = e
             time.sleep(COPY_RETRY_DELAY_SECONDS)
-    moved = _move_aside(dst) if dst.exists() else None
+    moved = _move_aside(dst, side) if dst.exists() else None
     try:
         shutil.copy2(src, dst)
     except OSError as e:
-        raise PublishLockedError([dst, moved] if moved else [dst]) from e
-    print(f"注意：{dst} 被占用，旧文件已改名为 {moved.name}，本次发布继续写入新文件", flush=True)
+        raise PublishLockedError([dst, moved] if moved else [dst], side=side) from e
+    reason = "被占用" if _is_file_locked(moved) else "无法直接覆盖（只读或权限限制）"
+    print(
+        f"注意：{side or '目标'}文件 {dst.name} {reason}，旧文件已改名为 {moved.name}，本次发布继续写入新文件",
+        flush=True,
+    )
     return True
 
 
-def _remove_tree(path: Path) -> bool:
+def _remove_tree(path: Path, side: str = "") -> bool:
     # 删除目录；文件仍被占用时改名让位，由后续清理提示处理
     for _ in range(COPY_RETRY_ATTEMPTS):
         try:
@@ -116,8 +142,8 @@ def _remove_tree(path: Path) -> bool:
             if not _is_lock_error(e):
                 raise
             time.sleep(COPY_RETRY_DELAY_SECONDS)
-    moved = _move_aside(path)
-    print(f"注意：{path} 中的文件被占用，旧目录已改名为 {moved.name}，本次发布继续写入新目录", flush=True)
+    moved = _move_aside(path, side)
+    print(f"注意：{side or '目标'}{path.name} 中的文件被占用，旧目录已改名为 {moved.name}，本次发布继续写入新目录", flush=True)
     return True
 
 
@@ -126,13 +152,28 @@ def _cleanup_aside_paths(directory: Path) -> list[Path]:
     remaining: list[Path] = []
     for p in sorted(directory.glob(f"*{ASIDE_MARKER}*")):
         try:
-            if p.is_dir():
-                shutil.rmtree(p)
-            else:
-                p.unlink()
+            _force_remove(p)
         except OSError:
             remaining.append(p)
     return remaining
+
+
+def _force_remove(path: Path) -> None:
+    # 让位出来的旧文件可能带只读属性（例如 SVN needs-lock），删之前先去掉
+    if path.is_dir():
+        for child in path.rglob("*"):
+            if child.is_file():
+                try:
+                    os.chmod(child, stat.S_IWRITE | stat.S_IREAD)
+                except OSError:
+                    pass
+        shutil.rmtree(path)
+        return
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+    except OSError:
+        pass
+    path.unlink()
 
 
 def _resolve_dest(path_arg: Path | None) -> Path:
@@ -149,6 +190,24 @@ def _merge_tree(src: Path, dst: Path) -> None:
             target = dst / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(p, target)
+
+
+def _update_tree(src: Path, dst: Path) -> list[Path]:
+    # 只覆盖同名文件，不删除目标里多出来的文件（例如 MCP 仍在使用的那部分）；
+    # 被占用而无法覆盖的文件跳过并返回，避免把正在运行的 MCP 的依赖删掉或改名
+    skipped: list[Path] = []
+    for p in src.rglob("*"):
+        if not p.is_file():
+            continue
+        target = dst / p.relative_to(src)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(p, target)
+        except OSError as e:
+            if not _is_lock_error(e):
+                raise
+            skipped.append(target)
+    return skipped
 
 
 def merge_onedir(
@@ -170,6 +229,11 @@ def merge_onedir(
 
     if dry_run:
         print(f"[dry-run] 将写入: {dest}", flush=True)
+        print(
+            f"[dry-run] 目标占用情况：GUI={'占用' if _is_file_locked(dest / 'WAAPI_Tools.exe') else '空闲'}，"
+            f"MCP={'占用' if _is_file_locked(dest / 'WaapiMCP.exe') else '空闲'}",
+            flush=True,
+        )
         if copy_skill and MCP_WORKFLOW_SKILL_SRC_DIR.is_dir():
             skill_dst = dest / MCP_WORKFLOW_SKILL_REL_DIR
             print(f"[dry-run] 将复制 MCP 工作流 SKILL: {MCP_WORKFLOW_SKILL_SRC_DIR} -> {skill_dst}", flush=True)
@@ -181,15 +245,35 @@ def merge_onedir(
     # 先清理上次遗留的让位文件（可能仍被占用，忽略结果）
     _cleanup_aside_paths(dest)
 
-    replaced_in_use = _copy_file(gexe, dest / "WAAPI_Tools.exe")
-    replaced_in_use = _copy_file(mexe, dest / "WaapiMCP.exe") or replaced_in_use
+    # MCP 被占用（AI 宿主正在运行发布目录里的 WaapiMCP.exe）时：跳过 MCP，只发布 GUI。
+    # 此时不能整体重建 _internal（会删掉 MCP 依赖并撞上被占用的 DLL），改为就地覆盖 GUI 的文件。
+    skip_mcp = _is_file_locked(dest / "WaapiMCP.exe")
+    if skip_mcp:
+        print("检测到 MCP 正在运行（WaapiMCP.exe 被占用）：本次跳过 MCP，只发布 GUI。", flush=True)
+
+    replaced_in_use = _copy_file(gexe, dest / "WAAPI_Tools.exe", side="GUI")
+    if not skip_mcp:
+        replaced_in_use = _copy_file(mexe, dest / "WaapiMCP.exe", side="MCP") or replaced_in_use
 
     out_i = dest / "_internal"
-    if out_i.exists():
-        replaced_in_use = _remove_tree(out_i) or replaced_in_use
-    shutil.copytree(gi, out_i)
-    _merge_tree(mi, out_i)
-    print(f"已合并 _internal: {gi} + {mi} -> {out_i}", flush=True)
+    if skip_mcp:
+        if out_i.exists():
+            skipped = _update_tree(gi, out_i)
+            if skipped:
+                print(
+                    f"注意：{len(skipped)} 个 _internal 文件被正在运行的 MCP 占用，本次保留旧文件"
+                    f"（例如 {skipped[0].name}）",
+                    flush=True,
+                )
+        else:
+            shutil.copytree(gi, out_i)
+        print(f"已更新 _internal（仅 GUI 文件，就地覆盖，保留 MCP 依赖）: {gi} -> {out_i}", flush=True)
+    else:
+        if out_i.exists():
+            replaced_in_use = _remove_tree(out_i, side="GUI/MCP 共用") or replaced_in_use
+        shutil.copytree(gi, out_i)
+        _merge_tree(mi, out_i)
+        print(f"已合并 _internal: {gi} + {mi} -> {out_i}", flush=True)
 
     if copy_skill:
         if MCP_WORKFLOW_SKILL_SRC_DIR.is_dir():
@@ -209,9 +293,15 @@ def merge_onedir(
             print(f"跳过 SKILL（源不存在）: {MCP_WORKFLOW_SKILL_SRC_DIR}", flush=True)
 
     remaining = _cleanup_aside_paths(dest)
-    if replaced_in_use:
+    if skip_mcp:
         print(
-            "提示：本次发布替换了正在被占用的文件，正在运行的 MCP/GUI 仍在使用旧版本，请重启它们以加载新版本。",
+            "提示：本次未更新 MCP（WaapiMCP.exe 与 MCP 的 _internal 文件保持原样）；"
+            "需要更新 MCP 时请先在 AI 宿主中停止 MCP 服务再重新发布。",
+            flush=True,
+        )
+    elif replaced_in_use:
+        print(
+            "提示：本次发布替换了已被占用的文件（见上方提示），正在运行的程序仍在使用旧版本，请重启它以加载新版本。",
             flush=True,
         )
     if remaining:
@@ -285,12 +375,13 @@ def main() -> int:
         print(e, file=sys.stderr)
         return 1
     except PublishLockedError as e:
-        print("\n发布失败：目标文件被占用，无法写入。", file=sys.stderr)
+        label = f"{e.side} " if e.side else ""
+        print(f"\n发布失败：{label}目标文件被占用，无法写入。", file=sys.stderr)
         for p in e.paths:
             print(f"  - {p}", file=sys.stderr)
         print(
-            "占用方通常是正在运行发布目录里 WaapiMCP.exe 的 AI 宿主（Cursor/Codex 等）\n"
-            "或已打开的 WAAPI_Tools.exe。请在宿主中停止 MCP 服务（或结束对应进程）后重试。",
+            "GUI 被占用：请关闭正在运行的 WAAPI_Tools.exe 后重试。\n"
+            "MCP 被占用：正常会自动跳过 MCP 只发布 GUI；若仍报错，请在 AI 宿主（Cursor/Codex 等）中停止 MCP 服务后重试。",
             file=sys.stderr,
         )
         return 2

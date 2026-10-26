@@ -102,5 +102,8 @@
       "Password": "",
       "CommitMessage": "【WAAPI_Tools】自动创建的修改"
     }
+  },
+  "LocalizationConvention": {
+    "LanguageInFileName": false
   }
 }

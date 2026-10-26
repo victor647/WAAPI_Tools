@@ -448,6 +448,107 @@
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="tabBus">
+      <attribute name="title">
+       <string>跟随 OutputBus</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="tabBusLayout">
+       <item>
+        <layout class="QHBoxLayout" name="busActionsLayout">
+         <item>
+          <widget class="QPushButton" name="btnBusAnalyze">
+           <property name="text">
+            <string>分析</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnBusApply">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>应用</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="cbxBusOverwriteConflicts">
+           <property name="text">
+            <string>覆盖已有其它 Conversion 的节点</string>
+           </property>
+           <property name="toolTip">
+            <string>分析出「当前 Conversion 不是 OutputBus 映射指定的那一个」的节点（表格里标红）。勾选时按映射表改写这些节点，不勾选时跳过它们、保留原有设置。</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="lblBusStatus">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+             <horstretch>1</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="text">
+            <string/>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>从根节点往下遍历：节点的有效 OutputBus（含从上层继承的总线）命中映射时，就给该节点设置对应的 Conversion；父节点已命中时不再匹配其子节点。</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="MapEdit" name="busMap" />
+       </item>
+       <item>
+        <widget class="QTableWidget" name="tblBusPlanResults">
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="editTriggers">
+          <set>QAbstractItemView::NoEditTriggers</set>
+         </property>
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
+         </property>
+         <property name="sortingEnabled">
+          <bool>false</bool>
+         </property>
+         <column>
+          <property name="text">
+           <string>名称</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>类型</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>路径</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>OutputBus</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Conversion</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>

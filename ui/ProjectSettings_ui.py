@@ -15,11 +15,12 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog,
-    QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QRadioButton, QSizePolicy, QSpacerItem, QSpinBox,
-    QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
+    QDialog, QDoubleSpinBox, QFormLayout, QGridLayout,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QPushButton, QRadioButton, QSizePolicy,
+    QSpacerItem, QSpinBox, QTabWidget, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget)
 
 from libraries.widgets.map_edit_widget import MapEdit
 
@@ -132,6 +133,22 @@ class Ui_ProjectSettings(object):
 
         self.tabNamingLayout.addWidget(self.grpEventSettings)
 
+        self.grpLocalizationSettings = QGroupBox(self.tabNaming)
+        self.grpLocalizationSettings.setObjectName(u"grpLocalizationSettings")
+        self.localizationSettingsLayout = QHBoxLayout(self.grpLocalizationSettings)
+        self.localizationSettingsLayout.setObjectName(u"localizationSettingsLayout")
+        self.cbxLanguageInFileName = QCheckBox(self.grpLocalizationSettings)
+        self.cbxLanguageInFileName.setObjectName(u"cbxLanguageInFileName")
+
+        self.localizationSettingsLayout.addWidget(self.cbxLanguageInFileName)
+
+        self.localizationSettingsSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.localizationSettingsLayout.addItem(self.localizationSettingsSpacer)
+
+
+        self.tabNamingLayout.addWidget(self.grpLocalizationSettings)
+
         self.wgtNamingContent = QWidget(self.tabNaming)
         self.wgtNamingContent.setObjectName(u"wgtNamingContent")
         self.namingColumns = QHBoxLayout(self.wgtNamingContent)
@@ -218,6 +235,11 @@ class Ui_ProjectSettings(object):
         self.cbxAutoFetchChildren.setObjectName(u"cbxAutoFetchChildren")
 
         self.searchRow.addWidget(self.cbxAutoFetchChildren)
+
+        self.cbxFindFilterCheckedOnly = QCheckBox(self.grpSearchAndFilter)
+        self.cbxFindFilterCheckedOnly.setObjectName(u"cbxFindFilterCheckedOnly")
+
+        self.searchRow.addWidget(self.cbxFindFilterCheckedOnly)
 
         self.cbxKeepSelf = QCheckBox(self.grpSearchAndFilter)
         self.cbxKeepSelf.setObjectName(u"cbxKeepSelf")
@@ -326,6 +348,11 @@ class Ui_ProjectSettings(object):
         self.cbxDetailLog.setObjectName(u"cbxDetailLog")
 
         self.tabToolsLayout.addWidget(self.cbxDetailLog)
+
+        self.cbxDumpOnlyWritable = QCheckBox(self.tabTools)
+        self.cbxDumpOnlyWritable.setObjectName(u"cbxDumpOnlyWritable")
+
+        self.tabToolsLayout.addWidget(self.cbxDumpOnlyWritable)
 
         self.grpConversion = QGroupBox(self.tabTools)
         self.grpConversion.setObjectName(u"grpConversion")
@@ -522,6 +549,29 @@ class Ui_ProjectSettings(object):
 
         self.tabToolsLayout.addWidget(self.grpAudioPreview)
 
+        self.grpRandomCount = QGroupBox(self.tabTools)
+        self.grpRandomCount.setObjectName(u"grpRandomCount")
+        self.randomCountLayout = QVBoxLayout(self.grpRandomCount)
+        self.randomCountLayout.setObjectName(u"randomCountLayout")
+        self.lblRandomCountHint = QLabel(self.grpRandomCount)
+        self.lblRandomCountHint.setObjectName(u"lblRandomCountHint")
+        self.lblRandomCountHint.setWordWrap(True)
+
+        self.randomCountLayout.addWidget(self.lblRandomCountHint)
+
+        self.tblRandomAllowedCounts = QTableWidget(self.grpRandomCount)
+        self.tblRandomAllowedCounts.setObjectName(u"tblRandomAllowedCounts")
+        self.tblRandomAllowedCounts.setMaximumSize(QSize(16777215, 80))
+        self.tblRandomAllowedCounts.setMinimumSize(QSize(0, 60))
+        self.tblRandomAllowedCounts.setAlternatingRowColors(True)
+        self.tblRandomAllowedCounts.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tblRandomAllowedCounts.verticalHeader().setVisible(False)
+
+        self.randomCountLayout.addWidget(self.tblRandomAllowedCounts)
+
+
+        self.tabToolsLayout.addWidget(self.grpRandomCount)
+
         self.toolsSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.tabToolsLayout.addItem(self.toolsSpacer)
@@ -621,12 +671,6 @@ class Ui_ProjectSettings(object):
 
 
         self.tabVersionControlLayout.addLayout(self.vcsForm)
-
-        self.lblVcsHint = QLabel(self.tabVersionControl)
-        self.lblVcsHint.setObjectName(u"lblVcsHint")
-        self.lblVcsHint.setWordWrap(True)
-
-        self.tabVersionControlLayout.addWidget(self.lblVcsHint)
 
         self.vcsSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -743,12 +787,6 @@ class Ui_ProjectSettings(object):
 
 
         self.tabAiLayout.addLayout(self.aiForm)
-
-        self.lblAiHint = QLabel(self.tabAi)
-        self.lblAiHint.setObjectName(u"lblAiHint")
-        self.lblAiHint.setWordWrap(True)
-
-        self.tabAiLayout.addWidget(self.lblAiHint)
 
         self.aiSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -905,6 +943,11 @@ class Ui_ProjectSettings(object):
 #if QT_CONFIG(tooltip)
         self.cbxEventRefNotes.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u5f00\u542f\u540e\uff0c\u81ea\u52a8\u66f4\u65b0\u5907\u6ce8\u7684\u5de5\u5177\u4f1a\u628a Event \u7684\u64ad\u653e\u5bf9\u8c61\u5199\u4e0a\u300cPlayed by Event [...]\u300d\u3001Event \u5199\u4e0a\u5bf9\u8c61\u8def\u5f84\uff08\u88ab SoundBank \u5305\u542b\u7684\u5bf9\u8c61\u5199\u300cIncluded by SoundBank [...]\u300d\uff09\uff1b\u5173\u95ed\u540e\u8fd9\u4e9b\u5de5\u5177\u4e0d\u518d\u6539\u52a8 Notes\u3002", None))
 #endif // QT_CONFIG(tooltip)
+        self.grpLocalizationSettings.setTitle(QCoreApplication.translate("ProjectSettings", u"\u672c\u5730\u5316\u8bbe\u7f6e", None))
+        self.cbxLanguageInFileName.setText(QCoreApplication.translate("ProjectSettings", u"\u8bed\u97f3\u6587\u4ef6\u540d\u5305\u542b\u8bed\u8a00\u540d", None))
+#if QT_CONFIG(tooltip)
+        self.cbxLanguageInFileName.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u5f00\u542f\u540e\uff0c\u300c\u5bfc\u5165\u672c\u5730\u5316\u8bed\u8a00\u300d\u5728\u5207\u6362\u8bed\u8a00\u65f6\u4f1a\u628a\u6587\u4ef6\u540d\u4e2d\u7684\u8bed\u8a00\u540d\u4e00\u5e76\u66ff\u6362\uff08\u5982 foo_Chinese.wav \u2192 foo_English.wav\uff09\uff1b\u5173\u95ed\u65f6\u53ea\u66ff\u6362 Originals \u4e0b\u7684\u8bed\u8a00\u5b50\u76ee\u5f55\uff0c\u6587\u4ef6\u540d\u4fdd\u6301\u4e0d\u53d8\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.lblCategoryHeader.setText(QCoreApplication.translate("ProjectSettings", u"\u5206\u7c7b\u547d\u540d\u4e0e\u989c\u8272\uff08\u5206\u7c7b\u540d \u2192 \u7f29\u5199 / Wwise \u989c\u8272\u503c\uff09", None))
         self.lblContainerHeader.setText(QCoreApplication.translate("ProjectSettings", u"\u5bb9\u5668\u5b50\u8282\u70b9\u540e\u7f00\uff08\u6b63\u5219\u8868\u8fbe\u5f0f\uff09", None))
         self.lblGroupHeader.setText(QCoreApplication.translate("ProjectSettings", u"\u89d2\u82721P/2P/3P SwitchGroup \u540d\u79f0", None))
@@ -914,6 +957,10 @@ class Ui_ProjectSettings(object):
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabNaming), QCoreApplication.translate("ProjectSettings", u"\u5de5\u7a0b\u89c4\u8303", None))
         self.grpSearchAndFilter.setTitle(QCoreApplication.translate("ProjectSettings", u"\u67e5\u627e\u4e0e\u7b5b\u9009", None))
         self.cbxAutoFetchChildren.setText(QCoreApplication.translate("ProjectSettings", u"\u5de5\u5177\u6267\u884c\u524d\u81ea\u52a8\u83b7\u53d6\u5b50\u5bf9\u8c61", None))
+        self.cbxFindFilterCheckedOnly.setText(QCoreApplication.translate("ProjectSettings", u"\u67e5\u627e/\u7b5b\u9009\u53ea\u5bf9\u9009\u4e2d\u5bf9\u8c61\u751f\u6548", None))
+#if QT_CONFIG(tooltip)
+        self.cbxFindFilterCheckedOnly.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u52fe\u9009\u540e\uff0c\u627e\u7236\u7ea7/\u627e\u5b50\u7ea7/\u627e\u5f15\u7528/\u9ad8\u7ea7\u67e5\u627e\u4ee5\u53ca\u8868\u683c\u7b5b\u9009\u53ea\u5904\u7406\u300c\u9009\u4e2d\u300d\u5217\u52fe\u9009\u7684\u884c\uff0c\u672a\u52fe\u9009\u7684\u884c\u539f\u6837\u4fdd\u7559\u5e76\u59cb\u7ec8\u663e\u793a\uff1b\u53d6\u6d88\u52fe\u9009\u5219\u5bf9\u5168\u90e8\u53ef\u89c1\u884c\u751f\u6548\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.cbxKeepSelf.setText(QCoreApplication.translate("ProjectSettings", u"\u4fdd\u7559\u539f\u59cb\u5c42\u7ea7", None))
 #if QT_CONFIG(tooltip)
         self.cbxKeepSelf.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ad8\u7ea7\u67e5\u627e\u5b50\u5bf9\u8c61\u65f6\uff0c\u67e5\u627e\u7ed3\u679c\u540c\u65f6\u4fdd\u7559\u8f93\u5165\u5bf9\u8c61\u81ea\u8eab\u3002", None))
@@ -948,6 +995,10 @@ class Ui_ProjectSettings(object):
         self.cbxDetailLog.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u6253\u5f00\u540e\u4f1a\u628a\u6279\u91cf\u5904\u7406\u4e2d\u6bcf\u4e2a\u5bf9\u8c61\u7684\u5904\u7406\u8bb0\u5f55\u3001\u4ee5\u53ca\u6bcf\u6b21 WAAPI \u8c03\u7528\u7684\u53c2\u6570\u4e0e\u8017\u65f6\u5199\u8fdb\u65e5\u5fd7\u6587\u4ef6\uff08gui_log.log / mcp_log.log\uff09\u3002\u65e5\u5fd7\u91cf\u5927\u65f6\u4f1a\u4ea7\u751f\u989d\u5916\u78c1\u76d8\u5199\u5165\uff0c\u6392\u67e5\u95ee\u9898\u540e\u518d\u5173\u6389\u5373\u53ef\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.cbxDetailLog.setText(QCoreApplication.translate("ProjectSettings", u"\u8bb0\u5f55\u660e\u7ec6\u65e5\u5fd7\uff08\u6279\u91cf\u9010\u5bf9\u8c61\u3001WAAPI \u8c03\u7528\u6d41\u6c34\uff09", None))
+#if QT_CONFIG(tooltip)
+        self.cbxDumpOnlyWritable.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u52fe\u9009\u65f6\uff0c\u300c\u5bfc\u51fa\u5168\u90e8\u5c5e\u6027\uff08JSON\uff09\u300d\u53ea\u5199\u53ef\u5199\u5c5e\u6027\uff1a\u8df3\u8fc7 id/name/path/children/descendants \u7b49\u53ea\u8bfb\u8bbf\u95ee\u5668\uff0c\u4ee5\u53ca\u5217\u8868\u3001\u65e0 id \u7684\u590d\u5408\u503c\uff1b\u53d6\u6d88\u52fe\u9009\u5219\u5bfc\u51fa schema \u91cc\u7684\u5168\u90e8\u5c5e\u6027\u503c\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.cbxDumpOnlyWritable.setText(QCoreApplication.translate("ProjectSettings", u"\u5bfc\u51fa\u5c5e\u6027\u65f6\u4ec5\u5305\u542b\u53ef\u5199\u5c5e\u6027", None))
         self.grpConversion.setTitle(QCoreApplication.translate("ProjectSettings", u"\u81ea\u52a8\u8f6c\u7801", None))
         self.lblConversionDominance.setText(QCoreApplication.translate("ProjectSettings", u"\u957f\u77ed\u97f3\u6548\u5360\u4f18\u6bd4\u4f8b", None))
 #if QT_CONFIG(tooltip)
@@ -1000,8 +1051,13 @@ class Ui_ProjectSettings(object):
 #if QT_CONFIG(tooltip)
         self.spbLoudnessBuffer.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ed8\u8ba4 1024\uff0c\u53ef\u8c03\u8303\u56f4 128-65536\u3002\u54cd\u5ea6\u8c03\u6574\u3001\u9759\u97f3\u88c1\u526a\u3001\u97f3\u9891\u9884\u89c8\u7684\u54cd\u5ea6\u663e\u793a\u5171\u7528\u8be5\u503c\u3002", None))
 #endif // QT_CONFIG(tooltip)
+        self.grpRandomCount.setTitle(QCoreApplication.translate("ProjectSettings", u"\u4f18\u5316\u968f\u673a\u6570\u91cf", None))
+        self.lblRandomCountHint.setText(QCoreApplication.translate("ProjectSettings", u"\u6bcf\u4e2a\u5e73\u53f0\u4e00\u5217\uff0c\u8bbe\u7f6e\u5141\u8bb8\u4fdd\u7559\u542f\u7528\u7684 Random Container \u5b50\u5bf9\u8c61\u6570\u91cf\uff1b\u672a\u5355\u72ec\u914d\u7f6e\u7684\u5e73\u53f0\u4f7f\u7528\u9ed8\u8ba4\u503c 3\u3002", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabTools), QCoreApplication.translate("ProjectSettings", u"\u5de5\u5177\u884c\u4e3a", None))
         self.lblVcsMode.setText(QCoreApplication.translate("ProjectSettings", u"\u7248\u672c\u63a7\u5236\u7c7b\u578b", None))
+#if QT_CONFIG(tooltip)
+        self.cbbVcsMode.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u7528\u4e8e\u4e3b\u7a97\u53e3\u300c\u96c6\u6210\u89c6\u56fe - \u4f5c\u8005\u300d\u5217\uff1a\u8bfb\u53d6\u5bf9\u8c61\u6240\u5728 WorkUnit \u6700\u540e\u4e00\u6b21\u63d0\u4ea4\u7684\u63d0\u4ea4\u4eba\u3002SVN \u8bfb\u672c\u5730\u5de5\u4f5c\u526f\u672c\uff08\u8f83\u5feb\uff09\uff1bP4 \u9700\u8fde\u63a5\u670d\u52a1\u5668\uff08\u9996\u6b21\u8f83\u6162\uff09\u3002\u4fee\u6539\u540e\u9700\u91cd\u542f\u8f6f\u4ef6\u751f\u6548\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.lblP4Server.setText(QCoreApplication.translate("ProjectSettings", u"P4 \u670d\u52a1\u5668", None))
         self.iptP4Server.setPlaceholderText(QCoreApplication.translate("ProjectSettings", u"\u5982 ssl:perforce.example.com:1666\uff1b\u7559\u7a7a\u8868\u793a\u7528 P4 \u5ba2\u6237\u7aef\u9ed8\u8ba4\u503c", None))
         self.lblP4Charset.setText(QCoreApplication.translate("ProjectSettings", u"P4 \u5b57\u7b26\u96c6", None))
@@ -1013,10 +1069,18 @@ class Ui_ProjectSettings(object):
         self.lblSvnPassword.setText(QCoreApplication.translate("ProjectSettings", u"SVN \u5bc6\u7801", None))
         self.lblSvnCommitMessage.setText(QCoreApplication.translate("ProjectSettings", u"SVN \u63d0\u4ea4\u4fe1\u606f", None))
         self.btnVcsTest.setText(QCoreApplication.translate("ProjectSettings", u"\u6d4b\u8bd5\u8fde\u63a5", None))
-        self.lblVcsHint.setText(QCoreApplication.translate("ProjectSettings", u"\u7248\u672c\u63a7\u5236\u7528\u4e8e\u4e3b\u7a97\u53e3\u300c\u96c6\u6210\u89c6\u56fe - \u4f5c\u8005\u300d\u5217\uff1a\u663e\u793a\u5bf9\u8c61\u6240\u5728 WorkUnit \u6587\u4ef6\u6700\u540e\u4e00\u6b21\u63d0\u4ea4\u7684\u63d0\u4ea4\u4eba\u3002SVN \u8d70 svn info\uff08\u8bfb\u672c\u5730\u5de5\u4f5c\u526f\u672c\uff0c\u4e0d\u8bbf\u95ee\u670d\u52a1\u5668\uff0c\u8f83\u5feb\uff09\uff1bP4 \u8d70 fstat + describe\uff08\u9700\u8981\u80fd\u8fde\u4e0a\u670d\u52a1\u5668\uff0c\u9996\u6b21\u67e5\u8be2\u8f83\u6162\uff09\u3002\u63d0\u4ea4\u63cf\u8ff0/\u63d0\u4ea4\u4fe1\u606f\u7528\u4e8e\u672c\u5de5\u5177\u81ea\u52a8\u521b\u5efa changelist \u6216\u63d0\u4ea4\u65f6\u586b\u5199\u3002\u8bbe\u7f6e\u4fdd\u5b58\u5728 user_config.json \u7684 version_control / p4 / svn \u8282\uff0c\u4fee\u6539\u540e\u9700\u91cd\u542f\u8f6f\u4ef6\u751f\u6548\u3002", None))
+#if QT_CONFIG(tooltip)
+        self.btnVcsTest.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u7528\u5f53\u524d\u914d\u7f6e\u8bfb\u53d6\u4e00\u6b21\u7248\u672c\u4fe1\u606f\uff0c\u9a8c\u8bc1\u670d\u52a1\u5668\u3001\u5de5\u4f5c\u526f\u672c\u4e0e\u8d26\u53f7\u662f\u5426\u53ef\u7528\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabVersionControl), QCoreApplication.translate("ProjectSettings", u"\u7248\u672c\u63a7\u5236", None))
         self.lblAiMode.setText(QCoreApplication.translate("ProjectSettings", u"\u8fde\u63a5\u6a21\u5f0f", None))
+#if QT_CONFIG(tooltip)
+        self.cbbAiMode.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u4ee3\u7406\u6a21\u5f0f\u8d70\u672c\u5730/\u516c\u53f8\u4ee3\u7406\u5730\u5740\uff1b\u5b98\u65b9 API \u6a21\u5f0f\u6309\u300c\u670d\u52a1\u63d0\u4f9b\u65b9\u300d\u76f4\u8fde\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.lblAiProvider.setText(QCoreApplication.translate("ProjectSettings", u"\u670d\u52a1\u63d0\u4f9b\u65b9", None))
+#if QT_CONFIG(tooltip)
+        self.cbbAiProvider.setToolTip(QCoreApplication.translate("ProjectSettings", u"Claude \u4f7f\u7528 Anthropic \u539f\u751f\u534f\u8bae\uff0c\u5fc5\u987b\u586b\u5199\u6a21\u578b\u540d\uff1b\u5176\u4f59\u5382\u5546\u8d70 OpenAI \u517c\u5bb9\u534f\u8bae\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.lblAiProxy.setText(QCoreApplication.translate("ProjectSettings", u"\u4ee3\u7406\u5730\u5740", None))
         self.iptAiProxy.setPlaceholderText(QCoreApplication.translate("ProjectSettings", u"http://127.0.0.1:15721", None))
         self.lblAiBaseUrl.setText(QCoreApplication.translate("ProjectSettings", u"\u81ea\u5b9a\u4e49\u5730\u5740", None))
@@ -1024,11 +1088,16 @@ class Ui_ProjectSettings(object):
         self.lblAiApiKey.setText(QCoreApplication.translate("ProjectSettings", u"API Key", None))
         self.lblAiModel.setText(QCoreApplication.translate("ProjectSettings", u"\u6a21\u578b", None))
         self.iptAiModel.setPlaceholderText(QCoreApplication.translate("ProjectSettings", u"\u5b98\u65b9\u6a21\u5f0f\u5efa\u8bae\u586b\u5199\uff08Claude \u5fc5\u586b\uff09\uff1b\u4ee3\u7406\u6a21\u5f0f\u53ef\u7559\u7a7a", None))
-        self.cbxAiEnableScript.setText(QCoreApplication.translate("ProjectSettings", u"\u5141\u8bb8 AI \u6267\u884c\u4e34\u65f6\u811a\u672c\uff08run_wwise_script\uff1bIDE \u8c03\u8bd5\u5668\u4e0b\u53ef\u80fd\u4e0d\u7a33\u5b9a\uff0c\u9ed8\u8ba4\u5173\u95ed\uff09", None))
+        self.cbxAiEnableScript.setText(QCoreApplication.translate("ProjectSettings", u"\u5141\u8bb8 AI \u6267\u884c\u4e34\u65f6\u811a\u672c\uff08run_wwise_script\uff09", None))
+#if QT_CONFIG(tooltip)
+        self.cbxAiEnableScript.setToolTip(QCoreApplication.translate("ProjectSettings", u"IDE \u8c03\u8bd5\u5668\u4e0b\u53ef\u80fd\u4e0d\u7a33\u5b9a\uff0c\u9ed8\u8ba4\u5173\u95ed\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.lblAiMaxContext.setText(QCoreApplication.translate("ProjectSettings", u"\u5355\u6b21\u6700\u5927\u5bf9\u8c61\u6570", None))
         self.lblAiMaxTurns.setText(QCoreApplication.translate("ProjectSettings", u"\u6700\u5927\u5bf9\u8bdd\u8f6e\u6570", None))
         self.lblAiMutationPolicy.setText(QCoreApplication.translate("ProjectSettings", u"\u4fee\u6539\u7b56\u7565", None))
-        self.lblAiHint.setText(QCoreApplication.translate("ProjectSettings", u"\u8fde\u63a5\u6a21\u5f0f\uff1a\u4ee3\u7406\u6a21\u5f0f\u8d70\u672c\u5730/\u516c\u53f8\u4ee3\u7406\u5730\u5740\uff1b\u5b98\u65b9 API \u6a21\u5f0f\u6309\u201c\u670d\u52a1\u63d0\u4f9b\u65b9\u201d\u76f4\u8fde\uff08OpenAI / DeepSeek / \u901a\u4e49\u5343\u95ee / Kimi / \u667a\u8c31 GLM / Gemini / Claude / \u81ea\u5b9a\u4e49\uff09\u3002Claude \u4f7f\u7528 Anthropic \u539f\u751f\u534f\u8bae\uff0c\u5fc5\u987b\u586b\u5199\u6a21\u578b\u540d\uff1b\u5176\u4f59\u5382\u5546\u8d70 OpenAI \u517c\u5bb9\u534f\u8bae\u3002\u4fee\u6539\u7b56\u7565\uff1a\u53ea\u8bfb\uff1d\u62d2\u7edd\u4e00\u5207\u6539\u52a8\uff1b\u6539\u52a8\u524d\u5f39\u7a97\u786e\u8ba4\uff1dAI \u8981\u6539\u5de5\u7a0b\u65f6\u7531\u4f60\u672c\u4eba\u70b9\u786e\u8ba4\uff1b\u76f4\u63a5\u6267\u884c\uff1d\u4e0d\u518d\u8be2\u95ee\u3002\u8bbe\u7f6e\u4fdd\u5b58\u5728 user_config.json \u7684 ai \u8282\uff0c\u4fee\u6539\u540e\u4e0b\u4e00\u6b21\u53d1\u9001\u6307\u4ee4\u751f\u6548\uff0c\u4e3b\u7a97\u53e3\u6a21\u578b\u4e0b\u62c9\u6846\u4f1a\u5728\u91cd\u542f\u540e\u540c\u6b65\u3002", None))
+#if QT_CONFIG(tooltip)
+        self.cbbAiMutationPolicy.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u53ea\u8bfb\uff1d\u62d2\u7edd\u4e00\u5207\u6539\u52a8\uff1b\u6539\u52a8\u524d\u5f39\u7a97\u786e\u8ba4\uff1dAI \u6539\u5de5\u7a0b\u524d\u7531\u4f60\u70b9\u786e\u8ba4\uff1b\u76f4\u63a5\u6267\u884c\uff1d\u4e0d\u518d\u8be2\u95ee\u3002", None))
+#endif // QT_CONFIG(tooltip)
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabAi), QCoreApplication.translate("ProjectSettings", u"AI \u52a9\u624b", None))
         self.lblTheme.setText(QCoreApplication.translate("ProjectSettings", u"\u754c\u9762\u4e3b\u9898", None))
         self.lblUiScale.setText(QCoreApplication.translate("ProjectSettings", u"\u754c\u9762\u7f29\u653e", None))

@@ -1,0 +1,51 @@
+{
+  "tools": {
+    "auto_fetch_children": true,
+    "find_filter_checked_only": true,
+    "page_size": 500,
+    "path_display_compact": true,
+    "path_hide_root": true,
+    "loudness_buffer_samples": 1024,
+    "silence_duration": 2.0,
+    "detail_log": false,
+    "conversion_dominance_ratio": 0.6,
+    "dump_only_writable_properties": true
+  },
+  "window_settings": {},
+  "ai": {
+    "proxy": "http://127.0.0.1:15721",
+    "mode": "proxy",
+    "provider": "openai",
+    "base_url": "",
+    "api_key": "",
+    "model": "",
+    "max_context_objects": 300,
+    "max_turns": 20,
+    "enable_script_tool": false,
+    "mutation_policy": "ask_before_changes"
+  },
+  "localization": {
+    "use_default_reference_language": true,
+    "reference_language": ""
+  },
+  "advanced_filter": {
+    "case_sensitive": false,
+    "only_included": false,
+    "event_filter": "all",
+    "language_filter": "all",
+    "only_in_use": false
+  },
+  "advanced_find": {
+    "recursive_find": true,
+    "keep_self": false,
+    "find_child_types": [
+      "AudioFileSource"
+    ],
+    "find_property": "Attenuation"
+  },
+  "appearance": {
+    "theme": "dark_cyan.xml",
+    "ui_scale": "auto"
+  },
+  "Documentation": "https://docs.popo.netease.com/lingxi/730bd7bd4c59499dabca39201cd64c8e"
+}

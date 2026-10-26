@@ -600,6 +600,7 @@ Boss        包含 Boss
      </property>
      <addaction name="actRenameRandomChildren"/>
      <addaction name="actGroupAsRandom"/>
+     <addaction name="actOptimizeRandomCount"/>
     </widget>
     <action name=""/>
     <addaction name="actBreakContainer"/>
@@ -637,6 +638,7 @@ Boss        包含 Boss
      <string>统计</string>
     </property>
     <addaction name="actCalculateMediaSize"/>
+    <addaction name="actMediaDuplicate"/>
     <addaction name="actPropertyQuery"/>
    </widget>
    <widget class="QMenu" name="mnuCommon">
@@ -686,6 +688,18 @@ Boss        包含 Boss
     <addaction name="separator"/>
     <addaction name="mnuCreateParent"/>
     <addaction name="actSplitUnderScore"/>
+    <widget class="QMenu" name="mnuChangeType">
+     <property name="title">
+      <string>改变类型为</string>
+     </property>
+     <addaction name="actConvertToActorMixer"/>
+     <addaction name="actConvertToBlendContainer"/>
+     <addaction name="actConvertToRandomContainer"/>
+     <addaction name="actConvertToSwitchContainer"/>
+     <addaction name="actConvertToVirtualFolder"/>
+     <addaction name="actConvertToWorkUnit"/>
+    </widget>
+    <addaction name="mnuChangeType"/>
     <addaction name="separator"/>
     <addaction name="actMoveToSelection"/>
     <addaction name="actCopyFromSelection"/>
@@ -710,6 +724,7 @@ Boss        包含 Boss
     <addaction name="separator"/>
     <addaction name="actExportObjectList"/>
     <addaction name="actImportObjectList"/>
+    <addaction name="actDumpObjectProperties"/>
     <addaction name="separator"/>
     <addaction name="actImportWorkUnit"/>
     <widget class="QMenu" name="mnuImportFmod">
@@ -774,6 +789,9 @@ Boss        包含 Boss
     </property>
     <addaction name="actLocalizeLanguages"/>
     <addaction name="actFillSilence"/>
+    <addaction name="separator"/>
+    <addaction name="actConvertToVoice"/>
+    <addaction name="actConvertToSound"/>
     <addaction name="separator"/>
     <addaction name="actMultiLanguageCompare"/>
    </widget>
@@ -844,6 +862,11 @@ Boss        包含 Boss
   <action name="actCalculateMediaSize">
    <property name="text">
     <string>计算媒体资源大小</string>
+   </property>
+  </action>
+  <action name="actMediaDuplicate">
+   <property name="text">
+    <string>媒体查重</string>
    </property>
   </action>
   <action name="actPropertyQuery">
@@ -1056,6 +1079,16 @@ Boss        包含 Boss
     <string>导入本地化语言</string>
    </property>
   </action>
+  <action name="actConvertToVoice">
+   <property name="text">
+    <string>转为Voice</string>
+   </property>
+  </action>
+  <action name="actConvertToSound">
+   <property name="text">
+    <string>转为Sound</string>
+   </property>
+  </action>
   <action name="actProjectSettings">
    <property name="text">
     <string>设置…</string>
@@ -1082,6 +1115,36 @@ Boss        包含 Boss
    </property>
   </action>
   <action name="actCreateWorkUnit">
+   <property name="text">
+    <string>Work Unit</string>
+   </property>
+  </action>
+  <action name="actConvertToActorMixer">
+   <property name="text">
+    <string>Actor Mixer</string>
+   </property>
+  </action>
+  <action name="actConvertToBlendContainer">
+   <property name="text">
+    <string>Blend Container</string>
+   </property>
+  </action>
+  <action name="actConvertToRandomContainer">
+   <property name="text">
+    <string>Random/Sequence Container</string>
+   </property>
+  </action>
+  <action name="actConvertToSwitchContainer">
+   <property name="text">
+    <string>Switch Container</string>
+   </property>
+  </action>
+  <action name="actConvertToVirtualFolder">
+   <property name="text">
+    <string>Virtual Folder</string>
+   </property>
+  </action>
+  <action name="actConvertToWorkUnit">
    <property name="text">
     <string>Work Unit</string>
    </property>
@@ -1139,6 +1202,11 @@ Boss        包含 Boss
   <action name="actExportObjectList">
    <property name="text">
     <string>导出对象列表</string>
+   </property>
+  </action>
+  <action name="actDumpObjectProperties">
+   <property name="text">
+    <string>导出全部属性（JSON）</string>
    </property>
   </action>
   <action name="actImportFMODEvent">
@@ -1234,6 +1302,11 @@ Boss        包含 Boss
   <action name="actGroupAsRandom">
    <property name="text">
     <string>自动创建容器</string>
+   </property>
+  </action>
+  <action name="actOptimizeRandomCount">
+   <property name="text">
+    <string>优化随机数量</string>
    </property>
   </action>
   <action name="actRenameToFull">

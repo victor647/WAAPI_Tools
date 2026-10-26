@@ -52,6 +52,47 @@
 - `QTabWidget` 主容器本身可用通用名 `tabWidget`。
 - 窗口逻辑代码中引用的属性名与 objectName 一致（由 `setupUi` 自动生成）。
 
+## 表格路径列与右键菜单（强制）
+
+任何显示 Wwise 对象路径的表格都必须使用同一套实现，禁止在窗口里各写一套：
+
+### 路径单元格
+
+```python
+from libraries.table_view.table_path_item import create_path_item
+
+path_item = create_path_item(obj.path)
+self.tblResult.setItem(row, COL_PATH, path_item)
+```
+
+- `create_path_item` 内部调用 `path_utils.get_display_path`，统一遵循「路径隐藏根目录 / 路径显示简写」设置。
+- 显示文本是缩写路径，完整路径保存在 Tooltip 和 `Qt.UserRole`。
+- 不要直接 `QTableWidgetItem(obj.path)`，否则会显示原始长路径。
+- 使用 `WwiseTableRowData` 的模型表格沿用 `get_path_text` / `set_path_cell`，它们已经接入了同一套路径显示逻辑。
+- 路径列使用 `Stretch` 或 `Interactive`；名称列不要用 `ResizeToContents` 让长名称撑宽，避免把路径/指标列挤出窗口。
+
+### 右键菜单与复制
+
+```python
+from table.wwise_table_context_menu import add_common_object_actions, connect_double_click_select
+
+self.tblResult.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+self.tblResult.customContextMenuRequested.connect(self.show_context_menu)
+connect_double_click_select(self.tblResult, self.objects_at_row)
+```
+
+- 行的通用动作统一用 `add_common_object_actions`（在 Wwise 中选中、复制名称、复制路径）。
+- 若需要按列复制，路径列必须复制 `Qt.UserRole` 中的完整路径，不能复制缩写后的显示文本；名称列复制名称，其它列复制单元格文本。
+- 窗口只追加自己的专属动作，不要重复实现通用动作。
+
+### 提交前检查
+
+- [ ] 路径单元格使用 `create_path_item`。
+- [ ] 完整路径在 Tooltip / `UserRole` 中可取得，复制路径不复制缩写文本。
+- [ ] 右键菜单使用 `add_common_object_actions`。
+- [ ] 双击选中使用 `connect_double_click_select`。
+- [ ] 名称/路径列宽度合理，路径列不会因长名称被挤出窗口。
+
 ## 窗口设置持久化
 
 所有允许用户在界面上设置的选项（开关、数值、下拉选择、单选模式等）都必须保存到 `user_config`，并**以窗口为节点**管理：

@@ -22,6 +22,7 @@ WORKDIR = _PACKAGER_DIR / "build" / "gui"
 
 sys.path.insert(0, str(_PACKAGER_DIR))
 from build_meta import prepare_build  # noqa: E402
+from default_configs import write_default_configs  # noqa: E402
 
 
 def main() -> int:
@@ -44,6 +45,10 @@ def main() -> int:
 
     meta = prepare_build()
     print(f"候选构建版本：{meta['version']}（版本号将在 publish_merged 成功发布时递增）", flush=True)
+
+    # 打包前用代码默认值重写默认配置模板，保证随包默认值干净且不会过期
+    for template in write_default_configs():
+        print(f"默认配置模板: {template}", flush=True)
 
     DISTPATH.parent.mkdir(parents=True, exist_ok=True)
     cmd = [

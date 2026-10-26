@@ -74,8 +74,40 @@
 | 把结果发送到表格（默认替换，`append=true` 追加） | set_table_objects |
 | 分页读大结果 / 大结果分组 | read_result_file / group_result_file |
 | 复杂组合逻辑（默认关闭，设置里开启） | run_wwise_script |
+| 任意 WAQL 查询（现有工具覆盖不了时） | waql_query（只读） |
+| 工具发现 / 加载专业分组 | list_tool_groups → load_tools；参数不确定用 get_tool_examples / get_tool_schema / get_tool_reference |
 
 多个候选都沾边时取语义最接近的一个；不确定就先 `get_objects_info` 或向用户确认。
+
+## 工具发现与懒加载
+
+- 常驻的只有 `core` 分组；SoundBank、本地化、RTPC/效果、源文件、自动转码、高级脚本等工具默认不出现。
+- 当前工具里找不到合适的工具时：
+  1) `list_tool_groups` 查看分组与工具名；
+  2) `load_tools(group=...)` 加载；这些工具从下一轮起可用；
+  3) 参数不确定时先 `get_tool_examples(name, keywords)`，再看 `get_tool_schema(name)` 或 `get_tool_reference(name)`。
+- 外部 MCP 客户端在会话开始时调用一次 `get_guidelines`（本文件的等价内容），不要凭记忆猜 API。
+
+## WAQL 速查（waql_query）
+
+- 结构：`from type X` / `from object "路径或GUID"` / `from search "词"`，后接 `where …`、`select …`、
+  `orderby …`、`take N`。
+- 列表函数：`count()` / `count(cond)`、`any()` / `any(cond)`、`all(cond)`、`first()` / `last()`、
+  `at(N)`、`where(cond)`，可点号串联。
+- 比较：`=` `!=` `<` `<=` `>` `>=` `:`（前缀/模糊）`= /正则/`，以及 `and`、`or`、`!()`。
+- 返回表达式（`return_fields`）：`OutputBus.name as bus`、`@RTPC.{propertyName, controlInput} as rtpcs`。
+- 坑：WAQL 没有算术运算；字符串只能用双引号；`from type` 走索引，比 `where type = ...` 快；
+  `distinct` 可能改变顺序；`select` 在查询里必须返回对象（不能 `select name`）。
+
+## Wwise 2025+ 兼容
+
+- 物理根目录：2025 起音频与音乐统一在 `\Containers`，总线在 `\Busses`；旧版本才是
+  `\Actor-Mixer Hierarchy` / `\Interactive Music Hierarchy` / `\Master-Mixer Hierarchy`。
+  `\Events`、`\Conversion Settings`、`\Game Parameters` 未变。
+- 对象类型：2026 起 `ActorMixer` 改名为 `PropertyContainer`。工具会自动按工程版本映射，
+  但描述对象类型时优先说 PropertyContainer。
+- 不要猜路径：需要顶层目录时用
+  `waql_query("from type workunit where workunittype = \"folder\" and parent = null")`。
 
 ## 关键约定
 

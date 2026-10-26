@@ -1,11 +1,11 @@
+from windows.base_analysis_dialog import BaseAnalysisDialog
 from PySide6.QtWidgets import QDialog, QWidget
 
-import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_facade import TableFacade
 from libraries.utils import user_config
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import localization_utils, soundbank_utils, waapi_utils
+from libraries.utils.wwise import compression_utils, localization_utils, soundbank_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from ui.MediaSize_ui import Ui_MediaSize
 
@@ -38,7 +38,7 @@ def format_ratio(numerator: float, denominator: float) -> str:
 
 # 媒体资源大小统计窗口：按对象逐项展示 wav/内存wem/流式wem 大小
 # wem 只统计当前平台（可在窗口里切换平台并同步修改 Wwise 的当前平台）
-class MediaSizeWindow(QDialog, Ui_MediaSize):
+class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
@@ -48,6 +48,7 @@ class MediaSizeWindow(QDialog, Ui_MediaSize):
         self.__stats: list = []
         self.__nodes: list[WwiseObject] = []
         self.__node_root: list[int] = []
+        self.__row_checked_by_path: dict = {}
         self.__source_properties_by_id: dict = None
         # 语言筛选（口径同主窗口「高级筛选 → 语言筛选」）：None 表示统计全部语言
         self.__only_language: str = None
@@ -134,14 +135,19 @@ class MediaSizeWindow(QDialog, Ui_MediaSize):
 
     # 为每个对象创建一行并异步统计
     def __start_measuring(self):
-        # 每次统计都临时取主窗口当前对象，保证与表格同步
-        self.__objects = gv.get_table_objects()
-        self.resolve_language_filter()
-        self.__stats = [soundbank_utils.MediaSizeNodeStatistics() for _ in self.__objects]
+        # 每次统计都取主窗口勾选对象，未勾选行的子树不参与
+        checked_objects, self.__row_checked_by_path = self.analysis_scope()
+        self.__objects = compression_utils.scan_roots(checked_objects)
+        self.__stats = []
         self.__nodes = []
         self.__node_root = []
         self.__source_properties_by_id = None
         self.__table.clear()
+        if not self.__objects:
+            Logger().warning('主窗口没有勾选可用于「媒体资源大小统计」的对象')
+            return
+        self.resolve_language_filter()
+        self.__stats = [soundbank_utils.MediaSizeNodeStatistics() for _ in self.__objects]
         for obj in self.__objects:
             self.__table.append_row_values([obj.name, obj.type.name, '', '', '', '', '', '', '', ''])
         self.__table.on_table_filled()
@@ -149,6 +155,8 @@ class MediaSizeWindow(QDialog, Ui_MediaSize):
         for root_index, obj in enumerate(self.__objects):
             for node in [obj] + waapi_utils.get_child_objects(obj, True):
                 if not node.id or node.id in seen_ids:
+                    continue
+                if self.is_excluded_by_scope(node.path, self.__row_checked_by_path):
                     continue
                 seen_ids.add(node.id)
                 self.__nodes.append(node)

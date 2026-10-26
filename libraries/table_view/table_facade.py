@@ -88,6 +88,14 @@ class TableFacade(object):
         else:
             self.table_view.setRowHidden(source_row, hidden)
 
+    # 显示所有未勾选「选中」列的行：筛选只对勾选行生效时，未勾选行不参与筛选
+    def show_unchecked_rows(self) -> None:
+        if not self.table_view:
+            return
+        for row_data in self.data:
+            if not row_data[INCLUSION_COL]:
+                self.set_row_hidden(row_data.row, False)
+
     # 初始化表格设置
     def init_table_view(self):
         if not self.table_view:

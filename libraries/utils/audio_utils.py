@@ -390,8 +390,13 @@ def fade(audio_data, duration_samples: int, fade_direction: int):
     duration_samples = round(duration_samples)
     if duration_samples > len(audio_data):
         return
+    if fade_direction < 0:
+        # 淡出：从最后一帧往前衰减，末帧为 0（不能写到第一帧）
+        for index in range(duration_samples):
+            audio_data[-1 - index] *= index / duration_samples
+        return
     for index in range(duration_samples):
-        audio_data[fade_direction * index] *= index / duration_samples
+        audio_data[index] *= index / duration_samples
 
 # 裁剪音频数据
 def trim(audio_data, start_samples: int, end_samples: int):

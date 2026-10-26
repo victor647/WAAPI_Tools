@@ -1,3 +1,4 @@
+from libraries.base_dialog import BaseDialog
 from PySide6.QtWidgets import QDialog, QWidget
 
 from libraries.utils import user_config
@@ -5,7 +6,7 @@ from ui.AdvancedFilter_ui import Ui_AdvancedFilter
 
 
 # 高级筛选窗口：区分大小写、仅显示启用对象、Event 引用筛选、语言筛选
-class AdvancedFilterWindow(QDialog, Ui_AdvancedFilter):
+class AdvancedFilterWindow(BaseDialog, Ui_AdvancedFilter):
 
     def __init__(self, main_window, parent: QWidget = None):
         super().__init__(parent)

@@ -9,7 +9,7 @@ from PySide6.QtCore import QModelIndex, Qt
 
 from libraries.utils import path_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import common_utils, event_utils, transport_utils, waapi_utils
+from libraries.utils.wwise import common_utils, event_utils, transport_utils, waapi_utils, wwise_compat
 from libraries.wwise_object import WwiseObjectType
 from table.wwise_table_context_menu import add_common_object_actions
 from table.wwise_object_table import WwiseObjectTable, WwiseTableDisplayMode
@@ -30,6 +30,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         on_interrupted=None,
         exclusive: bool = True,
         progress_text_func=None,
+        undo_group: str = "",
     ):
         batch_processor.create_async(
             objects,
@@ -39,6 +40,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
             on_finished=on_finished,
             on_interrupted=on_interrupted,
             progress_text_func=progress_text_func,
+            undo_group=undo_group,
             exclusive=exclusive,
         )
 
@@ -57,8 +59,13 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         selection = self.table_view.selectionModel().selectedIndexes()
         items = [item for item in selection if item.column() == column]
         menu = QMenu()
-        if column in (NAME_COL, PATH_COL):
-            menu.addAction('复制', lambda: self.copy_cell_text(index))
+        if column == NAME_COL:
+            copy_value = obj.name
+        elif column in (PATH_COL, TARGET_PATH_COL):
+            copy_value = obj.path
+        else:
+            copy_value = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        menu.addAction('复制', lambda: clipboard.copy(copy_value))
         # 通用对象动作（在Wwise中选中、AudioSource 预览）
         add_common_object_actions(menu, obj, self.table_view)
         if column == NAME_COL:
@@ -69,7 +76,11 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
             sub = menu.addMenu("改变类型为")
             sub.addAction(
                 "Actor Mixer",
-                partial(self._convert_selection_to_type, items, WwiseObjectType.ActorMixer),
+                partial(
+                    self._convert_selection_to_type,
+                    items,
+                    WwiseObjectType(wwise_compat.default_property_container_type()),
+                ),
             )
             sub.addAction(
                 "Blend Container",
@@ -112,17 +123,27 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
             self.read_data_by_display_mode(rd)
 
     def _convert_selection_to_type(self, items: list[QModelIndex], target_type: WwiseObjectType):
-        if not items:
-            return
+        rows = []
         seen: set[int] = set()
-        objs = []
-        rows_ordered: list[int] = []
-        paths_before: list[str] = []
         for item in items:
             row = self.get_source_row(item)
             if row in seen:
                 continue
             seen.add(row)
+            rows.append(row)
+        self.convert_rows_to_type(rows, target_type)
+
+    # 顶部「改变类型为」菜单用：把表格当前可见行整体改为指定类型
+    def convert_visible_rows_to_type(self, target_type: WwiseObjectType, title: str = "改变类型"):
+        self.convert_rows_to_type([row_data.row for row_data in self.active_data], target_type, title)
+
+    def convert_rows_to_type(self, rows: list[int], target_type: WwiseObjectType, title: str = "改变类型"):
+        rows_ordered: list[int] = []
+        paths_before: list[str] = []
+        objs = []
+        for row in rows:
+            if row < 0 or row >= len(self.data):
+                continue
             rows_ordered.append(row)
             paths_before.append(self.data[row].path)
             objs.append(self.data[row].wwise_object)
@@ -136,7 +157,7 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
         def finished():
             self.refresh_rows_after_type_change(rows_ordered, paths_before)
 
-        self._run_batch(objs, proc, "改变类型", "name", on_finished=finished)
+        self._run_batch(objs, proc, title, "name", on_finished=finished, undo_group=title)
 
     # 通过 WAAPI Transport 播放该行对象：Event 行直接播，其它对象先反查播放它的 Event
     def play_in_wwise(self, item: QModelIndex):
@@ -194,12 +215,6 @@ class WwiseTableImpl_GUI(WwiseObjectTable):
             row_data = self.data[self.get_source_row(item)]
             wwise_objects.append(row_data.wwise_object)
         waapi_utils.select_objects_in_wwise(wwise_objects)
-
-    @staticmethod
-    def copy_cell_text(item: QModelIndex):
-        text = item.data(Qt.ItemDataRole.UserRole)
-        Logger().info(f"已复制到剪贴板：{text}")
-        clipboard.copy(text)
 
 # 主窗口等历史入口
 WwiseTableImpl = WwiseTableImpl_GUI

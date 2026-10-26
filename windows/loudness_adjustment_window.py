@@ -1,3 +1,4 @@
+from windows.base_analysis_dialog import BaseAnalysisDialog
 import math
 import os
 
@@ -51,7 +52,7 @@ LOUDNESS_STANDARDS = (audio_utils.LoudnessStandard.RMS, audio_utils.LoudnessStan
 
 
 # 响度调整工具：统一表格中所有音频的响度
-class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
+class LoudnessAdjustmentWindow(BaseAnalysisDialog, Ui_LoudnessAdjustment):
 
     def __init__(self):
         super().__init__()
@@ -140,8 +141,10 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             return
         menu = QMenu(self)
         copy_action = preview_action = detail_action = None
-        if item.column() == COL_PATH:
+        if item.text():
+            copy_value = entry['path'] if item.column() == COL_PATH else item.text()
             copy_action = menu.addAction('复制')
+        if item.column() == COL_PATH:
             preview_action = menu.addAction('预览')
         if item.column() in (COL_OBJECT_GAIN, COL_BUS_GAIN):
             detail_action = menu.addAction('详细')
@@ -149,7 +152,7 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
             return
         chosen = menu.exec(self.tblAudioList.viewport().mapToGlobal(position))
         if copy_action is not None and chosen == copy_action:
-            clipboard.copy(entry['path'])
+            clipboard.copy(copy_value)
         elif preview_action is not None and chosen == preview_action:
             self.preview_entry(entry)
         elif detail_action is not None and chosen == detail_action:
@@ -268,10 +271,10 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
     def populate_sources(self):
         if self.is_busy():
             return
-        # 临时取主窗口当前 AudioSource，保证与表格同步
-        self.__active_objects = gv.get_tool_targets(WwiseObjectType.AudioSource)
+        # 只取主窗口「选中」列已勾选对象下的 AudioSource
+        self.__active_objects = self.collect_analysis_targets(WwiseObjectType.AudioSource)
         if not self.__active_objects:
-            Logger().warning('表格中没有可用于「响度调整」的 AudioSource')
+            Logger().warning('勾选对象下没有可用于「响度调整」的 AudioSource')
             return
         self.__scanned_paths = [None] * len(self.__active_objects)
         self.__prefetched_pages: set = set()
@@ -753,14 +756,19 @@ class LoudnessAdjustmentWindow(QDialog, Ui_LoudnessAdjustment):
         target = self.spbTargetLoudness.value()
         tolerance = self.spbTolerance.value()
         selected = self.get_selected_entries()
+        if not selected:
+            QMessageBox.warning(self, '尚未选择', '没有勾选任何音频，请先勾选需要处理的音频。')
+            return
         unanalyzed_count = len([entry for entry in selected if entry['loudness'] is None])
         if unanalyzed_count:
-            Logger().warning(f'有 {unanalyzed_count} 个勾选的音频尚未分析响度，已跳过')
+            message = (f'勾选的 {len(selected)} 个音频中有 {unanalyzed_count} 个还没有响度分析结果。\n'
+                       '请先点击「分析原始样本」或「一键分析」，分析完成后再统一响度。')
+            Logger().warning(message.replace('\n', ' '))
+            QMessageBox.warning(self, '尚未分析', message)
+            return
         items = []
         skipped_count = 0
         for entry in selected:
-            if entry['loudness'] is None:
-                continue
             gain_total = self.__gain_total(entry)
             # 目标响度是「最终响度」口径：分析过对象调整时把链路增益算进去，
             # 没分析过（或取值不唯一）时只看文件本身，保证状态列与这里判定一致

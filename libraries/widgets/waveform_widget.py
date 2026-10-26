@@ -23,6 +23,8 @@ class WaveformWidget(QWidget):
         self.__silence_regions_ms = []
         # 淡入/淡出标记：(start_ms, end_ms, 'in'/'out')
         self.__fade_markers_ms = []
+        # 保留的有效区间：(start_ms, end_ms)；区间外绘制白色遮罩
+        self.__active_region_ms = None
         # 纵向缩放系数：1.0 表示满幅（1.0 振幅贴到上下边界）
         self.__zoom = 1.0
         # 显示模式：'wave' 波形 / 'spectrum' 频谱热力图
@@ -76,6 +78,14 @@ class WaveformWidget(QWidget):
     # 设置淡入/淡出斜线标记（表示裁剪后保留的淡变效果）
     def set_fade_markers(self, markers: list):
         self.__fade_markers_ms = [tuple(marker) for marker in markers]
+        self.update()
+
+    # 设置有效区间；None 表示不遮罩
+    def set_active_region(self, start_ms: int = None, end_ms: int = None):
+        if start_ms is None or end_ms is None:
+            self.__active_region_ms = None
+        else:
+            self.__active_region_ms = (max(0, int(start_ms)), max(0, int(end_ms)))
         self.update()
 
     # 放大：波形纵向、频谱横向分屏
@@ -279,6 +289,22 @@ class WaveformWidget(QWidget):
                     painter.drawLine(x1, int(center_y), x2, full_y)
                 else:
                     painter.drawLine(x1, full_y, x2, int(center_y))
+
+        # 有效区间之外覆盖 50% 白色遮罩
+        if self.__active_region_ms and self.__duration_ms > 0:
+            start_ms, end_ms = self.__active_region_ms
+            start_ms = max(0, min(start_ms, self.__duration_ms))
+            end_ms = max(start_ms, min(end_ms, self.__duration_ms))
+            mask_pen = painter.pen()
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 128))
+            x1 = self._ms_to_x(start_ms)
+            x2 = self._ms_to_x(end_ms)
+            if x1 > PLOT_LEFT:
+                painter.drawRect(PLOT_LEFT, PLOT_TOP, x1 - PLOT_LEFT, plot_height)
+            if x2 < PLOT_LEFT + plot_width:
+                painter.drawRect(x2, PLOT_TOP, PLOT_LEFT + plot_width - x2, plot_height)
+            painter.setPen(mask_pen)
 
         # 红色播放头
         if self.__duration_ms > 0:

@@ -6,9 +6,43 @@ from waapi import WaapiClient
 from libraries.singleton import Singleton
 from libraries.utils.log_utils import Logger
 from libraries.utils import user_config
-from libraries.utils.wwise import project_utils
+from libraries.utils.wwise import project_utils, wwise_compat
 
 RETURN_FIELDS = {'return': ['id', 'name', 'type', 'path']}
+
+
+# waapi-client 0.8.1 的 _WampCallbackHandler 只把 kwargs 交给订阅回调，
+# 会丢掉 WAMP 事件的位置参数（commands.executed 的 payload 就是位置参数）。
+# 在项目侧补一层转发，避免升级依赖前订阅回调拿不到 payload。
+def _patch_waapi_subscription_args() -> None:
+    try:
+        from waapi.wamp.async_decoupled_client import _WampCallbackHandler
+    except Exception:
+        return
+    if getattr(_WampCallbackHandler, "_toolkit_args_patched", False):
+        return
+
+    def patched_call(self, *args, **kwargs):
+        if not (self._callback and callable(self._callback)):
+            return
+
+        def invoke():
+            try:
+                if args:
+                    self._callback(*args, **kwargs)
+                else:
+                    self._callback(**kwargs)
+            except Exception:
+                # 回调线程一旦抛异常会退出，后续订阅事件全部静默丢失
+                Logger().exception('WAAPI 订阅回调异常')
+
+        self._executor.execute(invoke, {})
+
+    _WampCallbackHandler.__call__ = patched_call
+    _WampCallbackHandler._toolkit_args_patched = True
+
+
+_patch_waapi_subscription_args()
 
 
 # 日志用的参数摘要：长字符串/大列表只留长度，避免一行日志爆长
@@ -105,18 +139,56 @@ class WAAPIClient(metaclass=Singleton):
 
         self.client.call = locked_call
 
+    # 订阅 WAAPI 主题；回调可能在工作线程触发，调用方需自行切回 GUI 线程
+    def subscribe_topic(self, topic: str, callback, options: dict = None):
+        if not self.client:
+            return None
+        try:
+            with self._call_lock:
+                return self.client.subscribe(topic, callback, options or {})
+        except Exception as e:
+            Logger().error(str(e))
+            return None
+
+    # 取消订阅
+    def unsubscribe_topic(self, event_handler) -> bool:
+        if not self.client or event_handler is None:
+            return False
+        try:
+            with self._call_lock:
+                return self.client.unsubscribe(event_handler)
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
     # 关闭Waapi客户端连接
-    def disconnect(self, timeout: float = 0.5):
+    # graceful=False 用于应用退出：不等待 WAMP GOODBYE 握手（该等待无超时），
+    # 也不与仍在进行的 WAAPI 调用并发操作原生连接，交给进程退出直接回收。
+    def disconnect(self, timeout: float = 2.0, graceful: bool = True):
         if not self.client:
             return
         client = self.client
         self.client = None
+        if not graceful:
+            Logger().debug("WAAPI - 应用退出，跳过优雅断开（连接随进程退出回收）")
+            return
+
+        def _close():
+            # autobahn 客户端不支持并发访问：与在途 WAAPI 调用共用同一把锁串行化
+            with self._call_lock:
+                client.disconnect()
+
         try:
             # WaapiClient.disconnect() 内部会同步等待 WAMP GOODBYE 握手与线程 join（无超时），
-            # 若 Wwise 繁忙或连接半开会长时间卡住调用线程；放到守护线程里限时等待即可
-            closer = threading.Thread(target=client.disconnect, daemon=True)
+            # 若 Wwise 繁忙或连接半开会长时间卡住；放到守护线程里限时等待
+            closer = threading.Thread(target=_close, daemon=True)
             closer.start()
             closer.join(timeout=timeout)
+            if closer.is_alive():
+                Logger().warning("WAAPI 断开超时，已放弃等待（进程退出时自动回收连接）")
+                # 清理线程可能还占着旧锁：换一把新锁，避免后续 WAAPI 调用被永久阻塞；
+                # 旧连接只由该线程持有，新连接会创建全新的 socket，不与它共享原生状态
+                self._call_lock = threading.RLock()
         except Exception as e:
             Logger().error(f"WAAPI - Error closing WAAPI client: {e}")
 
@@ -170,13 +242,16 @@ class WAAPIClient(metaclass=Singleton):
             return ""
 
     # 获取对象的属性
-    def get_object_property(self, obj: dict, property_name: str):
+    def get_object_property(self, obj: dict, property_name: str, platform=None):
         if not self.client or not obj:
             return None
         try:
             get_args = {}
             get_args ['waql'] = f'from object \"{obj["id"]}\"'
-            get_args['options'] = {'return': [property_name]}
+            options = {'return': [property_name]}
+            if platform:
+                options['platform'] = platform
+            get_args['options'] = options
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if not result or result['return'][0] == {}:
                 Logger().error(f"WAAPI - Cannot find property named [{property_name}] in {obj.get('type')} [{obj.get('path')}]!")
@@ -188,13 +263,16 @@ class WAAPIClient(metaclass=Singleton):
             return None
 
     # 一次读取对象的多个属性；对象类型上不存在的属性不会出现在结果中
-    def get_object_properties(self, obj: dict, property_names: list) -> dict:
+    def get_object_properties(self, obj: dict, property_names: list, platform=None) -> dict:
         if not self.client or not obj or not property_names:
             return {}
         try:
             get_args = {}
             get_args['waql'] = f'from object \"{obj["id"]}\"'
-            get_args['options'] = {'return': property_names}
+            options = {'return': property_names}
+            if platform:
+                options['platform'] = platform
+            get_args['options'] = options
             result = self.client.call('ak.wwise.core.object.get', get_args)
             if not result or not result.get('return'):
                 return {}
@@ -208,7 +286,7 @@ class WAAPIClient(metaclass=Singleton):
     # 只保留请求的属性，类型上不存在的属性不会出现在结果中。
     # 注意：from.id 只接受数组，传单个字符串会被 Wwise 判为参数非法。
     # 对象数超过「查询分页大小」设置时自动分批取回再合并，避免单次请求过大
-    def get_objects_properties(self, objects: list[dict], property_names: list) -> dict:
+    def get_objects_properties(self, objects: list[dict], property_names: list, platform=None) -> dict:
         object_ids = [obj["id"] for obj in objects if obj and obj.get("id")]
         if not self.client or not object_ids or not property_names:
             return {}
@@ -217,9 +295,12 @@ class WAAPIClient(metaclass=Singleton):
         interval = max(1, user_config.get_tool_page_size())
         found: dict = {}
         for start in range(0, len(object_ids), interval):
+            options = {'return': list(dict.fromkeys(['id', *requested_names]))}
+            if platform:
+                options['platform'] = platform
             get_args = {
                 'from': {'id': object_ids[start:start + interval]},
-                'options': {'return': list(dict.fromkeys(['id', *requested_names]))},
+                'options': options,
             }
             try:
                 result = self.client.call('ak.wwise.core.object.get', get_args)
@@ -390,6 +471,49 @@ class WAAPIClient(metaclass=Singleton):
             Logger().error(str(e))
             return []
 
+    # 一次读取多个对象的直接子对象：按容器 ID 分块查询，结果带 parent 便于按父级归组
+    def get_children_of_objects(self, objects: list[dict], return_fields: list = None) -> list[dict]:
+        object_ids = [obj["id"] for obj in objects if obj and obj.get("id")]
+        if not self.client or not object_ids:
+            return []
+        interval = max(1, user_config.get_tool_page_size())
+        requested_fields = list(dict.fromkeys(['parent', *(return_fields or [])]))
+        children: list[dict] = []
+        seen_ids: set = set()
+        fallback_logged = False
+        for start in range(0, len(object_ids), interval):
+            chunk = object_ids[start:start + interval]
+            chunk_set = set(chunk)
+            chunk_children: list[dict] = []
+            try:
+                chunk_children = self._paged_object_query({
+                    'from': {'id': chunk},
+                    'transform': [{'select': ['children']}],
+                }, return_fields=requested_fields)
+            except Exception as e:
+                Logger().error(str(e))
+            # 批量 children 查询失效时退回逐个容器读取，保证结果完整
+            has_chunk_child = any(
+                ((item.get('parent') or {}).get('id') in chunk_set)
+                for item in chunk_children
+            )
+            if not has_chunk_child:
+                if not fallback_logged:
+                    Logger().warning(
+                        f'批量读取子对象失败，改为逐个读取（首批 {len(chunk)} 个容器）'
+                    )
+                    fallback_logged = True
+                chunk_children = []
+                for object_id in chunk:
+                    for item in self.get_child_objects({'id': object_id}):
+                        item['parent'] = {'id': object_id}
+                        chunk_children.append(item)
+            for item in chunk_children:
+                if item.get('id') and item['id'] not in seen_ids:
+                    seen_ids.add(item['id'])
+                    children.append(item)
+        return children
+
     # 获取指定类型的全部子对象（child_type 可为类型的字符串或字符串列表）
     def get_descendants_of_type(self, obj: dict, child_type, return_fields: list = None) -> list[dict]:
         if not self.client or not obj:
@@ -405,6 +529,47 @@ class WAAPIClient(metaclass=Singleton):
         except Exception as e:
             Logger().error(str(e))
             return []
+
+    # 一次批量查询多个根对象的全部后代（可按类型过滤）：按分页大小分块，避免逐对象各查一次
+    def get_descendants_of_objects(self, objects: list[dict], child_types=None, return_fields: list = None) -> list[dict]:
+        object_ids = [obj["id"] for obj in objects if obj and obj.get("id")]
+        if not self.client or not object_ids:
+            return []
+        if isinstance(child_types, str):
+            child_types = [child_types]
+        types = {(item.value if hasattr(item, 'value') else str(item)) for item in (child_types or []) if item}
+        interval = max(1, user_config.get_tool_page_size())
+        found: list[dict] = []
+        seen_ids: set = set()
+        for start in range(0, len(object_ids), interval):
+            chunk = object_ids[start:start + interval]
+            chunk_set = set(chunk)
+            try:
+                items = self._paged_object_query(
+                    {'from': {'id': chunk}, 'transform': [{'select': ['descendants']}]},
+                    return_fields=return_fields,
+                )
+            except Exception as e:
+                Logger().error(str(e))
+                items = []
+            # 该版本不支持批量 select descendants 时会原样返回根对象，退回逐个查询保证结果完整
+            if any(item.get('id') in chunk_set for item in items):
+                items = []
+                for object_id in chunk:
+                    if types:
+                        items.extend(self.get_descendants_of_type({'id': object_id}, list(types),
+                                                                  return_fields=return_fields))
+                    else:
+                        items.extend(self.get_child_objects({'id': object_id}, include_descendants=True))
+            for item in items:
+                item_id = item.get('id')
+                if not item_id or item_id in seen_ids:
+                    continue
+                if types and item.get('type') not in types:
+                    continue
+                seen_ids.add(item_id)
+                found.append(item)
+        return found
 
     # 按配置的分页大小执行 object.get，直到取完（range 被忽略时靠去重保护退出）
     # 分页范围必须放在 transform 步骤里：部分 Wwise 版本（如 2023.1）不接受顶层 range，会直接报错
@@ -433,14 +598,24 @@ class WAAPIClient(metaclass=Singleton):
             index += 1
         return objects
 
+    # 通用 WAQL 查询入口：只读，等价于 ak.wwise.core.object.get + waql
+    def get_objects_by_waql(self, waql: str, return_fields: list = None) -> list[dict]:
+        if not self.client or not (waql or "").strip():
+            return []
+        # 通用查询是逃生口：不再额外吞异常。底层 WAMP 错误由 waapi-client 记录（通常返回 None），
+        # 若底层选择抛出，异常会原样传给调用方。
+        return self._paged_object_query({'waql': str(waql).strip()}, return_fields=return_fields)
+
     # 获取整个Wwise工程所有对象
     def get_global_objects(self) -> list[dict]:
         if not self.client:
             return []
         try:
             global_objects = []
+            property_container_type = wwise_compat.default_property_container_type()
             objects_type = (
-                'WorkUnit', 'ActorMixer', 'Folder', 'SwitchContainer', 'BlendContainer', 'RandomSequenceContainer',
+                'WorkUnit', property_container_type, 'Folder', 'SwitchContainer', 'BlendContainer',
+                'RandomSequenceContainer',
                 'Sound', 'Event', 'AuxBus', 'Bus', 'SoundBank', 'StateGroup', 'SwitchGroup', 'GameParameter',
                 'MusicSwitchContainer', 'MusicPlaylistContainer', 'MusicSegment', 'MusicTrack',
             )
@@ -544,7 +719,7 @@ class WAAPIClient(metaclass=Singleton):
             return {}
         try:
             if obj_type == 'Bus':
-                default_path = '\\Master-Mixer Hierarchy\\Default Work Unit\\Master Audio Bus'
+                default_path = wwise_compat.default_bus_path()
             elif obj_type == 'Event':
                 default_path = '\\Events\\Default Work Unit'
             elif obj_type == 'SwitchGroup':
@@ -560,9 +735,9 @@ class WAAPIClient(metaclass=Singleton):
             elif obj_type == 'Conversion':
                 default_path = '\\Conversion Settings\\Default Work Unit'
             elif 'Music' in obj_type:
-                default_path = '\\Interactive Music Hierarchy\\Default Work Unit'
+                default_path = wwise_compat.default_music_work_unit()
             else:
-                default_path = '\\Actor-Mixer Hierarchy\\Default Work Unit'
+                default_path = wwise_compat.default_audio_work_unit()
             create_args = {
                 'parent': default_path,
                 'type': obj_type,
@@ -704,6 +879,50 @@ class WAAPIClient(metaclass=Singleton):
             Logger().error(str(e))
             return False
 
+    # 查询属性/引用在指定平台上是否仍链接到默认值；旧版本不支持时返回 None
+    def get_object_property_linked(self, obj: dict, property_name: str, platform: str) -> bool | None:
+        if not self.client or not obj or not property_name or not platform:
+            return None
+        try:
+            result = self.client.call('ak.wwise.core.object.isLinked', {
+                'object': obj["id"],
+                'property': property_name,
+                'platform': platform,
+            })
+            return bool((result or {}).get('linked'))
+        except Exception as e:
+            Logger().debug(
+                f"WAAPI - 无法读取 {property_name} 在平台 [{platform}] 的链接状态：{e}"
+            )
+            return None
+
+    # 设置属性/引用在某个平台上的链接状态；先 unlink 后再用 set_object_property(platform=...) 才能只改该平台
+    def set_object_property_linked(self, obj: dict, property_name: str, platform: str, linked: bool) -> bool:
+        if not self.client or not obj or not platform:
+            return False
+        try:
+            set_args = {
+                'object': obj["id"],
+                'property': property_name,
+                'platform': platform,
+                'linked': linked,
+            }
+            result = self.client.call('ak.wwise.core.object.setLinked', set_args) == {}
+            if result:
+                Logger().debug(
+                    f"WAAPI - {obj.get('type')} [{obj.get('name')}] property {property_name} "
+                    f"on platform [{platform}] linked set to [{linked}]"
+                )
+            else:
+                Logger().error(
+                    f"WAAPI - {obj.get('type')} [{obj.get('name')}]: Cannot set link state of "
+                    f"{property_name} on platform [{platform}]!"
+                )
+            return result
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
     def set_objects_property_values(self, assignments: list[tuple[dict, object]], property_name: str) -> bool:
         if not self.client or not assignments:
             return False
@@ -722,6 +941,27 @@ class WAAPIClient(metaclass=Singleton):
                 Logger().error(f"WAAPI - Cannot set {property_name} on {len(assignments)} objects!")
                 return False
             Logger().debug(f"WAAPI - Set {property_name} on {len(assignments)} objects")
+            return True
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
+    # 一次给单个对象设置多个属性（属性名 -> 值）；任一属性不可写时整批失败，由调用方逐个重试
+    def set_object_property_values(self, obj: dict, property_values: dict) -> bool:
+        if not self.client or not obj or not property_values:
+            return False
+        try:
+            entry = {'object': obj["id"]}
+            entry.update({f'@{name}': value for name, value in property_values.items()})
+            result = self.client.call('ak.wwise.core.object.set', {'objects': [entry]})
+            if result is None:
+                Logger().error(
+                    f"WAAPI - Cannot set {len(property_values)} properties on {obj.get('name')}!"
+                )
+                return False
+            Logger().debug(
+                f"WAAPI - Set {len(property_values)} properties on {obj.get('name')}"
+            )
             return True
         except Exception as e:
             Logger().error(str(e))
@@ -881,6 +1121,56 @@ class WAAPIClient(metaclass=Singleton):
             if not result or not result.get('objects'):
                 return {}
             return result['objects'][0]
+        except Exception as e:
+            Logger().error(str(e))
+            return {}
+
+    # 在现有 Sound 下导入一个新的 AudioFileSource，并在导入时指定语言
+    # audioSource:language 不是可写属性/引用，只能通过导入语言设置
+    def import_audio_source(self, sound: dict, wave_path: str, language='SFX', source_name='',
+                            originals_subfolder='') -> dict:
+        if not self.client or not sound or not wave_path:
+            return {}
+        if not os.path.exists(wave_path):
+            Logger().warning(f'WAAPI - Import failed, file not found at {wave_path}')
+            return {}
+        try:
+            name = source_name or os.path.splitext(os.path.basename(wave_path))[0]
+            import_file = {'audioFile': wave_path, 'language': language}
+            if originals_subfolder:
+                import_file['originalsSubFolder'] = originals_subfolder
+            set_args = {
+                'objects': [{
+                    'object': sound["id"],
+                    'children': [{
+                        'type': 'AudioFileSource',
+                        'name': name,
+                        'import': {'files': [import_file]},
+                    }],
+                }],
+                'onNameConflict': 'rename',
+            }
+            result = self.client.call('ak.wwise.core.object.set', set_args, RETURN_FIELDS)
+            for parent in (result or {}).get('objects') or []:
+                for child in parent.get('children') or []:
+                    if not child.get('id'):
+                        continue
+                    logs = (child.get('import') or {}).get('logs') or []
+                    errors = [
+                        log for log in logs
+                        if str(log.get('severity', '')).lower() in ('error', 'fatal error')
+                    ]
+                    if errors:
+                        for log in errors:
+                            Logger().error(f"WAAPI - Import {wave_path} failed: {log.get('message')}")
+                        try:
+                            self.client.call('ak.wwise.core.object.delete', {'object': child['id']})
+                        except Exception:
+                            pass
+                        return {}
+                    child.setdefault('type', 'AudioFileSource')
+                    return child
+            return {}
         except Exception as e:
             Logger().error(str(e))
             return {}

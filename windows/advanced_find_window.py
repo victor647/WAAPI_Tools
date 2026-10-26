@@ -1,3 +1,4 @@
+from libraries.base_dialog import BaseDialog
 from PySide6.QtWidgets import QDialog, QWidget
 
 from libraries.utils import user_config
@@ -5,7 +6,7 @@ from ui.AdvancedFind_ui import Ui_AdvancedFind
 
 
 # 高级查找窗口：按属性查找、按类型查找子对象、保留原始层级开关
-class AdvancedFindWindow(QDialog, Ui_AdvancedFind):
+class AdvancedFindWindow(BaseDialog, Ui_AdvancedFind):
 
     def __init__(self, main_window, parent: QWidget = None):
         super().__init__(parent)

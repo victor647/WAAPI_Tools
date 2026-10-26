@@ -7,7 +7,7 @@ from data import project_conventions
 from libraries.utils import audio_utils, path_utils
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, localization_utils, project_utils, event_utils, waapi_utils, \
-    workunit_utils
+    workunit_utils, wwise_compat
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 
@@ -174,7 +174,7 @@ def get_trimmed_duration(obj: WwiseObject, properties: dict = None) -> float:
     duration = get_audio_source_duration_seconds(properties)
     if duration is not None:
         return duration
-    # 回退：文件长度 - TrimBegin - TrimEnd
+    # 回退：用 TrimBegin / TrimEnd 的绝对位置换算播放区间
     file_path = properties.get('originalFilePath') or get_source_absolute_path(obj)
     if not file_path or not os.path.exists(file_path):
         return 0.0
@@ -185,7 +185,8 @@ def get_trimmed_duration(obj: WwiseObject, properties: dict = None) -> float:
     return max(0.0, (end_frame - start_frame) / sample_rate) if sample_rate else 0.0
 
 
-# 源文件里实际生效的采样区间：从 TrimBegin 到（文件长度 - TrimEnd）
+# 源文件里实际生效的采样区间：TrimBegin / TrimEnd 都是从头算起的绝对时间位置；
+# TrimEnd ≤ 0（默认 -0.001）表示未设置，保留到文件末尾
 def get_trimmed_frame_range(obj: WwiseObject, total_frames: int, sample_rate: int,
                             properties: dict = None) -> tuple:
     info = get_source_edit_info(obj, properties)
@@ -193,9 +194,10 @@ def get_trimmed_frame_range(obj: WwiseObject, total_frames: int, sample_rate: in
         return 0, total_frames
     trim_begin = info[0] or 0.0
     trim_end = info[1] or 0.0
-    start_frame = int(round(trim_begin * sample_rate))
-    end_frame = total_frames - int(round(trim_end * sample_rate))
-    return max(0, start_frame), min(total_frames, end_frame)
+    start_frame = max(0, min(int(round(trim_begin * sample_rate)), total_frames))
+    end_frame = total_frames if trim_end <= 0 else int(round(trim_end * sample_rate))
+    end_frame = max(start_frame, min(end_frame, total_frames))
+    return start_frame, end_frame
 
 
 # 按 Source Editor 的裁剪区间测量音频：返回 (响度, 时长秒)，只统计 TrimBegin~TrimEnd 之间的样本
@@ -252,17 +254,30 @@ def set_source_edit_info(
     return modified
 
 
-# 只改写 Source Editor 的裁剪区间：TrimBegin 从头算起、TrimEnd 从尾算起（秒）；
-# 传 None 的方向保持不变，淡变与循环设置完全不动
-def set_source_trim_range(obj: WwiseObject, trim_begin=None, trim_end=None) -> bool:
+# 改写 Source Editor 的裁剪区间与淡变：TrimBegin / TrimEnd 都是从头算起的绝对时间位置（秒）；
+# 传 None 的项保持不变，循环设置不动。current 传入已读到的裁剪信息可省一次查询；
+# 只把真正变化的属性合并进一次 object.set（Wwise 首次设置 TrimEnd 会做一次较重的处理，重复写同值没有意义）
+def set_source_trim_range(obj: WwiseObject, trim_begin=None, trim_end=None,
+                          fade_in=None, fade_out=None, current=None) -> bool:
     if obj.type != WwiseObjectType.AudioSource:
         return False
-    modified = True
-    if trim_begin is not None:
-        modified &= waapi_utils.set_object_property(obj, 'TrimBegin', float(trim_begin))
-    if trim_end is not None:
-        modified &= waapi_utils.set_object_property(obj, 'TrimEnd', float(trim_end))
-    return modified
+    if current is None:
+        current = get_source_edit_info(obj)
+    updates = {}
+    for name, value, old_value in (
+        ('TrimBegin', trim_begin, current[0] if current else None),
+        ('TrimEnd', trim_end, current[1] if current else None),
+        ('FadeInDuration', fade_in, current[2] if current else None),
+        ('FadeOutDuration', fade_out, current[3] if current else None),
+    ):
+        if value is None:
+            continue
+        if isinstance(old_value, (int, float)) and abs(float(value) - float(old_value)) <= 1e-6:
+            continue
+        updates[name] = float(value)
+    if not updates:
+        return True
+    return waapi_utils.set_object_property_values(obj, updates)
 
 
 # 将Source Editor里编辑的信息写入源文件中
@@ -407,7 +422,7 @@ def get_wav_subfolder(obj: WwiseObject, path='') -> str:
     parent = waapi_utils.get_parent_object(obj)    
     if parent.type == WwiseObjectType.WorkUnit or parent.type == WwiseObjectType.Folder:
         parent_name = parent.name
-        if parent_name == 'Actor-Mixer Hierarchy':
+        if wwise_compat.is_hierarchy_root_name(parent_name):
             return path
         if parent_name not in path:
             path = os.path.join(parent_name, path)

@@ -7,6 +7,7 @@ ACTION_HELP = {
     "actReconnectWwise": "重新检测/连接 Wwise；未连接时请先在 Wwise 中打开工程并开启 WAAPI。",
     "actExportObjectList": "把表格当前对象导出为文件：单列导出 TXT，多列导出 CSV。",
     "actImportObjectList": "从 CSV 导入对象列表：文件需包含“路径”列，按路径在工程中解析后填入表格。",
+    "actDumpObjectProperties": "把表格当前所有对象的属性与引用值导出为 JSON（只读，不改工程；按类型分页读取，大表格会显示进度条）。可在 设置 → 工具行为 选择是否只导出可写属性。",
     # 编辑
     "actUndo": "撤销上一步操作；工具执行的改动整批算一组，菜单项会显示该组对应的工具名。",
     "actRedo": "重做被撤销的操作；菜单项显示将要点回复的那个工具撤销组。",
@@ -23,12 +24,18 @@ ACTION_HELP = {
     "actAutoSetColor": "按工程约定的分类颜色表给对象设置颜色；被 Event 播放或被 SoundBank 包含的对象会同时处理（含深色标记）。",
     "actAutoAddNotes": "按 Event / SoundBank 引用关系自动写备注（Played by Event [...]、Included by SoundBank [...]）。",
     # 通用-创建父级/结构
-    "actCreateActorMixer": "在对象上方插入一层 ActorMixer 父级并移入。",
+    "actCreateActorMixer": "在对象上方插入一层 PropertyContainer 父级并移入（Wwise 2026 起 ActorMixer 改名为 PropertyContainer）。",
     "actCreateBlendContainer": "在对象上方插入一层 Blend Container 父级并移入。",
     "actCreateRandomSequenceContainer": "在对象上方插入一层 Random/Sequence 容器父级并移入。",
     "actCreateSwitchContainer": "在对象上方插入一层 Switch Container 父级并移入。",
     "actCreateVirtualFolder": "在对象上方插入一层 Virtual Folder 父级并移入。",
     "actCreateWorkUnit": "在对象上方插入一层 Work Unit 父级并移入。",
+    "actConvertToActorMixer": "把表格当前对象改成 PropertyContainer（旧版称 Actor Mixer）：改类型前后会自动搬运属性，只回填两个类型共有的属性。",
+    "actConvertToBlendContainer": "把表格当前对象改成 Blend Container：改类型前后会自动搬运属性，只回填两个类型共有的属性。",
+    "actConvertToRandomContainer": "把表格当前对象改成 Random/Sequence Container：改类型前后会自动搬运属性，只回填两个类型共有的属性。",
+    "actConvertToSwitchContainer": "把表格当前对象改成 Switch Container：改类型前后会自动搬运属性，只回填两个类型共有的属性。",
+    "actConvertToVirtualFolder": "把表格当前对象改成 Virtual Folder：改类型前后会自动搬运属性，只回填两个类型共有的属性。",
+    "actConvertToWorkUnit": "把表格当前对象改成 Work Unit：改类型前后会自动搬运属性，只回填两个类型共有的属性。",
     "actSplitUnderScore": "按名称第一个下划线拆成子文件夹并移入对象、去掉该前缀。",
     "actMoveToSelection": "把表格对象移动到 Wwise 当前选中对象之下。",
     "actCopyFromSelection": "把 Wwise 当前选中的对象复制到表格对象之下。",
@@ -39,7 +46,7 @@ ACTION_HELP = {
     "actResetSourceEdits": "重置对象的裁剪/淡变等 Source 编辑参数。",
     "actTrimAudioSilence": "裁剪音频的头部和尾部的静音，节省包体空间。",
     "actLoudnessAdjustment": "调整或统一所选音频的响度，可调整源文件和Wwise中设置。",
-    "actAutoCompressionSettings": "根据音频时长自动选择转码格式，会拆分成Long和Short的Conversion",
+    "actAutoCompressionSettings": "自动选择转码格式（Conversion）：支持按音频时长、按节点名称关键词、按 OutputBus 三种方式映射。",
     "actAutoImport": "按 Originals 约定路径自动为对象导入 wav 文件。",
     "actRenameOriginalToWwise": "把磁盘 wav 文件名改成与 Wwise 对象一致（磁盘改名）。",
     "actTidyOriginalFolders": "自动归类整理 Originals 下的子文件夹并更新引用。",
@@ -47,6 +54,8 @@ ACTION_HELP = {
     # 本地化
     "actLocalizeLanguages": "为语音对象批量导入其它语言槽位的样本（按已有语言路径复制）。",
     "actFillSilence": "为语音补静音；高级筛选选「只显示当前语言」时只补当前语言，选「全部语言」时补齐全部未导入语言。",
+    "actConvertToVoice": "把对象的音频尝试导入工程的所有语言（保留原 SFX 子目录，缺失时复制 WAV 到语言目录），删除其他源，并标记为 Voice。",
+    "actConvertToSound": "保留参考语言的音频文件并转为 SFX，删除其他语言源，同时取消 Voice 标记。",
     # 混音
     "actDownMixFader": "把当前层的音量/音高/滤波器参数向下逐层传递并清零当前层。",
     "actVolumeToGain": "把音量值并入增益并清零音量（Bus 类对象无增益，不处理）。",
@@ -65,6 +74,7 @@ ACTION_HELP = {
     "actSplitTo1P2P": "按角色拆分（生成 1P/2P 两分支）。",
     "actRenameRandomChildren": "重命名 Random/Sequence 容器下的子对象（编号规则）。",
     "actGroupAsRandom": "把同级对象自动归组为 Random/Sequence 容器。",
+    "actOptimizeRandomCount": "只分析主窗口「选中」列已勾选对象下的 Random Container，按平台统计其启用的子对象数量；每个平台的允许数量可在工具窗口的表格或「设置 → 工具行为 → 优化随机数量」中配置（默认 3）。结果表每行可勾选需要优化的对象；平台限制表第一行勾选需要优化的平台（支持全选平台），可优化所选平台或全部平台，其余子对象先 unlink 再停用。包含多种名称前缀的随机容器会在总样本数量列标红，可勾选「显示多播对象」查看或默认过滤。",
     # Event
     "actCreatePlayEvent": "为对象创建或更新引用它的 Play Event（实现“可播放”）。",
     "actRenameEventByTarget": "单目标事件按播放对象推导并重命名事件。",
@@ -81,8 +91,9 @@ ACTION_HELP = {
     "actClearInclusions": "清空 Bank 的全部包含项。",
     "actGenerateEventBankMap": "生成事件与 Bank 的对应关系表。",
     # 统计
-    "actCalculateMediaSize": "打开“媒体资源大小”统计窗口：对表格当前对象逐个统计 wav/内存 wem/流式 wem、源文件数与压缩比，并显示合计。",
-    "actPropertyQuery": "打开属性查询窗口：对表格当前可见对象批量读取指定属性（多个属性用分号分隔），结果以表格展示。",
+    "actCalculateMediaSize": "打开“媒体资源大小”统计窗口：对主窗口「选中」列已勾选的对象逐个统计 wav/内存 wem/流式 wem、源文件数与压缩比，并显示合计。",
+    "actMediaDuplicate": "打开“媒体查重”窗口：选择 SoundBanksInfo.xml，找出同一 SFX 原始音频路径对应多个打包 wem 的情况，并统计引用 Event 数；双击或右键查看 wem/Event/Trim 明细，在原始音频路径列右键可打开音频预览，在 Event 名称列右键可复制或选中。",
+    "actPropertyQuery": "打开属性查询窗口：对主窗口「选中」列已勾选的对象批量读取指定属性（多个属性用分号分隔），结果以表格展示。",
     # GameSync
     "actCopyRtpcFromSelection": "把 Wwise 当前选中对象的 RTPC 复制（替换）到表格对象。",
     # 导入

@@ -1,20 +1,20 @@
+from windows.base_analysis_dialog import BaseAnalysisDialog
 import re
 import os
 
-import clipboard
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QTableWidgetItem, QCheckBox, QGroupBox, QMenu
+from PySide6.QtWidgets import QDialog, QTableWidgetItem, QCheckBox, QGroupBox
 
 from data import project_conventions
 from libraries.table_view.table_cell_data import CellSeverity
+from libraries.table_view.table_context_menu import install_row_object_context
+from libraries.table_view.table_path_item import create_path_item
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from table.wwise_table_context_menu import add_common_object_actions
-from table.wwise_table_row_data import WwiseTableRowData
 from libraries.utils import audio_utils, user_config
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, audio_source_utils, soundbank_utils, localization_utils, event_utils, \
-    container_utils, waapi_utils, mixing_utils
+    container_utils, waapi_utils, mixing_utils, wwise_compat
 from libraries.wwise_object import WwiseObjectType, WwiseObject
 from ui.ProjectValidation_ui import Ui_ProjectValidation
 from libraries.multi_thread import batch_processor
@@ -22,6 +22,9 @@ from libraries.multi_thread import batch_processor
 
 # 对象可用属性/引用名缓存（按对象类型）：同一类型返回的列表一致，避免对每个对象各查一次
 _AVAILABLE_NAMES_CACHE: dict[str, set] = {}
+
+# 检查结果表的路径列（第 0 列固定为「选中」）
+PATH_COL = 4
 
 
 def _available_names(obj: WwiseObject) -> set:
@@ -34,11 +37,14 @@ def _available_names(obj: WwiseObject) -> set:
 
 
 # Wwise工程检查工具
-class ProjectValidation(QDialog, Ui_ProjectValidation):
+class ProjectValidation(BaseAnalysisDialog, Ui_ProjectValidation):
 
     def __init__(self, main_window):
         super().__init__()
         self.setupUi(self)
+        self.analysis_table = self.setup_analysis_table(
+            self.tblValidationResults, ['类别', '问题', '类型', '路径']
+        )
         self.load_check_states()
         # 规范开关关闭时对应检查项取消勾选并置灰
         if not project_conventions.is_color_enabled():
@@ -70,17 +76,19 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
         self.btnDeselectAll.clicked.connect(lambda: self.select_all(False))
         self.btnSaveChecks.clicked.connect(self.save_check_states)
         self.btnValidateEntireProject.clicked.connect(self.validate_entire_project)
-        self.btnValidateListEntries.clicked.connect(
-            lambda: self.validate_objects(self.__mainWindow.get_visible_objects())
-        )
+        self.btnValidateListEntries.clicked.connect(self.validate_checked_objects)
         self.btnValidateProjectSelection.clicked.connect(lambda: self.validate_objects(
             waapi_utils.get_selected_objects()))
         self.btnSendResultToMainWindow.clicked.connect(self.send_results_back)
         self.btnAutoFixSelection.clicked.connect(self.auto_fix_selection)
-        self.tblValidationResults.customContextMenuRequested.connect(self.show_result_context_menu)
-
-        self.tblValidationResults.itemDoubleClicked.connect(self.select_object_in_wwise)
-        self.tblValidationResults.setColumnWidth(3, 600)
+        install_row_object_context(
+            self.tblValidationResults,
+            self.objects_at_row,
+            path_columns=(PATH_COL,),
+            extra_actions=self.add_result_extra_actions,
+            default_action="select",
+        )
+        self.tblValidationResults.setColumnWidth(PATH_COL, 600)
 
     # 收集所有检查项的开关状态 {objectName: checked}
     def _check_states(self) -> dict:
@@ -123,49 +131,37 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
                     if isinstance(child, QCheckBox):
                         child.setChecked(select)
 
-    # 在Wwise中选中对象
-    def select_object_in_wwise(self, item: QTableWidgetItem):
-        if not waapi_utils.is_connected():
-            return
-        if item.column() != 3:
-            item = self.tblValidationResults.item(item.row(), 3)
-        if item is None:
-            return
-        # 路径列可能显示简写，完整路径存在 UserRole 中
-        path = item.data(Qt.ItemDataRole.UserRole) or item.text()
-        obj = waapi_utils.find_object_by_path(path)
-        if obj:
-            waapi_utils.select_objects_in_wwise([obj])
+    def objects_at_row(self, row: int) -> list:
+        return [self.problematicObjects[row]] if 0 <= row < len(self.problematicObjects) else []
 
-    # 结果表右键：通用对象动作 + 自动修复
-    def show_result_context_menu(self, position):
-        index = self.tblValidationResults.indexAt(position)
-        if not index.isValid():
-            return
-        row = index.row()
-        menu = QMenu(self)
-        cell = self.tblValidationResults.item(row, index.column())
-        if cell is not None and cell.text():
-            menu.addAction('复制', lambda: clipboard.copy(cell.text()))
-        if 0 <= row < len(self.problematicObjects):
-            add_common_object_actions(menu, self.problematicObjects[row], self)
-        problem_item = self.tblValidationResults.item(row, 1)
+    def add_result_extra_actions(self, menu, item, payload):
+        problem_item = self.tblValidationResults.item(item.row(), 2)
         if problem_item is not None:
             menu.addAction('自动修复', lambda: self.auto_fix(problem_item))
-        menu.exec(self.tblValidationResults.viewport().mapToGlobal(position))
 
     # 将检查结果发送到主窗口
     def send_results_back(self):
-        results = []
-        items = self.tblValidationResults.selectedItems()
-        for item in items:
-            results.append(self.problematicObjects[item.row()])
+        results = [
+            self.problematicObjects[row]
+            for row in self.analysis_table.selected_rows()
+            if 0 <= row < len(self.problematicObjects)
+        ]
+        if not results:
+            self.warn_no_selected_rows(title='工程检查', detail='请先在结果表「选中」列勾选要发送的对象。')
+            return
         self.__mainWindow.activeObjects = results
         self.__mainWindow.show_obj_list()
 
     # 开始一键修复列表选中内容
     def auto_fix_selection(self):
-        items = self.tblValidationResults.selectedItems()
+        items = [
+            self.tblValidationResults.item(row, 2)
+            for row in self.analysis_table.selected_rows()
+        ]
+        items = [item for item in items if item is not None]
+        if not items:
+            self.warn_no_selected_rows(title='工程检查', detail='请先在结果表「选中」列勾选要修复的对象。')
+            return
         batch_processor.create_async(
             items,
             lambda index, item: self.auto_fix(item),
@@ -175,7 +171,7 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
     # 自动修复列表选中内容
     def auto_fix(self, item: QTableWidgetItem):
         index = item.row()
-        problem_item = self.tblValidationResults.item(index, 1)
+        problem_item = self.tblValidationResults.item(index, 2)
         # 已经修复的跳过
         if problem_item.data(Qt.ItemDataRole.BackgroundRole) != CellSeverity.Danger:
             return
@@ -258,6 +254,15 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
                 if descendant.name != '':
                     all_objects.append(descendant)
         self._start_validation(all_objects)
+
+    # 只检查主窗口「选中」列已勾选的对象，未勾选行的子树跳过
+    def validate_checked_objects(self):
+        objects = self.collect_analysis_targets(expand=True)
+        if not objects:
+            self.warn_no_analysis_targets(title='工程检查')
+            return
+        self.reset_data()
+        self._start_validation(objects)
 
     def _start_validation(self, objects: list[WwiseObject]):
         self.__validationObjects = objects
@@ -421,15 +426,14 @@ class ProjectValidation(QDialog, Ui_ProjectValidation):
     # 记录不符合规范的对象
     def record_problematic_object(self, obj: WwiseObject, category: str, rule: str):
         row_count = self.tblValidationResults.rowCount()
-        self.tblValidationResults.insertRow(row_count)
+        # 修复是破坏性操作，结果行默认不勾选，由用户明确选择
+        self.analysis_table.prepare_row(row_count, checked=False)
         rule_item = QTableWidgetItem(rule)
         rule_item.setData(Qt.ItemDataRole.BackgroundRole, CellSeverity.Danger)
-        self.tblValidationResults.setItem(row_count, 0, QTableWidgetItem(category))
-        self.tblValidationResults.setItem(row_count, 1, rule_item)
-        self.tblValidationResults.setItem(row_count, 2, QTableWidgetItem(obj.type.name))
-        path_item = QTableWidgetItem(WwiseTableRowData.get_path_text(obj.path))
-        path_item.setData(Qt.ItemDataRole.UserRole, obj.path)
-        self.tblValidationResults.setItem(row_count, 3, path_item)
+        self.tblValidationResults.setItem(row_count, 1, QTableWidgetItem(category))
+        self.tblValidationResults.setItem(row_count, 2, rule_item)
+        self.tblValidationResults.setItem(row_count, 3, QTableWidgetItem(obj.type.name))
+        self.tblValidationResults.setItem(row_count, PATH_COL, create_path_item(obj.path))
         self.problematicObjects.append(obj)
 
     # 检查是否存在重复绑定的RTPC
@@ -556,8 +560,11 @@ def rename_to_name_case(obj: WwiseObject) -> bool:
 # 检查对象是否命名长度不符合要求
 def violates_naming_length(obj: WwiseObject):
     obj_path = obj.path
-    obj_type = obj.type
-    if obj_path.startswith('\\Actor-Mixer Hierarchy'):
+    if wwise_compat.is_music_object(obj):
+        if obj.type in (WwiseObjectType.MusicSegment, WwiseObjectType.MusicTrack):
+            return False
+        return '_' in obj.name
+    if wwise_compat.is_containers_path(obj_path):
         if obj.type == WwiseObjectType.AudioSource:
             return False
         if obj.type == WwiseObjectType.Sound:
@@ -565,12 +572,7 @@ def violates_naming_length(obj: WwiseObject):
                 return False
             return '_' not in obj.name
         return '_' in obj.name
-    elif obj_path.startswith('\\Interactive Music Hierarchy'):
-        if obj_type == 'MusicSegment' or obj_type == 'MusicTrack':
-            return False
-        return '_' in obj.name
-    else:
-        return False
+    return False
 
 
 # 检查对象的颜色是否符合类型规范
@@ -677,7 +679,7 @@ def is_work_unit_nested(work_unit: WwiseObject, properties: dict = None):
 
 # 检查ActorMixer是否包含有效信息
 def is_actor_mixer_redundant(actor_mixer: WwiseObject):
-    if actor_mixer.type != WwiseObjectType.ActorMixer:
+    if not wwise_compat.is_property_container(actor_mixer):
         return False
     parent = waapi_utils.get_parent_object(actor_mixer)
     if parent.type == WwiseObjectType.WorkUnit:
@@ -708,7 +710,7 @@ def container_has_single_child(container: WwiseObject):
 # 检查对象是否不包含子对象
 def is_node_empty(obj: WwiseObject):
     obj_path = obj.path
-    if 'Actor-Mixer Hierarchy' not in obj_path and 'Interactive Music Hierarchy' not in obj_path:
+    if not wwise_compat.is_containers_path(obj_path):
         return False
     obj_type = obj.type
     if obj.type == WwiseObjectType.Sound or obj.type == WwiseObjectType.AudioSource:
@@ -801,7 +803,7 @@ def sound_not_in_any_events(sound: WwiseObject):
     references = waapi_utils.get_object_references(sound)
     if len(references) == 0:
         parent = waapi_utils.get_parent_object(sound)
-        if parent.type == WwiseObjectType.ActorMixer or parent.type == WwiseObjectType.WorkUnit:
+        if wwise_compat.is_property_container(parent) or parent.type == WwiseObjectType.WorkUnit:
             return True
         return sound_not_in_any_events(parent)
     return False
@@ -909,8 +911,7 @@ def is_bus_unassigned(obj: WwiseObject):
     if 'OverrideOutput' in names:
         property_names.append('OverrideOutput')
     properties = waapi_utils.get_object_properties(obj, property_names)
-    bus_value = properties.get('OutputBus')
-    bus = WwiseObject(bus_value) if bus_value else None
+    bus = mixing_utils.get_output_bus(obj, properties)
     if bus is None:
         return False
     is_master = bus.name == 'Master Audio Bus'
@@ -922,7 +923,7 @@ def is_bus_unassigned(obj: WwiseObject):
     if parent:
         parent_has_bus = (
             'OutputBus' in _available_names(parent)
-            and waapi_utils.get_referenced_object(parent, 'OutputBus')
+            and mixing_utils.get_output_bus(parent)
         )
         if not parent_has_bus:
             return is_master
@@ -961,7 +962,7 @@ def switch_to_1p_by_default(container: WwiseObject):
 
 # 3D对象未设置衰减曲线
 def object_missing_attenuation(obj: WwiseObject):
-    if not obj.path.startswith('\\Actor-Mixer Hierarchy'):
+    if not wwise_compat.is_containers_path(obj.path) or wwise_compat.is_music_object(obj):
         return False
     names = _available_names(obj)
     property_names = []

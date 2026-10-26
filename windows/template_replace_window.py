@@ -1,3 +1,4 @@
+from libraries.base_dialog import BaseDialog
 from libraries.wwise_object import WwiseObjectType, WwiseObject
 from ui.TemplateReplacer_ui import Ui_TemplateReplacer
 from PySide6.QtWidgets import QDialog
@@ -5,7 +6,7 @@ from libraries.utils.wwise import common_utils, audio_source_utils, localization
 
 
 # 批量替换内容工具
-class TemplateReplacer(QDialog, Ui_TemplateReplacer):
+class TemplateReplacer(BaseDialog, Ui_TemplateReplacer):
     __oldName = ''
     __newName = ''
 

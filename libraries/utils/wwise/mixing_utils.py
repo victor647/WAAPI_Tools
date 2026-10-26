@@ -34,6 +34,17 @@ def set_output_bus(obj: WwiseObject, bus_obj: WwiseObject) -> bool:
     waapi_utils.set_object_property(obj, 'OverrideOutput', True)
     return waapi_utils.set_object_reference(obj, 'OutputBus', bus_obj)
 
+
+# 对象当前的有效输出总线（未被覆盖时是上层继承的总线）；没有分配时返回 None
+# values 传批量预取的单对象属性字典时优先使用，避免逐对象查询
+def get_output_bus(obj: WwiseObject, values: dict = None) -> WwiseObject:
+    if values is not None:
+        value = values.get('OutputBus')
+    else:
+        value = waapi_utils.get_object_property(obj, 'OutputBus')
+    return WwiseObject(value) if value else None
+
+
 # 根据对象类别自动分配Bus
 def auto_assign_bus_by_category(obj: WwiseObject) -> bool:
     category = project_conventions.get_object_category(obj)
@@ -146,7 +157,7 @@ class GainOffsetCache(object):
     def get_node_bus(self, obj: WwiseObject):
         key = obj.id
         if key not in self.__node_bus:
-            bus = waapi_utils.get_referenced_object(obj, 'OutputBus')
+            bus = get_output_bus(obj)
             self.__node_bus[key] = bus if bus and bus.is_valid else None
         return self.__node_bus[key]
 

@@ -6,11 +6,17 @@ from libraries.utils.log_utils import Logger
 
 CONFIG_FILE_NAME = "user_config.json"
 
+# 优化随机数量工具的窗口设置节点与默认允许数量
+OPTIMIZE_RANDOM_COUNT_WINDOW_KEY = "optimize_random_count"
+DEFAULT_OPTIMIZE_RANDOM_ALLOWED_COUNT = 3
+
 # 用户可编辑的默认配置；user_config.json 中的同名键会覆盖这里的值
 DEFAULT_CONFIG = {
     "tools": {
         # 工具执行前是否自动展开可见对象的子级来筛选目标类型
         "auto_fetch_children": True,
+        # 查找/筛选是否只作用于勾选「选中」列的对象；未勾选的行原样保留，始终显示
+        "find_filter_checked_only": True,
         # WAAPI 查询分页大小（子对象/后代/批量查询每次拉取的数量）
         "page_size": 500,
         # 表格「路径」列是否使用简写显示；关闭时显示完整路径
@@ -25,6 +31,8 @@ DEFAULT_CONFIG = {
         "detail_log": False,
         # 自动转码：长/短音效占优比例，超过它才覆盖上层设置（0.6 即 40:60 分界）
         "conversion_dominance_ratio": 0.6,
+        # 导出对象属性（JSON）时是否只包含可写属性（跳过 id/name/path/children 等只读访问器与列表值）
+        "dump_only_writable_properties": True,
     },
     "window_settings": {},
     "ai": {
@@ -78,6 +86,8 @@ DEFAULT_CONFIG = {
         # 界面缩放：auto=跟随系统；也可以写 "100" / "125" / "150" 等百分比（固定缩放，需重启）
         "ui_scale": "auto",
     },
+    # 帮助菜单打开的文档链接（产品默认值，用户可在 user_config.json 里覆盖）
+    "Documentation": "https://docs.popo.netease.com/lingxi/730bd7bd4c59499dabca39201cd64c8e",
 }
 
 _config_cache = None
@@ -228,6 +238,11 @@ def get_tool_auto_fetch_children() -> bool:
     return bool(load_config()["tools"].get("auto_fetch_children", True))
 
 
+# 查找/筛选只作用于勾选「选中」列的对象
+def get_tool_find_filter_checked_only() -> bool:
+    return bool(load_config()["tools"].get("find_filter_checked_only", True))
+
+
 def get_tool_page_size() -> int:
     # 分页大小：限制在 50~5000，避免过小拖慢、过大被服务端截断
     try:
@@ -246,6 +261,12 @@ def set_tool_page_size(page_size: int) -> None:
 def set_tool_auto_fetch_children(enabled: bool) -> None:
     config = load_config()
     config.setdefault("tools", {})["auto_fetch_children"] = bool(enabled)
+    _write_config(config)
+
+
+def set_tool_find_filter_checked_only(enabled: bool) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["find_filter_checked_only"] = bool(enabled)
     _write_config(config)
 
 
@@ -297,6 +318,17 @@ def get_tool_path_hide_root() -> bool:
 def set_tool_path_hide_root(enabled: bool) -> None:
     config = load_config()
     config.setdefault("tools", {})["path_hide_root"] = bool(enabled)
+    _write_config(config)
+
+
+# 导出对象属性时是否只包含可写属性（跳过只读访问器与列表值）
+def get_dump_only_writable_properties() -> bool:
+    return bool(load_config()["tools"].get("dump_only_writable_properties", True))
+
+
+def set_dump_only_writable_properties(enabled: bool) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["dump_only_writable_properties"] = bool(enabled)
     _write_config(config)
 
 
@@ -362,6 +394,104 @@ def set_window_settings(window_key: str, values: dict) -> None:
     config = load_config()
     config.setdefault("window_settings", {})[window_key] = dict(values)
     _write_config(config)
+
+
+# 优化随机数量：读取默认允许数量与各平台覆盖值
+def get_optimize_random_count_settings() -> dict:
+    settings = get_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY)
+    try:
+        default = max(0, int(settings.get("allowed_count", DEFAULT_OPTIMIZE_RANDOM_ALLOWED_COUNT)))
+    except (TypeError, ValueError):
+        default = DEFAULT_OPTIMIZE_RANDOM_ALLOWED_COUNT
+    allowed_by_platform = {}
+    raw = settings.get("allowed_by_platform") or {}
+    if isinstance(raw, dict):
+        for name, value in raw.items():
+            try:
+                allowed_by_platform[str(name)] = max(0, int(value))
+            except (TypeError, ValueError):
+                continue
+    selected_platforms = None
+    raw_selected = settings.get("selected_platforms")
+    if isinstance(raw_selected, list):
+        selected_platforms = []
+        for name in raw_selected:
+            name = str(name).strip()
+            if name and name not in selected_platforms:
+                selected_platforms.append(name)
+    return {
+        "allowed_count": default,
+        "allowed_by_platform": allowed_by_platform,
+        "selected_platforms": selected_platforms,
+    }
+
+
+# 指定平台未单独配置时回退到默认允许数量
+def get_optimize_random_allowed_count(platform: str = "") -> int:
+    settings = get_optimize_random_count_settings()
+    if platform:
+        return settings["allowed_by_platform"].get(platform, settings["allowed_count"])
+    return settings["allowed_count"]
+
+
+def save_optimize_random_count_settings(default: int, allowed_by_platform: dict) -> None:
+    clean = {}
+    for name, value in (allowed_by_platform or {}).items():
+        try:
+            clean[str(name)] = max(0, int(value))
+        except (TypeError, ValueError):
+            continue
+    try:
+        default_value = max(0, int(default))
+    except (TypeError, ValueError):
+        default_value = DEFAULT_OPTIMIZE_RANDOM_ALLOWED_COUNT
+    current = get_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY)
+    current["allowed_count"] = default_value
+    current["allowed_by_platform"] = clean
+    set_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY, current)
+
+
+# 工具窗口内调整数量时，按当前平台写回对应覆盖值
+def set_optimize_random_allowed_count(platform: str, value: int) -> None:
+    settings = get_optimize_random_count_settings()
+    if platform:
+        settings["allowed_by_platform"][platform] = max(0, int(value))
+    else:
+        settings["allowed_count"] = max(0, int(value))
+    save_optimize_random_count_settings(settings["allowed_count"], settings["allowed_by_platform"])
+
+
+# 工具窗口的「仅显示超标对象」过滤开关
+def get_optimize_random_only_over_limit() -> bool:
+    return bool(get_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY).get("only_over_limit", False))
+
+
+def set_optimize_random_only_over_limit(enabled: bool) -> None:
+    current = get_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY)
+    current["only_over_limit"] = bool(enabled)
+    set_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY, current)
+
+
+# 是否显示包含多种名称前缀的随机容器
+def get_optimize_random_show_multi_group() -> bool:
+    return bool(
+        get_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY).get("show_multi_group", False)
+    )
+
+
+def set_optimize_random_show_multi_group(enabled: bool) -> None:
+    current = get_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY)
+    current["show_multi_group"] = bool(enabled)
+    set_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY, current)
+
+
+# 「优化所选平台」勾选的平台列表
+def set_optimize_random_selected_platforms(platforms: list[str]) -> None:
+    current = get_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY)
+    current["selected_platforms"] = [
+        str(name).strip() for name in platforms if str(name).strip()
+    ]
+    set_window_settings(OPTIMIZE_RANDOM_COUNT_WINDOW_KEY, current)
 
 
 def _write_config(config: dict) -> None:

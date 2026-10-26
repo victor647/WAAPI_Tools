@@ -2,7 +2,7 @@ import os
 from data import project_conventions
 from libraries.utils import io_utils, path_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import common_utils, audio_source_utils, waapi_utils
+from libraries.utils.wwise import common_utils, audio_source_utils, waapi_utils, wwise_compat
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 
@@ -103,7 +103,7 @@ def get_event_name(obj: WwiseObject) -> str:
         event_name = obj_name
     else:
         event_name = common_utils.get_full_name_with_acronym(obj)
-    if obj.path.startswith('\\Interactive Music Hierarchy'):
+    if wwise_compat.is_music_object(obj):
         event_name = 'BGM_' + event_name
     if project_conventions.has_event_play_prefix():
         event_name = 'Play_' + event_name

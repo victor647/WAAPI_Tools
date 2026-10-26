@@ -18,7 +18,8 @@ def preview_audio_source(obj: WwiseObject, parent=None):
     AudioPreviewWindow(file_path, parent).show()
 
 
-# 往菜单追加 Wwise 对象行的通用动作（各窗口再追加自己的专属动作）
+# 往菜单追加 Wwise 对象行的通用动作（在Wwise中选中 / AudioSource 预览）
+# 复制项由各表格按列能力统一生成，避免同一列出现多个复制入口
 def add_common_object_actions(menu, obj: WwiseObject, parent=None):
     menu.addAction('在Wwise中选中', lambda: waapi_utils.select_objects_in_wwise([obj]))
     if obj.type == WwiseObjectType.AudioSource:

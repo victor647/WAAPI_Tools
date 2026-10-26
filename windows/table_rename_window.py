@@ -1,3 +1,4 @@
+from libraries.base_dialog import BaseDialog
 from PySide6.QtCore import Qt
 from libraries.utils.log_utils import Logger
 from ui.RenameByTable_ui import Ui_RenameByTable
@@ -12,7 +13,7 @@ from libraries.utils.qt_utils import resize_table_and_window
 
 
 # 通过读表批量重命名工具
-class TableRenamer(QDialog, Ui_RenameByTable):
+class TableRenamer(BaseDialog, Ui_RenameByTable):
 
     def __init__(self, main_window):
         super().__init__()

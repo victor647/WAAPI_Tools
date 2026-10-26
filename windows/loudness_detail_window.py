@@ -1,3 +1,4 @@
+from libraries.base_dialog import BaseDialog
 from enum import Enum
 
 import clipboard
@@ -9,6 +10,7 @@ from libraries.utils import audio_utils, path_utils, theme_utils
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, mixing_utils, waapi_utils
+from libraries.table_view.table_path_item import create_path_item
 from table.wwise_table_context_menu import add_common_object_actions, connect_double_click_select
 from ui.LoudnessDetail_ui import Ui_LoudnessDetail
 
@@ -64,7 +66,7 @@ def update_value_item(item: QTableWidgetItem, value) -> None:
 
 
 # 响度调整明细窗口：只列出指定链路上逐级每个属性的调整值
-class LoudnessDetailWindow(QDialog, Ui_LoudnessDetail):
+class LoudnessDetailWindow(BaseDialog, Ui_LoudnessDetail):
 
     def __init__(self, file_path: str, wwise_objects: list, loudness: float = None,
                  chain: DetailChain = DetailChain.Object, loudness_unit: str = 'dBFS'):
@@ -128,8 +130,9 @@ class LoudnessDetailWindow(QDialog, Ui_LoudnessDetail):
         if node is None:
             return
         menu = QMenu(self)
-        if item.column() == COL_PATH:
-            menu.addAction('复制', lambda: self.copy_object_path(node))
+        copy_value = node.path if item.column() == COL_PATH else item.text()
+        if copy_value:
+            menu.addAction('复制', lambda: clipboard.copy(copy_value))
         # 通用对象动作（在Wwise中选中、AudioSource 预览）
         add_common_object_actions(menu, node, self)
         if not menu.actions():
@@ -260,7 +263,9 @@ class LoudnessDetailWindow(QDialog, Ui_LoudnessDetail):
             self.tblDetails.insertRow(row)
             self.__set_text_cell(row, COL_NAME, node.name)
             self.__set_text_cell(row, COL_TYPE, get_type_text(node))
-            self.__set_text_cell(row, COL_PATH, path_utils.get_display_path(node.path))
+            path_item = create_path_item(node.path)
+            path_item.setFlags(READ_ONLY_FLAGS)
+            self.tblDetails.setItem(row, COL_PATH, path_item)
             for offset, name in enumerate(mixing_utils.GAIN_PROPERTY_NAMES):
                 value = values.get(name)
                 item = make_value_item(NOT_APPLICABLE if value is None else value, editable=value is not None)

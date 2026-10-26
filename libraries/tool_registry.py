@@ -14,7 +14,7 @@ import math
 import re
 import statistics
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from libraries.utils.wwise import (
@@ -32,7 +32,7 @@ from libraries.utils.wwise import (
     waapi_utils,
 )
 from libraries.utils.log_utils import Logger
-from libraries.utils import user_config
+from libraries.utils import path_utils, user_config
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 # 单次可列出的音频源上限 / 可统计的对象上限，防止一次请求拖垮上下文
@@ -54,6 +54,14 @@ class ToolSpec:
     parameters: dict
     handler: Callable[[dict], Any]
     mutating: bool = False
+    # 工具分组：core 常驻；其它分组由 AI 按需 load_tools 加载
+    group: str = "core"
+    # 输出结构说明（MCP/AI 可用于链式调用时判断结果字段）
+    output_schema: dict | None = None
+    # 调用示例：[{title, description, arguments}]
+    examples: tuple = ()
+    # 复杂工具的补充说明（按需读取）
+    reference: str = ""
 
     def to_openai_schema(self) -> dict:
         return {
@@ -76,6 +84,10 @@ def register_tool(
     handler: Callable[[dict], Any],
     *,
     mutating: bool = False,
+    group: str = "core",
+    output_schema: dict | None = None,
+    examples: list | None = None,
+    reference: str = "",
 ) -> ToolSpec:
     if name in _TOOLS:
         raise ValueError(f"工具已注册：{name}")
@@ -88,7 +100,17 @@ def register_tool(
         "properties": parameters.get("properties") if isinstance(parameters.get("properties"), dict) else {},
         "required": parameters.get("required") if isinstance(parameters.get("required"), list) else [],
     }
-    spec = ToolSpec(name, description, normalized, handler, mutating=mutating)
+    spec = ToolSpec(
+        name,
+        description,
+        normalized,
+        handler,
+        mutating=mutating,
+        group=group,
+        output_schema=output_schema,
+        examples=tuple(examples or ()),
+        reference=reference,
+    )
     _TOOLS[name] = spec
     return spec
 
@@ -147,6 +169,320 @@ def describe_action(name: str, arguments: dict) -> dict:
             if key not in ("object_id", "object_ids", "confirmed")
         },
     }
+
+
+# —— 工具发现：指南 / schema / 示例 / 深文档 ——
+GUIDELINES_FILE_NAME = "ai_assistant_prompt.md"
+_FALLBACK_GUIDELINES = (
+    "你是 Wwise 自动化助手。只使用表格或工具结果里出现过的 object_id；"
+    "查询优先用只读工具或 waql_query；改动工程前先向用户说明并确认；"
+    "不要臆造 Wwise 路径、类型或 API。"
+)
+
+
+def _load_guidelines() -> str:
+    path = path_utils.get_resource_path(GUIDELINES_FILE_NAME)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().strip()
+        if text:
+            return text
+    except OSError as e:
+        Logger().warning(f"读取工具指南失败：{path}（{e}），使用内置精简版")
+    return _FALLBACK_GUIDELINES
+
+
+def _handler_get_guidelines(args: dict) -> dict:
+    note = (
+        "> MCP 环境说明：`@table` / `@selection` 与 `gui_*` 工具仅在软件内 AI 助手可用；"
+        "通过 MCP 调用时一律传真实 GUID。\n\n"
+    )
+    return {"instructions": note + _load_guidelines()}
+
+
+def _handler_get_tool_schema(args: dict) -> dict:
+    name = str(args.get("name") or "").strip()
+    spec = get_tool(name)
+    if spec is None:
+        return {"error": f"未知工具：{name}"}
+    return {
+        "name": spec.name,
+        "description": spec.description,
+        "parameters": spec.parameters,
+        "output_schema": spec.output_schema,
+        "group": spec.group,
+        "mutating": spec.mutating,
+        "examples_count": len(spec.examples),
+        "has_reference": bool(spec.reference),
+    }
+
+
+def _handler_get_tool_examples(args: dict) -> dict:
+    name = str(args.get("name") or "").strip()
+    keywords = [word.lower() for word in str(args.get("keywords") or "").split() if word]
+    try:
+        max_results = max(1, int(args.get("max_results", 10)))
+    except (TypeError, ValueError):
+        max_results = 10
+    if name:
+        spec = get_tool(name)
+        if spec is None:
+            return {"error": f"未知工具：{name}"}
+        specs = [spec]
+    else:
+        specs = list(_TOOLS.values())
+    matches = []
+    truncated = False
+    for spec in specs:
+        for example in spec.examples:
+            haystack = " ".join([
+                spec.name,
+                str(example.get("title", "")),
+                str(example.get("description", "")),
+                json.dumps(example.get("arguments", {}), ensure_ascii=False),
+            ]).lower()
+            if keywords and not any(word in haystack for word in keywords):
+                continue
+            if len(matches) >= max_results:
+                truncated = True
+                break
+            matches.append({"tool": spec.name, **example})
+        if truncated:
+            break
+    return {
+        "count": len(matches),
+        "truncated": truncated,
+        "examples": matches,
+    }
+
+
+def _handler_get_tool_reference(args: dict) -> dict:
+    name = str(args.get("name") or "").strip()
+    spec = get_tool(name)
+    if spec is None:
+        return {"error": f"未知工具：{name}"}
+    if spec.reference:
+        reference = spec.reference
+    else:
+        lines = [f"# {spec.name}", "", spec.description, "", "## 参数"]
+        required = set(spec.parameters.get("required") or [])
+        for param_name, prop in spec.parameters.get("properties", {}).items():
+            marker = "（必填）" if param_name in required else ""
+            lines.append(f"- `{param_name}` {prop.get('type', '')}{marker}：{prop.get('description', '')}")
+        if spec.output_schema:
+            lines += ["", "## 输出", "```json", json.dumps(spec.output_schema, ensure_ascii=False, indent=2), "```"]
+        if spec.examples:
+            lines += ["", "## 示例"]
+            for example in spec.examples[:5]:
+                lines.append(f"### {example.get('title', '')}")
+                lines.append(str(example.get("description", "")))
+                lines.append("```json")
+                lines.append(json.dumps(example.get("arguments", {}), ensure_ascii=False, indent=2))
+                lines.append("```")
+        reference = "\n".join(lines)
+    return {
+        "name": spec.name,
+        "group": spec.group,
+        "mutating": spec.mutating,
+        "reference": reference,
+        "output_schema": spec.output_schema,
+        "examples": list(spec.examples)[:5],
+    }
+
+
+register_tool(
+    "get_guidelines",
+    "返回本工具集的使用指南：工具路由规则、修改/确认约定、WAQL 语法要点、Wwise 2025+ 路径与类型变化。会话开始时调用一次即可，内容不会变。外部 MCP 客户端在不确定如何选工具时应先调用它。",
+    {"type": "object", "properties": {}, "required": []},
+    _handler_get_guidelines,
+    output_schema={
+        "type": "object",
+        "properties": {"instructions": {"type": "string", "description": "完整使用指南（Markdown）"}},
+        "required": ["instructions"],
+    },
+)
+
+
+register_tool(
+    "get_tool_schema",
+    "返回某个工具的完整定义（描述、参数 schema、输出 schema、分组、是否修改工程、示例数量）。在不确定参数或返回字段时调用；比反复试错更可靠。",
+    {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "工具名，例如 waql_query / aggregate_tool_chain"},
+        },
+        "required": ["name"],
+    },
+    _handler_get_tool_schema,
+)
+
+
+register_tool(
+    "get_tool_examples",
+    "返回工具的真实调用示例（title / description / arguments），可按工具名和关键词筛选。刚发现的工具或不确定怎么写参数时先调它；官方建议的发现顺序是 get_guidelines → get_tool_examples → get_tool_schema → 调用工具。",
+    {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "可选：只看某个工具的示例；省略则搜索全部工具"},
+            "keywords": {"type": "string", "description": "可选：空格分隔的关键词，匹配示例标题/描述/参数"},
+            "max_results": {"type": "integer", "description": "最多返回多少条，默认 10"},
+        },
+        "required": [],
+    },
+    _handler_get_tool_examples,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer"},
+            "truncated": {"type": "boolean"},
+            "examples": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tool": {"type": "string"},
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "arguments": {"type": "object"},
+                    },
+                },
+            },
+        },
+        "required": ["count", "truncated", "examples"],
+    },
+)
+
+
+register_tool(
+    "get_tool_reference",
+    "返回某个工具的深入参考文档（参数说明、输出结构、示例）；工具自带深文档时直接返回，否则自动生成。适合复杂工具（聚合统计、自动转码、WAQL 等）在正式调用前阅读。",
+    {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "工具名"},
+        },
+        "required": ["name"],
+    },
+    _handler_get_tool_reference,
+)
+
+
+# —— 工具分组与按需加载 ——
+# core 常驻；其余分组由 AI 调 load_tools 后再暴露，减少每轮下发的工具数量。
+_TOOL_GROUP_DESCRIPTIONS = {
+    "auto_compression": "自动转码（Conversion）分析与应用",
+    "soundbank": "SoundBank 创建、包含项、体积统计",
+    "localization": "多语言样本导入、补静音、语言槽位",
+    "rtpc_effects": "RTPC、Effect 槽、Output Bus、3D 定位",
+    "source_files": "磁盘源文件编辑/导入/整理（多为危险操作）",
+    "advanced": "临时脚本等高级逃生口",
+}
+
+_TOOL_GROUP_NAMES = {
+    "soundbank": {
+        "add_objects_to_bank", "clear_bank_inclusions", "create_bank_for_object",
+        "create_sound_bank_by_name", "get_bank_inclusions", "get_total_bank_size",
+        "set_bank_inclusion", "set_inclusion_type",
+    },
+    "localization": {
+        "localize_languages", "import_silence", "add_silence", "get_wave_path_for_language",
+    },
+    "rtpc_effects": {
+        "add_rtpc", "clear_rtpc", "copy_rtpc", "add_effect", "clear_effects",
+        "get_or_create_bus", "set_output_bus", "set_sound_3d",
+    },
+    "source_files": {
+        "apply_source_edits", "reset_source_editor", "replace_audio_file",
+        "auto_import_by_path", "rename_original_to_wwise", "tidy_original_folders",
+        "delete_unused_akd_files", "add_to_source_control",
+    },
+    "advanced": {"run_wwise_script"},
+}
+
+_active_groups: set[str] = set()
+
+
+def _assign_default_groups() -> None:
+    # 注册阶段显式指定过 group 的工具保持原样；其余按名字归入专业分组
+    for group, names in _TOOL_GROUP_NAMES.items():
+        for name in names:
+            spec = _TOOLS.get(name)
+            if spec is not None and spec.group == "core":
+                _TOOLS[name] = replace(spec, group=group)
+
+
+def reset_active_groups() -> None:
+    _active_groups.clear()
+
+
+def active_groups() -> set:
+    return set(_active_groups)
+
+
+def grouped_tool_specs(include_groups=None) -> list:
+    # include_groups=None 表示全部工具（MCP/调试）；否则 core + 已加载分组
+    if include_groups is None:
+        return list(_TOOLS.values())
+    allowed = {"core", *include_groups}
+    return [spec for spec in _TOOLS.values() if spec.group in allowed]
+
+
+def _handler_list_tool_groups(args: dict) -> dict:
+    groups = []
+    for name, description in _TOOL_GROUP_DESCRIPTIONS.items():
+        tools = sorted(spec.name for spec in _TOOLS.values() if spec.group == name)
+        groups.append({
+            "group": name,
+            "description": description,
+            "tool_count": len(tools),
+            "tools": tools,
+            "loaded": name in _active_groups,
+        })
+    return {
+        "groups": groups,
+        "core_count": sum(1 for spec in _TOOLS.values() if spec.group == "core"),
+        "loaded_groups": sorted(_active_groups),
+        "hint": "需要某组工具时调用 load_tools(group=...)，下一轮起可用",
+    }
+
+
+def _handler_load_tools(args: dict) -> dict:
+    group = str(args.get("group") or "").strip()
+    if not group:
+        return {"error": f"缺少 group 参数，可用值：{'/'.join(_TOOL_GROUP_DESCRIPTIONS)}"}
+    if group not in _TOOL_GROUP_DESCRIPTIONS:
+        return {"error": f"未知分组「{group}」，可用值：{'/'.join(_TOOL_GROUP_DESCRIPTIONS)}"}
+    _active_groups.add(group)
+    tools = sorted(spec.name for spec in _TOOLS.values() if spec.group == group)
+    return {
+        "group": group,
+        "activated": True,
+        "tools": tools,
+        "loaded_groups": sorted(_active_groups),
+        "hint": "这些工具从下一轮对话开始可以调用；不确定参数时用 get_tool_schema / get_tool_examples",
+    }
+
+
+register_tool(
+    "list_tool_groups",
+    "列出可用的工具分组（core 之外的 SoundBank / 本地化 / RTPC 效果 / 源文件 / 高级脚本等）及各组工具名。当前已加载的分组会标记 loaded。找不到需要的工具时先调它，再用 load_tools 加载对应分组。",
+    {"type": "object", "properties": {}, "required": []},
+    _handler_list_tool_groups,
+)
+
+
+register_tool(
+    "load_tools",
+    "按需加载一个工具分组，使该组工具从下一轮对话起出现在可用工具列表里（减少每轮工具 schema 的上下文占用）。先用 list_tool_groups 查看分组与工具名。",
+    {
+        "type": "object",
+        "properties": {
+            "group": {"type": "string", "description": "分组名，如 soundbank / localization / rtpc_effects / source_files / auto_compression / advanced"},
+        },
+        "required": ["group"],
+    },
+    _handler_load_tools,
+)
 
 
 def _require_object_ids(args: dict) -> list[str]:
@@ -1105,6 +1441,30 @@ register_tool(
     "读取表格中对象的详细信息（备注、启用状态等），一次最多 50 个对象",
     _object_ids_parameters("要查询详情的对象 id"),
     _handler_get_objects_info,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "type": {"type": "string"},
+                        "path": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+    examples=[
+        {
+            "title": "读取当前表格对象详情",
+            "description": "用 @table 指代主窗口表格里的对象",
+            "arguments": {"object_ids": ["@table"]},
+        },
+    ],
 )
 
 register_tool(
@@ -1119,6 +1479,32 @@ register_tool(
     "统计对象子树音频资源的磁盘文件大小：递归收集 AudioFileSource 的源文件路径，按路径去重后求和，返回每个对象与合计的 MB",
     _object_ids_parameters("要统计音频资源大小的对象 id"),
     _handler_calculate_audio_source_size,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "total_files": {"type": "integer", "description": "去重后的源文件数"},
+            "total_mb": {"type": "number", "description": "合计 MB"},
+            "objects": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "object": {"type": "string"},
+                        "files": {"type": "integer"},
+                        "size_mb": {"type": "number"},
+                    },
+                },
+            },
+            "missing": {"type": "object", "description": "读不到的路径数量与样例"},
+        },
+    },
+    examples=[
+        {
+            "title": "统计表格对象的音频磁盘占用",
+            "description": "按源 wav 路径去重后求和",
+            "arguments": {"object_ids": ["@table"]},
+        },
+    ],
 )
 
 register_tool(
@@ -1165,6 +1551,37 @@ register_tool(
         "required": ["object_ids", "child_type"],
     },
     _handler_get_descendants_of_type,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer"},
+            "truncated": {"type": "boolean"},
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "type": {"type": "string"},
+                        "path": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+    examples=[
+        {
+            "title": "取所有 MusicSegment",
+            "description": "递归查找指定类型后代",
+            "arguments": {"object_ids": ["@table"], "child_type": "MusicSegment", "limit": 0},
+        },
+        {
+            "title": "取所有音频源",
+            "description": "AudioFileSource 用于时长/体积统计",
+            "arguments": {"object_ids": ["@table"], "child_type": "AudioFileSource", "limit": 0},
+        },
+    ],
 )
 
 register_tool(
@@ -1186,6 +1603,26 @@ register_tool(
         "required": ["tool_name", "arguments"],
     },
     _handler_count_tool_items,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "tool": {"type": "string"},
+            "list_key": {"type": "string"},
+            "total": {"type": "integer", "description": "列表条数"},
+            "sample": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["total"],
+    },
+    examples=[
+        {
+            "title": "统计表格对象下的 Sound 数量",
+            "description": "先查询再用工具侧计数，不需要把列表取回",
+            "arguments": {
+                "tool_name": "get_descendants_of_type",
+                "arguments": {"object_ids": ["@table"], "child_type": "Sound"},
+            },
+        },
+    ],
 )
 
 register_tool(
@@ -1215,6 +1652,38 @@ register_tool(
         "required": ["tool_name", "arguments", "group_by"],
     },
     _handler_group_tool_items,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "total_items": {"type": "integer"},
+            "group_by": {"type": "string"},
+            "min_count": {"type": "integer"},
+            "matched_count": {"type": ["integer", "null"]},
+            "groups": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "group": {"type": "string"},
+                        "count": {"type": "integer"},
+                    },
+                },
+            },
+            "matched_groups": {"type": "array", "items": {"type": "object"}},
+        },
+    },
+    examples=[
+        {
+            "title": "按所属根对象分组统计 Sound",
+            "description": "只保留数量大于 5 的分组",
+            "arguments": {
+                "tool_name": "get_descendants_of_type",
+                "arguments": {"object_ids": ["@table"], "child_type": "Sound"},
+                "group_by": "root_id",
+                "min_count": 5,
+            },
+        },
+    ],
 )
 
 register_tool(
@@ -1260,6 +1729,68 @@ register_tool(
         "required": ["steps"],
     },
     _handler_aggregate_tool_chain,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "steps": {"type": "array", "items": {"type": "object"}, "description": "每一步的工具与条数"},
+            "total_items": {"type": "integer"},
+            "aggregate": {"type": "string"},
+            "value": {"type": ["number", "integer", "null"], "description": "请求的聚合值（sum/avg/min/max/count）"},
+            "stats": {
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer"},
+                    "sum": {"type": "number"},
+                    "avg": {"type": "number"},
+                    "min": {"type": "number"},
+                    "max": {"type": "number"},
+                },
+            },
+            "value_key": {"type": "string", "description": "实际参与统计的字段名"},
+            "skipped": {"type": "integer", "description": "取不到数值而跳过的条数"},
+            "groups": {"type": "array", "items": {"type": "object"}},
+            "matched_count": {"type": ["integer", "null"]},
+            "matched_groups": {"type": "array", "items": {"type": "object"}},
+        },
+    },
+    examples=[
+        {
+            "title": "统计所有音频源总时长",
+            "description": "逐项读取 Duration 并求和，一次调用完成",
+            "arguments": {
+                "steps": [
+                    {
+                        "tool_name": "get_descendants_of_type",
+                        "arguments": {"object_ids": ["@table"], "child_type": "AudioFileSource", "limit": 0},
+                    },
+                    {
+                        "tool_name": "get_object_property",
+                        "arguments": {"object_id": "$id", "property_name": "Duration"},
+                    },
+                ],
+                "aggregate": "sum",
+                "value_path": "max",
+            },
+        },
+        {
+            "title": "统计含超过 1 个 MusicTrack 的 MusicSegment",
+            "description": "跨层级计数，末步按 root_id 分组并过滤",
+            "arguments": {
+                "steps": [
+                    {
+                        "tool_name": "get_descendants_of_type",
+                        "arguments": {"object_ids": ["@table"], "child_type": "MusicSegment", "limit": 0},
+                    },
+                    {
+                        "tool_name": "get_descendants_of_type",
+                        "arguments": {"child_type": "MusicTrack", "limit": 0},
+                    },
+                ],
+                "group_by": "root_id",
+                "min_count": 1,
+            },
+        },
+    ],
 )
 
 register_tool(
@@ -1289,6 +1820,57 @@ register_tool(
         "required": ["object_ids", "property_name", "value"],
     },
     _handler_find_objects_by_property,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer"},
+            "scanned": {"type": "integer"},
+            "truncated": {"type": "boolean"},
+            "types_without_property": {"type": "array", "items": {"type": "string"}},
+            "types_not_comparable": {"type": "array", "items": {"type": "string"}},
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "type": {"type": "string"},
+                        "value": {},
+                    },
+                },
+            },
+            "errors": {"type": "array", "items": {"type": "string"}},
+        },
+    },
+    examples=[
+        {
+            "title": "找出 Volume 不为 0 的 Sound",
+            "description": "用 child_type 收窄扫描范围",
+            "arguments": {
+                "object_ids": ["@table"],
+                "property_name": "Volume",
+                "op": "!=",
+                "value": 0,
+                "child_type": "Sound",
+                "scan_limit": 0,
+                "limit": 0,
+            },
+        },
+        {
+            "title": "找出时长大于 0 的音频源",
+            "description": "Duration 返回 {min,max,type}，工具会自动按数值比较",
+            "arguments": {
+                "object_ids": ["@table"],
+                "property_name": "Duration",
+                "op": ">",
+                "value": 0,
+                "child_type": "AudioFileSource",
+                "scan_limit": 0,
+                "limit": 0,
+            },
+        },
+    ],
 )
 
 register_tool(
@@ -1323,6 +1905,103 @@ register_tool(
     _object_ids_parameters("要检查的对象 id"),
     _handler_check_event_references,
 )
+
+# —— 通用 WAQL 查询（只读逃生口）——
+WAQL_RESULT_LIMIT_DEFAULT = 1000
+
+
+def _handler_waql_query(args: dict) -> dict:
+    waql = str(args.get("waql") or "").strip()
+    if not waql:
+        return {"error": "缺少 waql 参数（例如 from type Sound where @Volume < 0）"}
+    raw_fields = args.get("return_fields")
+    return_fields = [
+        str(item).strip() for item in raw_fields
+        if str(item).strip()
+    ] if isinstance(raw_fields, list) else []
+    try:
+        limit = int(args.get("limit", WAQL_RESULT_LIMIT_DEFAULT))
+    except (TypeError, ValueError):
+        limit = WAQL_RESULT_LIMIT_DEFAULT
+    items = waapi_utils.query_waql(waql, return_fields)
+    total = len(items)
+    if limit > 0:
+        items = items[:limit]
+    return {
+        "count": len(items),
+        "total": total,
+        "truncated": total > len(items),
+        "items": items,
+    }
+
+
+register_tool(
+    "waql_query",
+    "执行只读 WAQL 查询（Wwise Authoring Query Language），适合现有工具覆盖不了的任意筛选/遍历/投影，等价于 ak.wwise.core.object.get + waql。示例：`from type Sound where @Volume < 0 orderby name take 50`、`from object \"{GUID}\" select descendants where type = \"MusicTrack\"`、`from type Event select children select target`。能力：from type/object/search/project；where（= != < > : 正则 /re/、and/or、!()）；select children/descendants/ancestors/parent/referencesTo；orderby/distinct/skip/take；列表函数 count()/any()/all()/first()/last()/at(N)/where()。注意：WAQL 没有算术运算；字符串用双引号；`from type` 走索引，比 `where type = ...` 快；访问原始值用 @PropertyName（不带 @ 会按 override 解析）。",
+    {
+        "type": "object",
+        "properties": {
+            "waql": {
+                "type": "string",
+                "description": "WAQL 查询语句，例如 from type Sound where @Volume < 0",
+            },
+            "return_fields": {
+                "type": "array",
+                "items": {"type": "string", "description": "WAAPI 返回表达式"},
+                "description": "可选返回表达式数组，例如 [\"name\", \"path\", \"OutputBus.name as bus\"]；省略则返回 id/name/type/path",
+            },
+            "limit": {
+                "type": "integer",
+                "description": f"最多返回多少条，默认 {WAQL_RESULT_LIMIT_DEFAULT}；0 表示不限量",
+            },
+        },
+        "required": ["waql"],
+    },
+    _handler_waql_query,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "count": {"type": "integer", "description": "本次返回条数"},
+            "total": {"type": "integer", "description": "查询命中总数"},
+            "truncated": {"type": "boolean", "description": "是否因 limit 被截断"},
+            "items": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "对象或投影结果（默认含 id/name/type/path）",
+            },
+        },
+        "required": ["count", "total", "truncated", "items"],
+    },
+    examples=[
+        {
+            "title": "查找负音量的 Sound",
+            "description": "按属性筛选并排序，取前 50 条",
+            "arguments": {"waql": "from type Sound where @Volume < 0 orderby name take 50"},
+        },
+        {
+            "title": "取某对象下所有 MusicTrack",
+            "description": "用对象 GUID 做根，投影名称与路径",
+            "arguments": {
+                "waql": "from object \"{GUID}\" select descendants where type = \"MusicTrack\"",
+                "return_fields": ["name", "path"],
+            },
+        },
+        {
+            "title": "列出事件及其播放目标",
+            "description": "Event -> Action -> Target 的链式查询",
+            "arguments": {"waql": "from type Event select children select target"},
+        },
+        {
+            "title": "反向查找播放某对象的 Event",
+            "description": "referencesTo 反查 Action，再取父级 Event",
+            "arguments": {
+                "waql": "\"{GUID}\" select referencesTo where type = \"Action\" select parent",
+                "return_fields": ["name", "path"],
+            },
+        },
+    ],
+)
+
 
 # —— 自动转码（按音频时长分配 Conversion）——
 AUTO_COMPRESSION_PLAN_LIMIT = 200
@@ -1461,14 +2140,14 @@ def _handler_auto_compression_apply(args: dict) -> dict:
 
 register_tool(
     "auto_compression_plan",
-    "分析「自动转码」方案（只读，不改工程）：递归收集表格对象子树里的 ActorMixer 与 Container，读取其下 AudioFileSource 的播放时长，按短/长阈值把音频分成短/中/长三档，再按每个节点的多数结果（父级继承 + 占优比例）决定它该用哪一档 Conversion；长/短档用默认档 Conversion 名称加 _Long / _Short 后缀。用户说「按音频时长自动设置转码 / 长短音效分开转码 / 自动分配 Conversion」时先用它出方案，用户确认后再调 auto_compression_apply。返回各档数量 summary、需要 OverrideConversion 的节点 plans、以及待新建的 Conversion 名称",
+    "分析「自动转码」方案（只读，不改工程）：递归收集表格对象子树里的 PropertyContainer（旧版称 ActorMixer）与 Container，读取其下 AudioFileSource 的播放时长，按短/长阈值把音频分成短/中/长三档，再按每个节点的多数结果（父级继承 + 占优比例）决定它该用哪一档 Conversion；长/短档用默认档 Conversion 名称加 _Long / _Short 后缀。用户说「按音频时长自动设置转码 / 长短音效分开转码 / 自动分配 Conversion」时先用它出方案，用户确认后再调 auto_compression_apply。返回各档数量 summary、需要 OverrideConversion 的节点 plans、以及待新建的 Conversion 名称",
     {
         "type": "object",
         "properties": {
             "object_ids": {
                 "type": "array",
                 "items": {"type": "string", "description": "Wwise 对象 GUID"},
-                "description": "要分析的根对象 id（表格对象；其子树里的 ActorMixer / Container 会被逐个判定）",
+                "description": "要分析的根对象 id（表格对象；其子树里的 PropertyContainer（旧版 ActorMixer）/ Container 会被逐个判定）",
             },
             "short_threshold": {
                 "type": "number",
@@ -1486,6 +2165,48 @@ register_tool(
         "required": ["object_ids"],
     },
     _handler_auto_compression_plan,
+    group="auto_compression",
+    output_schema={
+        "type": "object",
+        "properties": {
+            "default_conversion": {"type": "string"},
+            "short_threshold": {"type": "number"},
+            "long_threshold": {"type": "number"},
+            "conversions": {"type": "object", "description": "medium/long/short 档使用的 Conversion 名称"},
+            "will_create": {"type": "array", "items": {"type": "string"}},
+            "target_count": {"type": "integer"},
+            "source_count": {"type": "integer"},
+            "override_count": {"type": "integer", "description": "需要打开 OverrideConversion 的节点数"},
+            "plans": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "type": {"type": "string"},
+                        "path": {"type": "string"},
+                        "category": {"type": "string", "enum": ["short", "medium", "long"]},
+                        "counts": {"type": "object"},
+                    },
+                },
+            },
+            "truncated": {"type": "boolean"},
+            "summary": {"type": "object", "description": "各档数量与有效时长统计"},
+        },
+    },
+    examples=[
+        {
+            "title": "按音频时长生成自动转码方案",
+            "description": "阈值省略时用设置窗口保存的 0.5s / 5s",
+            "arguments": {"object_ids": ["@table"]},
+        },
+        {
+            "title": "自定义长短阈值",
+            "description": "1 秒以内算短、8 秒以上算长",
+            "arguments": {"object_ids": ["@table"], "short_threshold": 1, "long_threshold": 8},
+        },
+    ],
 )
 
 
@@ -1521,8 +2242,31 @@ register_tool(
     },
     _handler_auto_compression_apply,
     mutating=True,
+    group="auto_compression",
+    output_schema={
+        "type": "object",
+        "properties": {
+            "applied_count": {"type": "integer"},
+            "failed_count": {"type": "integer"},
+            "failed": {"type": "array", "items": {"type": "string"}},
+            "override_count": {"type": "integer"},
+            "default_conversion": {"type": "string"},
+            "conversions": {"type": "object"},
+            "created_conversions": {"type": "array", "items": {"type": "string"}},
+            "summary": {"type": "object"},
+        },
+    },
+    examples=[
+        {
+            "title": "应用自动转码方案",
+            "description": "先 plan、用户确认后再 apply；confirmed 由软件内 AI 按修改策略代填",
+            "arguments": {"object_ids": ["@table"], "confirmed": True},
+        },
+    ],
 )
 
 
 # MCP legacy 工具迁移目录：注册后 AI 助手与 MCP 共用同一份工具定义
 from libraries import wwise_tool_catalog as _wwise_tool_catalog  # noqa: E402, F401
+
+_assign_default_groups()

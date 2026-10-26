@@ -1,10 +1,14 @@
+from libraries.base_dialog import BaseDialog
 from PySide6.QtWidgets import QDialog, QWidget
 from PySide6.QtWidgets import QButtonGroup
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHeaderView, QTableWidgetItem
 from qt_material import list_themes
 
 from data import project_conventions
 from libraries.utils import ai_utils, audio_utils, user_config, vcs_utils
 from libraries.utils.log_utils import Logger
+from libraries.utils.wwise import project_utils, waapi_utils
 from ui.ProjectSettings_ui import Ui_ProjectSettings
 
 AI_MODE_KEYS = ("proxy", "official")
@@ -37,7 +41,7 @@ def net_role_key(text: str) -> str:
 
 
 # 工程规范设置窗口：把 project_conventions.json 的分段配置做成可视化 Tab 编辑
-class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
+class ProjectSettingsWindow(BaseDialog, Ui_ProjectSettings):
 
     def __init__(self, parent: QWidget = None, on_ai_saved=None, on_theme_applied=None):
         super().__init__(parent)
@@ -59,7 +63,9 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         # 角色表只有 1P/2P/3P 三行，固定成刚好三行的高度
         self.netRoleValues.set_fixed_row_count(3)
         self.cbxAutoFetchChildren.setChecked(user_config.get_tool_auto_fetch_children())
+        self.cbxFindFilterCheckedOnly.setChecked(user_config.get_tool_find_filter_checked_only())
         self.cbxDetailLog.setChecked(user_config.get_tool_detail_log_enabled())
+        self.cbxDumpOnlyWritable.setChecked(user_config.get_dump_only_writable_properties())
         self.spbPageSize.setValue(user_config.get_tool_page_size())
         self.spbConversionDominance.setValue(
             int(round(user_config.get_tool_conversion_dominance_ratio() * 100))
@@ -79,6 +85,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.__load_theme_values()
         self.__load_ui_scale_value()
         self.__load_window_settings()
+        self.__load_random_count_settings()
         self.__load_vcs_values()
 
     # 绑定按钮与复选框信号槽
@@ -91,7 +98,9 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbxEnablePathLength.toggled.connect(self._on_regulation_switch_toggled)
         self.cbxAutoDefinedBank.toggled.connect(self._on_bank_switch_toggled)
         self.cbxAutoFetchChildren.toggled.connect(user_config.set_tool_auto_fetch_children)
+        self.cbxFindFilterCheckedOnly.toggled.connect(self._on_find_filter_checked_only_toggled)
         self.cbxDetailLog.toggled.connect(user_config.set_tool_detail_log_enabled)
+        self.cbxDumpOnlyWritable.toggled.connect(user_config.set_dump_only_writable_properties)
         self.spbPageSize.valueChanged.connect(user_config.set_tool_page_size)
         self.spbConversionDominance.valueChanged.connect(self._on_conversion_dominance_changed)
         self.spbLoudnessBuffer.valueChanged.connect(user_config.set_tool_loudness_buffer_samples)
@@ -176,6 +185,59 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         current = dict(user_config.get_window_settings(node))
         current.update(patch)
         user_config.set_window_settings(node, current)
+
+    # 优化随机数量：每个平台一列，未列出的平台回退到默认值 3
+    def __load_random_count_settings(self):
+        settings = user_config.get_optimize_random_count_settings()
+        default = settings["allowed_count"]
+        allowed_by_platform = settings["allowed_by_platform"]
+        self.lblRandomCountHint.setText(
+            f"每个平台一列，设置允许保留启用的 Random Container 子对象数量；"
+            f"未单独配置的平台使用默认值 {default}。"
+        )
+        platform_names = []
+        if waapi_utils.is_connected():
+            try:
+                platform_names = [
+                    str(item["name"]) for item in project_utils.get_platforms()
+                    if isinstance(item, dict) and item.get("name")
+                ]
+            except Exception:
+                Logger().warning("读取工程平台失败，优化随机数量设置暂不显示平台列表")
+        for name in allowed_by_platform:
+            if name not in platform_names:
+                platform_names.append(name)
+        table = self.tblRandomAllowedCounts
+        table.clearContents()
+        table.setColumnCount(len(platform_names))
+        table.setHorizontalHeaderLabels(platform_names)
+        table.setRowCount(1 if platform_names else 0)
+        for column, name in enumerate(platform_names):
+            item = QTableWidgetItem(str(allowed_by_platform.get(name, default)))
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(0, column, item)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header.setStretchLastSection(True)
+
+    def __save_random_count_settings(self):
+        settings = user_config.get_optimize_random_count_settings()
+        default = settings["allowed_count"]
+        allowed_by_platform = {}
+        table = self.tblRandomAllowedCounts
+        for column in range(table.columnCount()):
+            header_item = table.horizontalHeaderItem(column)
+            count_item = table.item(0, column) if table.rowCount() else None
+            name = header_item.text().strip() if header_item else ""
+            if not name:
+                continue
+            try:
+                value = max(0, int(count_item.text())) if count_item else default
+            except (TypeError, ValueError):
+                value = default
+                Logger().warning(f"平台「{name}」的允许数量不是整数，已使用默认值 {default}")
+            allowed_by_platform[name] = value
+        user_config.save_optimize_random_count_settings(default, allowed_by_platform)
 
     # 版本控制设置：读入类型与对应客户端字段（存在工程规范文件的 VersionControl 节点，随工程走）
     def __load_vcs_values(self):
@@ -274,6 +336,13 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         main = self.parent()
         if main and hasattr(main, "cbxKeepSelf"):
             main.cbxKeepSelf.setChecked(checked)
+
+    # 查找/筛选范围变化后立即按新设置重算表格筛选
+    def _on_find_filter_checked_only_toggled(self, checked: bool):
+        user_config.set_tool_find_filter_checked_only(checked)
+        main = self.parent()
+        if main and hasattr(main, "apply_table_filter"):
+            main.apply_table_filter(False)
 
     def _on_case_sensitive_toggled(self, checked: bool):
         user_config.save_advanced_filter_settings({"case_sensitive": bool(checked)})
@@ -443,6 +512,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         self.cbxFullNameInSound.setChecked(project_conventions.use_full_name_in_sound())
         self.cbxPlayPrefixInEvent.setChecked(project_conventions.has_event_play_prefix())
         self.cbxEventRefNotes.setChecked(project_conventions.use_event_ref_notes())
+        self.cbxLanguageInFileName.setChecked(project_conventions.use_language_in_file_name())
 
     # 从 user_config.json 的 ai 节填充 AI 设置
     def __load_ai_values(self):
@@ -511,6 +581,7 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
     # 收集并保存
     def save_settings(self):
         self.save_ai_settings()
+        self.__save_random_count_settings()
         self.__apply_vcs_to_conventions()
         new_conventions = dict(self.__conventions)
         acronym_map = {}
@@ -544,6 +615,9 @@ class ProjectSettingsWindow(QDialog, Ui_ProjectSettings):
         new_conventions["PathLengthConvention"] = {
             "Enabled": self.cbxEnablePathLength.isChecked(),
             "FullNameInSound": self.cbxFullNameInSound.isChecked(),
+        }
+        new_conventions["LocalizationConvention"] = {
+            "LanguageInFileName": self.cbxLanguageInFileName.isChecked(),
         }
         new_conventions["BankConvention"] = {
             "UseAutoDefinedBank": self.cbxAutoDefinedBank.isChecked(),
