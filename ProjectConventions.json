@@ -98,8 +98,8 @@
     },
     "SVN": {
       "Executable": "svn",
-      "Username": "",
-      "Password": "",
+      "Username": "liuziqi09",
+      "Password": "Lyl260626!",
       "CommitMessage": "【WAAPI_Tools】自动创建的修改"
     }
   },

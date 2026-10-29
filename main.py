@@ -20,7 +20,8 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 from qt_material import build_stylesheet, list_themes
 
-from libraries.utils import path_utils, single_instance, user_config
+from libraries.utils import path_utils, single_instance
+from data import user_config
 from libraries.utils.log_utils import Logger, set_log_theme
 from windows.main_window import MainWindow
 

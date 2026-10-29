@@ -4,7 +4,7 @@ import math
 import numpy
 from enum import Enum
 
-from libraries.utils import user_config
+from data import user_config
 
 # RMS 响度的下限（无信号时的返回值）
 MIN_LOUDNESS_DB = -96

@@ -53,7 +53,7 @@ ACTION_HELP = {
     "actDeleteUnusedAKDFiles": "删除工程中无对应 wav 的 .akd 文件（全工程扫描，危险）。",
     # 本地化
     "actLocalizeLanguages": "为语音对象批量导入其它语言槽位的样本（按已有语言路径复制）。",
-    "actFillSilence": "为语音补静音；高级筛选选「只显示当前语言」时只补当前语言，选「全部语言」时补齐全部未导入语言。",
+    "actFillMissingResources": "打开“填补缺失资源”窗口：分析主窗口当前全部对象中 Sound 级语言非 SFX 且存在缺失语言的 Sound，选择静音或正弦波后批量填补；时长和正弦波频率在窗口内设置。",
     "actConvertToVoice": "把对象的音频尝试导入工程的所有语言（保留原 SFX 子目录，缺失时复制 WAV 到语言目录），删除其他源，并标记为 Voice。",
     "actConvertToSound": "保留参考语言的音频文件并转为 SFX，删除其他语言源，同时取消 Voice 标记。",
     # 混音
@@ -91,8 +91,8 @@ ACTION_HELP = {
     "actClearInclusions": "清空 Bank 的全部包含项。",
     "actGenerateEventBankMap": "生成事件与 Bank 的对应关系表。",
     # 统计
-    "actCalculateMediaSize": "打开“媒体资源大小”统计窗口：对主窗口「选中」列已勾选的对象逐个统计 wav/内存 wem/流式 wem、源文件数与压缩比，并显示合计。",
-    "actMediaDuplicate": "打开“媒体查重”窗口：选择 SoundBanksInfo.xml，找出同一 SFX 原始音频路径对应多个打包 wem 的情况，并统计引用 Event 数；双击或右键查看 wem/Event/Trim 明细，在原始音频路径列右键可打开音频预览，在 Event 名称列右键可复制或选中。",
+    "actCalculateMediaSize": "打开“媒体资源大小”统计窗口：点击「分析」后对主窗口「选中」列已勾选的对象逐个统计 wav/内存 wem/流式 wem、源文件数与压缩比，并显示合计。",
+    "actMediaDuplicate": "打开“媒体查重”窗口：选择 SoundBanksInfo.xml，找出同一 SFX 原始音频路径对应多个打包 wem 的情况，并统计引用 Event 数；可自动处理 Sound循环、淡入淡出和效果器渲染问题（合并为一个撤销组，表格行右键可“一键处理”该条），表格“当前状态”会显示处理结果；双击或右键查看 wem/Event/Trim 明细，详情表中可右键“以本条为参考处理”同步其他 wem 的相关设置，在原始音频路径列右键可打开音频预览，在 Event 名称列右键可复制或选中。",
     "actPropertyQuery": "打开属性查询窗口：对主窗口「选中」列已勾选的对象批量读取指定属性（多个属性用分号分隔），结果以表格展示。",
     # GameSync
     "actCopyRtpcFromSelection": "把 Wwise 当前选中对象的 RTPC 复制（替换）到表格对象。",

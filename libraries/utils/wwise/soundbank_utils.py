@@ -118,13 +118,15 @@ class MediaSizeNodeStatistics:
 
     # 累加单个节点的媒体（容器类节点忽略，其子节点会各自贡献）
     # only_language 传具体语言名时只统计该语言的源，与主窗口的语言筛选口径一致
-    def accumulate(self, obj, source_properties_by_id: dict = None, only_language: str = None) -> None:
+    def accumulate(self, obj, source_properties_by_id: dict = None,
+                   only_language: str = None, xml_index=None) -> None:
         if not obj or obj.type not in (WwiseObjectType.AudioSource, WwiseObjectType.SoundBank, WwiseObjectType.Event):
             return
         wav, memory, stream, used_files = _accumulate_media_size(
             obj, self._totals[0], self._totals[1], self._totals[2], self.used_files,
             self.seen_sources, self.seen_walked, None, self.seen_wems,
-            self.stream_file_paths, self.memory_file_paths, source_properties_by_id, only_language)
+            self.stream_file_paths, self.memory_file_paths, source_properties_by_id, only_language,
+            xml_index=xml_index)
         self._totals = [wav, memory, stream]
         self.used_files = used_files
 
@@ -158,7 +160,8 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
                            used_files: list, seen_sources: set, seen_walked: set,
                            sources_to_convert: list = None, seen_wems: set = None,
                            stream_file_paths: list = None, memory_file_paths: list = None,
-                           source_properties_by_id: dict = None, only_language: str = None) -> tuple:
+                           source_properties_by_id: dict = None, only_language: str = None,
+                           xml_index=None) -> tuple:
     if not obj or not obj.id:
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if seen_wems is None:
@@ -210,6 +213,7 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
                 bucket = stream_file_paths if is_streaming else memory_file_paths
                 if bucket is not None and wav_path not in bucket:
                     bucket.append(wav_path)
+        wem_counted = False
         if wem_path and os.path.exists(wem_path):
             # 同一 wem 被多个源引用时，压缩大小只累加一次
             if wem_path in seen_wems:
@@ -221,7 +225,29 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             else:
                 total_memory_wem_size += wem_size
             Logger().debug(f'{wem_path} has size of {wem_size}KB')
-        elif sources_to_convert is not None:
+            wem_counted = True
+        if not wem_counted and xml_index is not None:
+            xml_entries = xml_index.lookup(
+                [
+                    source_properties.get('originalFilePath') or "",
+                    source_properties.get('originalRelativeFilePath') or "",
+                    wav_path,
+                ],
+                _language_from_properties(source_properties) or only_language or "",
+            )
+            if xml_entries:
+                wem_counted = True
+                for xml_size, xml_streaming, xml_path in xml_entries:
+                    if xml_path in seen_wems:
+                        continue
+                    seen_wems.add(xml_path)
+                    wem_size = xml_size / 1024
+                    if xml_streaming:
+                        total_stream_wem_size += wem_size
+                    else:
+                        total_memory_wem_size += wem_size
+                    Logger().debug(f'{xml_path} has size of {wem_size}KB (SoundBanksInfo.xml)')
+        if not wem_counted and sources_to_convert is not None:
             # 尚未转码的源先记录下来，遍历结束后统一调用 convert 尝试生成一次 wem
             sources_to_convert.append(obj)
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
@@ -236,20 +262,23 @@ def _accumulate_media_size(obj, total_wav_size: float, total_memory_wem_size: fl
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(inclusion_obj, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                        used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                       stream_file_paths, memory_file_paths, source_properties_by_id, only_language))
+                                       stream_file_paths, memory_file_paths, source_properties_by_id, only_language,
+                                       xml_index))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     if obj.type == WwiseObjectType.Event:
         for target in event_utils.get_event_targets(obj):
             total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
                 _accumulate_media_size(target, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                        used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                       stream_file_paths, memory_file_paths, source_properties_by_id, only_language))
+                                       stream_file_paths, memory_file_paths, source_properties_by_id, only_language,
+                                       xml_index))
         return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
     for child in waapi_utils.get_child_objects(obj):
         total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files = (
             _accumulate_media_size(child, total_wav_size, total_memory_wem_size, total_stream_wem_size,
                                    used_files, seen_sources, seen_walked, sources_to_convert, seen_wems,
-                                   stream_file_paths, memory_file_paths, source_properties_by_id, only_language))
+                                   stream_file_paths, memory_file_paths, source_properties_by_id, only_language,
+                                   xml_index))
     return total_wav_size, total_memory_wem_size, total_stream_wem_size, used_files
 
 

@@ -206,6 +206,16 @@ class BaseAnalysisDialog(BaseDialog):
         Logger().warning(message)
         QMessageBox.warning(self, title or self.analysis_tool_name, message)
 
+    # 分析结束时统一记录并弹出结果提示；子类在分析完成回调中调用
+    def show_analysis_result(self, summary: str, detail: str = "", title: str = None):
+        Logger().info(summary)
+        if not self.isVisible():
+            return
+        message = summary
+        if detail:
+            message += f"\n\n{detail}"
+        QMessageBox.information(self, title or self.analysis_tool_name, message)
+
     # 供分析按钮直接调用：没有勾选对象时提示并返回 None
     def load_analysis_targets(
         self, target_types=None, expand: bool = None, detail: str = ""

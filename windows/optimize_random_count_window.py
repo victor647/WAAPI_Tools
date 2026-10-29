@@ -11,13 +11,12 @@ from PySide6.QtWidgets import (
 )
 
 import globals.global_variables as gv
-from data import project_conventions
+from data import project_conventions, user_config
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_number_item import NumberTableItem
 from libraries.table_view.table_path_item import create_path_item, full_path_from_item
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from libraries.utils import user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, compression_utils, project_utils, waapi_utils
 from libraries.wwise_object import WwiseObjectType

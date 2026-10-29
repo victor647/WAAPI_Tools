@@ -15,6 +15,7 @@ import re
 import statistics
 import time
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Callable
 
 from libraries.utils.wwise import (
@@ -30,9 +31,11 @@ from libraries.utils.wwise import (
     soundbank_utils,
     transport_utils,
     waapi_utils,
+    work_unit_parse_utils,
 )
 from libraries.utils.log_utils import Logger
-from libraries.utils import path_utils, user_config
+from libraries.utils import path_utils
+from data import user_config
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
 # 单次可列出的音频源上限 / 可统计的对象上限，防止一次请求拖垮上下文
@@ -62,6 +65,8 @@ class ToolSpec:
     examples: tuple = ()
     # 复杂工具的补充说明（按需读取）
     reference: str = ""
+    # 是否需要先连接 WAAPI；纯文件/注册表类工具为 False（MCP 侧不强制连 Wwise）
+    needs_waapi: bool = True
 
     def to_openai_schema(self) -> dict:
         return {
@@ -88,6 +93,7 @@ def register_tool(
     output_schema: dict | None = None,
     examples: list | None = None,
     reference: str = "",
+    needs_waapi: bool = True,
 ) -> ToolSpec:
     if name in _TOOLS:
         raise ValueError(f"工具已注册：{name}")
@@ -110,6 +116,7 @@ def register_tool(
         output_schema=output_schema,
         examples=tuple(examples or ()),
         reference=reference,
+        needs_waapi=needs_waapi,
     )
     _TOOLS[name] = spec
     return spec
@@ -295,6 +302,7 @@ register_tool(
     "返回本工具集的使用指南：工具路由规则、修改/确认约定、WAQL 语法要点、Wwise 2025+ 路径与类型变化。会话开始时调用一次即可，内容不会变。外部 MCP 客户端在不确定如何选工具时应先调用它。",
     {"type": "object", "properties": {}, "required": []},
     _handler_get_guidelines,
+    needs_waapi=False,
     output_schema={
         "type": "object",
         "properties": {"instructions": {"type": "string", "description": "完整使用指南（Markdown）"}},
@@ -314,6 +322,7 @@ register_tool(
         "required": ["name"],
     },
     _handler_get_tool_schema,
+    needs_waapi=False,
 )
 
 
@@ -330,6 +339,7 @@ register_tool(
         "required": [],
     },
     _handler_get_tool_examples,
+    needs_waapi=False,
     output_schema={
         "type": "object",
         "properties": {
@@ -364,6 +374,7 @@ register_tool(
         "required": ["name"],
     },
     _handler_get_tool_reference,
+    needs_waapi=False,
 )
 
 
@@ -375,6 +386,7 @@ _TOOL_GROUP_DESCRIPTIONS = {
     "localization": "多语言样本导入、补静音、语言槽位",
     "rtpc_effects": "RTPC、Effect 槽、Output Bus、3D 定位",
     "source_files": "磁盘源文件编辑/导入/整理（多为危险操作）",
+    "work_unit": "WWU / 工程文件离线读取（不连接 Wwise）",
     "advanced": "临时脚本等高级逃生口",
 }
 
@@ -468,6 +480,7 @@ register_tool(
     "列出可用的工具分组（core 之外的 SoundBank / 本地化 / RTPC 效果 / 源文件 / 高级脚本等）及各组工具名。当前已加载的分组会标记 loaded。找不到需要的工具时先调它，再用 load_tools 加载对应分组。",
     {"type": "object", "properties": {}, "required": []},
     _handler_list_tool_groups,
+    needs_waapi=False,
 )
 
 
@@ -482,6 +495,7 @@ register_tool(
         "required": ["group"],
     },
     _handler_load_tools,
+    needs_waapi=False,
 )
 
 
@@ -1905,6 +1919,195 @@ register_tool(
     _object_ids_parameters("要检查的对象 id"),
     _handler_check_event_references,
 )
+
+WORK_UNIT_SOURCE_LIMIT_DEFAULT = 200
+WORK_UNIT_MAX_FILES = 3000
+
+
+def _handler_read_work_unit(args: dict) -> dict:
+    # 离线解析 .wwu / 工程目录，不连接 Wwise
+    raw_path = str(args.get("path") or "").strip()
+    if not raw_path:
+        return {"error": "缺少 path 参数（.wwu 文件或工程根目录）"}
+    path = Path(raw_path).expanduser()
+    if not path.exists():
+        return {"error": f"路径不存在：{path}"}
+    if path.is_file():
+        if path.suffix.lower() != ".wwu":
+            return {"error": f"不是 .wwu 文件：{path}"}
+        files = [path]
+        mode = "file"
+    else:
+        files = work_unit_parse_utils.find_work_unit_files(path)
+        mode = "project"
+        if not files:
+            # 不是工程根目录时，允许直接传任意子目录，递归找 .wwu
+            files = sorted(path.rglob("*.wwu"))
+            mode = "directory"
+    if not files:
+        return {
+            "error": f"在 {path} 下没有找到 .wwu 文件（可传工程根目录、任意子目录或单个 .wwu 文件）",
+            "path": str(path),
+            "mode": mode,
+        }
+    if len(files) > WORK_UNIT_MAX_FILES:
+        return {
+            "error": (
+                f"目录下 .wwu 文件过多（{len(files)} 个，上限 {WORK_UNIT_MAX_FILES}）；"
+                "请改传更具体的子目录或单个 .wwu 文件"
+            ),
+            "path": str(path),
+            "mode": mode,
+            "file_count": len(files),
+        }
+
+    index = work_unit_parse_utils.build_work_unit_index_for_files(files)
+    platform = str(args.get("platform") or "").strip()
+    include_sources = args.get("include_sources", True) is not False
+    try:
+        limit = int(args.get("limit", WORK_UNIT_SOURCE_LIMIT_DEFAULT))
+    except (TypeError, ValueError):
+        limit = WORK_UNIT_SOURCE_LIMIT_DEFAULT
+
+    all_sources = index.audio_sources
+    platforms = sorted({
+        name for record in all_sources for name in record.media_ids_by_platform if name
+    })
+    selected = all_sources if limit <= 0 else all_sources[:limit]
+    sources = []
+    if include_sources:
+        for record in selected:
+            conversion, conversion_id = index.effective_conversion_pair(record.owner_id)
+            edit = record.edit
+            sources.append({
+                "owner_id": record.owner_id,
+                "path": index.path_of(record.owner_id),
+                "media_id": work_unit_parse_utils.media_id_for_platform(
+                    record.media_ids_by_platform, platform
+                ),
+                "media_ids_by_platform": dict(record.media_ids_by_platform),
+                "conversion": conversion,
+                "conversion_id": conversion_id,
+                "looping": index.effective_looping(record.owner_id),
+                "render": index.effective_render_signature(record.owner_id),
+                "edit": {
+                    "is_default": edit.is_default,
+                    "description": edit.describe(),
+                    "trim_begin": edit.trim_begin,
+                    "trim_end": edit.trim_end,
+                    "loop_begin": edit.loop_begin,
+                    "loop_end": edit.loop_end,
+                    "override_wav_loop": edit.override_wav_loop,
+                    "fade_in": edit.fade_in,
+                    "fade_out": edit.fade_out,
+                },
+            })
+
+    result = {
+        "path": str(path),
+        "mode": mode,
+        "file_count": len(files),
+        "object_count": index.object_count,
+        "audio_source_count": len(all_sources),
+        "platforms": platforms,
+        "edited_source_count": sum(1 for record in all_sources if not record.edit.is_default),
+        "looping_source_count": sum(
+            1 for record in all_sources if index.effective_looping(record.owner_id)
+        ),
+        "render_effect_source_count": sum(
+            1 for record in all_sources if index.effective_render_signature(record.owner_id)
+        ),
+        "sources_returned": len(sources),
+        "truncated": include_sources and limit > 0 and len(all_sources) > limit,
+        "sources": sources,
+    }
+    if mode == "file" and index.object_count == 0:
+        result["hint"] = "文件解析后没有发现目标对象，确认它是否为 Wwise Work Unit（.wwu）文件"
+    return result
+
+
+register_tool(
+    "read_work_unit",
+    "离线读取 Wwise Work Unit / 工程文件（不连接 Wwise，也不调用 WAAPI）：可传单个 .wwu 文件、工程根目录或任意子目录，解析对象层级、AudioFileSource 媒体 ID（按平台）、有效 Conversion / 循环 / Render 效果，以及 Trim/Loop/Fade 编辑设置。适合在 Wwise 未打开或 MCP 只想分析磁盘文件时使用。整工程扫描较慢（约 1000 个 .wwu / 1 分钟），建议优先传具体子目录或文件。",
+    {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "单个 .wwu 文件、工程根目录，或任意子目录（递归查找 .wwu）",
+            },
+            "platform": {
+                "type": "string",
+                "description": "可选：平台名（如 Windows），用于计算 media_id；省略则只返回 media_ids_by_platform",
+            },
+            "include_sources": {
+                "type": "boolean",
+                "default": True,
+                "description": "是否返回逐条 AudioFileSource 明细；只要汇总时传 false",
+            },
+            "limit": {
+                "type": "integer",
+                "default": WORK_UNIT_SOURCE_LIMIT_DEFAULT,
+                "description": f"最多返回多少条音频源明细，默认 {WORK_UNIT_SOURCE_LIMIT_DEFAULT}；0 表示不限量",
+            },
+        },
+        "required": ["path"],
+    },
+    _handler_read_work_unit,
+    group="work_unit",
+    needs_waapi=False,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "mode": {"type": "string", "enum": ["file", "project"]},
+            "file_count": {"type": "integer"},
+            "object_count": {"type": "integer"},
+            "audio_source_count": {"type": "integer"},
+            "platforms": {"type": "array", "items": {"type": "string"}},
+            "edited_source_count": {"type": "integer"},
+            "looping_source_count": {"type": "integer"},
+            "render_effect_source_count": {"type": "integer"},
+            "sources_returned": {"type": "integer"},
+            "truncated": {"type": "boolean"},
+            "sources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "owner_id": {"type": "string"},
+                        "path": {"type": "string"},
+                        "media_id": {"type": "string"},
+                        "media_ids_by_platform": {"type": "object"},
+                        "conversion": {"type": "string"},
+                        "conversion_id": {"type": "string"},
+                        "looping": {"type": "boolean"},
+                        "render": {"type": "string"},
+                        "edit": {"type": "object"},
+                    },
+                },
+            },
+        },
+    },
+    examples=[
+        {
+            "title": "读取工程里的全部 WWU",
+            "description": "传工程根目录，汇总对象与音频源数量",
+            "arguments": {"path": "S:/MyWwiseProject", "include_sources": False},
+        },
+        {
+            "title": "读取单个 Work Unit",
+            "description": "只看一个 .wwu 的音频源与有效设置",
+            "arguments": {"path": "S:/MyWwiseProject/Containers/Default Work Unit.wwu", "limit": 50},
+        },
+        {
+            "title": "只扫描某个子树",
+            "description": "传子目录，避免整工程扫描过慢",
+            "arguments": {"path": "S:/MyWwiseProject/Actor-Mixer Hierarchy/Characters", "limit": 100},
+        },
+    ],
+)
+
 
 # —— 通用 WAQL 查询（只读逃生口）——
 WAQL_RESULT_LIMIT_DEFAULT = 1000

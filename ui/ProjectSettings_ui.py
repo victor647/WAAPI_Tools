@@ -253,9 +253,9 @@ class Ui_ProjectSettings(object):
 
         self.spbPageSize = QSpinBox(self.grpSearchAndFilter)
         self.spbPageSize.setObjectName(u"spbPageSize")
-        self.spbPageSize.setMinimum(50)
-        self.spbPageSize.setMaximum(5000)
-        self.spbPageSize.setSingleStep(50)
+        self.spbPageSize.setMinimum(10)
+        self.spbPageSize.setMaximum(1000)
+        self.spbPageSize.setSingleStep(10)
         self.spbPageSize.setValue(500)
 
         self.searchRow.addWidget(self.spbPageSize)
@@ -471,30 +471,6 @@ class Ui_ProjectSettings(object):
 
         self.localizationLayout.addLayout(self.referenceLanguageRow)
 
-        self.silenceDurationRow = QHBoxLayout()
-        self.silenceDurationRow.setObjectName(u"silenceDurationRow")
-        self.lblSilenceDuration = QLabel(self.grpLocalization)
-        self.lblSilenceDuration.setObjectName(u"lblSilenceDuration")
-
-        self.silenceDurationRow.addWidget(self.lblSilenceDuration)
-
-        self.spbSilenceDuration = QDoubleSpinBox(self.grpLocalization)
-        self.spbSilenceDuration.setObjectName(u"spbSilenceDuration")
-        self.spbSilenceDuration.setDecimals(1)
-        self.spbSilenceDuration.setMinimum(0.100000000000000)
-        self.spbSilenceDuration.setMaximum(60.000000000000000)
-        self.spbSilenceDuration.setSingleStep(0.500000000000000)
-        self.spbSilenceDuration.setValue(2.000000000000000)
-
-        self.silenceDurationRow.addWidget(self.spbSilenceDuration)
-
-        self.silenceDurationSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.silenceDurationRow.addItem(self.silenceDurationSpacer)
-
-
-        self.localizationLayout.addLayout(self.silenceDurationRow)
-
 
         self.tabToolsLayout.addWidget(self.grpLocalization)
 
@@ -668,6 +644,12 @@ class Ui_ProjectSettings(object):
         self.btnVcsTest.setObjectName(u"btnVcsTest")
 
         self.vcsForm.setWidget(8, QFormLayout.ItemRole.SpanningRole, self.btnVcsTest)
+
+        self.lblVcsStatus = QLabel(self.tabVersionControl)
+        self.lblVcsStatus.setObjectName(u"lblVcsStatus")
+        self.lblVcsStatus.setWordWrap(True)
+
+        self.vcsForm.setWidget(9, QFormLayout.ItemRole.SpanningRole, self.lblVcsStatus)
 
 
         self.tabVersionControlLayout.addLayout(self.vcsForm)
@@ -970,7 +952,7 @@ class Ui_ProjectSettings(object):
         self.lblPageSize.setToolTip(QCoreApplication.translate("ProjectSettings", u"WAAPI \u67e5\u8be2\u5b50\u5bf9\u8c61/\u540e\u4ee3/\u6279\u91cf\u67e5\u627e\u65f6\u6bcf\u6b21\u62c9\u53d6\u7684\u6570\u91cf\u3002\u8c03\u5927\u80fd\u51cf\u5c11\u8bf7\u6c42\u6b21\u6570\uff0c\u4f46\u5355\u6b21\u8bf7\u6c42\u66f4\u91cd\uff1b\u4e3b\u7a97\u53e3\u67e5\u627e\u5bf9\u8c61\u4e0e\u5404\u5de5\u5177\u5171\u7528\u8be5\u503c\u3002", None))
 #endif // QT_CONFIG(tooltip)
 #if QT_CONFIG(tooltip)
-        self.spbPageSize.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ed8\u8ba4 500\uff0c\u53ef\u8c03\u8303\u56f4 50-5000\u3002\u5bf9\u8c61\u6570\u91cf\u5f88\u5927\u7684\u5de5\u7a0b\u5efa\u8bae\u4fdd\u6301 500 \u5de6\u53f3\uff0c\u907f\u514d\u5355\u6b21\u8bf7\u6c42\u8d85\u65f6\u3002", None))
+        self.spbPageSize.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ed8\u8ba4 500\uff0c\u53ef\u8c03\u8303\u56f4 10-1000\u3002\u8c03\u5927\u80fd\u51cf\u5c11\u8bf7\u6c42\u6b21\u6570\uff0c\u4f46\u5355\u6b21\u8bf7\u6c42\u66f4\u91cd\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.cbxCaseSensitive.setText(QCoreApplication.translate("ProjectSettings", u"\u533a\u5206\u5927\u5c0f\u5199", None))
 #if QT_CONFIG(tooltip)
@@ -1031,14 +1013,6 @@ class Ui_ProjectSettings(object):
 #if QT_CONFIG(tooltip)
         self.iptLanguages.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u591a\u4e2a\u8bed\u8a00\u7528\u5206\u53f7\u5206\u9694\uff0c\u4f8b\u5982 Chinese;Japanese\u3002", None))
 #endif // QT_CONFIG(tooltip)
-        self.lblSilenceDuration.setText(QCoreApplication.translate("ProjectSettings", u"\u9759\u97f3\u586b\u8865\u65f6\u957f", None))
-#if QT_CONFIG(tooltip)
-        self.lblSilenceDuration.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u300c\u9759\u97f3\u586b\u8865\u7a7a\u7f3a\u300d\u4e3a\u7f3a\u5931\u8bed\u8a00\u65b0\u5efa\u7684\u9759\u97f3\u6e90\u957f\u5ea6\uff08\u79d2\uff09\u3002", None))
-#endif // QT_CONFIG(tooltip)
-#if QT_CONFIG(tooltip)
-        self.spbSilenceDuration.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u9ed8\u8ba4 2 \u79d2\uff0c\u53ef\u8c03\u8303\u56f4 0.1-60\u3002\u53ea\u5f71\u54cd\u65b0\u5efa\u7684\u9759\u97f3\u6e90\uff0c\u5df2\u6709\u6837\u672c\u4e0d\u53d7\u5f71\u54cd\u3002", None))
-#endif // QT_CONFIG(tooltip)
-        self.spbSilenceDuration.setSuffix(QCoreApplication.translate("ProjectSettings", u" \u79d2", None))
         self.grpAudioPreview.setTitle(QCoreApplication.translate("ProjectSettings", u"\u97f3\u9891\u5206\u6790\u4e0e\u9884\u89c8", None))
         self.lblPreviewDisplayMode.setText(QCoreApplication.translate("ProjectSettings", u"\u663e\u793a\u6a21\u5f0f", None))
         self.cbbPreviewDisplayMode.setItemText(0, QCoreApplication.translate("ProjectSettings", u"\u6ce2\u5f62", None))
@@ -1072,6 +1046,7 @@ class Ui_ProjectSettings(object):
 #if QT_CONFIG(tooltip)
         self.btnVcsTest.setToolTip(QCoreApplication.translate("ProjectSettings", u"\u7528\u5f53\u524d\u914d\u7f6e\u8bfb\u53d6\u4e00\u6b21\u7248\u672c\u4fe1\u606f\uff0c\u9a8c\u8bc1\u670d\u52a1\u5668\u3001\u5de5\u4f5c\u526f\u672c\u4e0e\u8d26\u53f7\u662f\u5426\u53ef\u7528\u3002", None))
 #endif // QT_CONFIG(tooltip)
+        self.lblVcsStatus.setText(QCoreApplication.translate("ProjectSettings", u"\u672a\u6d4b\u8bd5\u8fde\u63a5", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabVersionControl), QCoreApplication.translate("ProjectSettings", u"\u7248\u672c\u63a7\u5236", None))
         self.lblAiMode.setText(QCoreApplication.translate("ProjectSettings", u"\u8fde\u63a5\u6a21\u5f0f", None))
 #if QT_CONFIG(tooltip)

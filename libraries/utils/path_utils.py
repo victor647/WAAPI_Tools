@@ -7,7 +7,8 @@ from datetime import datetime
 from pathlib import Path
 
 from libraries.utils.log_utils import Logger
-from libraries.utils import user_config
+from data import user_config
+
 
 # 检测是否运行在PyInstaller打包的环境中
 def is_bundled() -> bool:
@@ -179,7 +180,7 @@ def _filesystem_move_file(src: str, dst: str) -> bool:
 # 移动文件；覆盖只读目标时会先去掉只读。
 # 源文件若受版本控制管理，则走版本控制 move（保留 SVN/P4 历史与待提交状态）
 def move_file(src: str, dst: str, change_desc: str = None) -> bool:
-    from libraries.utils import vcs_utils      # 延迟导入：vcs_utils 会读工程规范，避免模块级循环依赖
+    from libraries.utils.vcs import vcs_utils
 
     src = _norm_local_path(src)
     dst = _norm_local_path(dst)

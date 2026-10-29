@@ -7,7 +7,8 @@ from PySide6.QtCore import QLoggingCategory, Qt, QUrl
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import QDialog, QWidget
 
-from libraries.utils import path_utils, user_config
+from libraries.utils import path_utils
+from data import user_config
 from libraries.utils import audio_utils
 from libraries.utils.wwise import audio_source_utils
 from ui.AudioPreview_ui import Ui_AudioPreview

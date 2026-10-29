@@ -455,3 +455,27 @@ def add_silence(sound: WwiseObject, duration: float, language: str) -> bool:
         audio_utils.create_silence_audio_file(new_wav_path, duration)
         source = waapi_utils.import_audio_file(new_wav_path, sound, language)
         return waapi_utils.set_object_notes(source, 'Silence')
+
+
+# 为语音添加正弦波占位源（Wwise Sine 插件）
+def add_sine(sound: WwiseObject, duration: float, language: str, frequency: float = 1000.0) -> bool:
+    version = project_utils.get_project_version()
+    if version <= 2021:
+        Logger().warning('Wwise Sine 占位源需要 Wwise 2022 及以上版本')
+        return False
+    return waapi_utils.add_sine(sound, duration, language, frequency=frequency)
+
+
+# 批量添加静音占位源：assignments 为 [(Sound, 缺失语言列表)]
+def add_silence_batch(assignments: list[tuple[WwiseObject, list[str]]], duration: float) -> bool:
+    return waapi_utils.add_silence_batch(assignments, duration)
+
+
+# 批量添加正弦波占位源：assignments 为 [(Sound, 缺失语言列表)]
+def add_sine_batch(assignments: list[tuple[WwiseObject, list[str]]], duration: float,
+                   frequency: float = 1000.0) -> bool:
+    version = project_utils.get_project_version()
+    if version <= 2021:
+        Logger().warning('Wwise Sine 占位源需要 Wwise 2022 及以上版本')
+        return False
+    return waapi_utils.add_sine_batch(assignments, duration, frequency=frequency)

@@ -3,7 +3,7 @@ from data import project_conventions
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_row_data import TableRowData
 from libraries.utils import path_utils
-from libraries.utils import vcs_utils
+from libraries.utils.vcs import vcs_utils
 from libraries.utils.wwise import common_utils, audio_source_utils, localization_utils, event_utils, soundbank_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from table.wwise_table_headers import *

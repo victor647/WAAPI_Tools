@@ -1,6 +1,6 @@
 from PySide6.QtGui import QColor
 
-from libraries.utils import user_config
+from data import user_config
 
 # qt_material 在 build_stylesheet 里补齐的语义色（material.css 的 {{danger}}/{{warning}}/{{success}} 同源）
 DEFAULT_SEMANTIC_COLORS = {

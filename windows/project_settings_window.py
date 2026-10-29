@@ -1,12 +1,13 @@
 from libraries.base_dialog import BaseDialog
-from PySide6.QtWidgets import QDialog, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QWidget
 from PySide6.QtWidgets import QButtonGroup
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHeaderView, QTableWidgetItem
 from qt_material import list_themes
 
-from data import project_conventions
-from libraries.utils import ai_utils, audio_utils, user_config, vcs_utils
+from data import project_conventions, user_config
+from libraries.utils import ai_utils, audio_utils
+from libraries.utils.vcs import vcs_utils
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import project_utils, waapi_utils
 from ui.ProjectSettings_ui import Ui_ProjectSettings
@@ -71,7 +72,6 @@ class ProjectSettingsWindow(BaseDialog, Ui_ProjectSettings):
             int(round(user_config.get_tool_conversion_dominance_ratio() * 100))
         )
         self.spbLoudnessBuffer.setValue(user_config.get_tool_loudness_buffer_samples())
-        self.spbSilenceDuration.setValue(user_config.get_tool_silence_duration())
         self.cbxPathDisplayCompact.setChecked(user_config.get_tool_path_display_compact())
         self.cbxPathHideRoot.setChecked(user_config.get_tool_path_hide_root())
         self.cbbAiMode.addItems(list(AI_MODE_LABELS))
@@ -104,7 +104,6 @@ class ProjectSettingsWindow(BaseDialog, Ui_ProjectSettings):
         self.spbPageSize.valueChanged.connect(user_config.set_tool_page_size)
         self.spbConversionDominance.valueChanged.connect(self._on_conversion_dominance_changed)
         self.spbLoudnessBuffer.valueChanged.connect(user_config.set_tool_loudness_buffer_samples)
-        self.spbSilenceDuration.valueChanged.connect(user_config.set_tool_silence_duration)
         self.cbxPathDisplayCompact.toggled.connect(user_config.set_tool_path_display_compact)
         self.cbxPathHideRoot.toggled.connect(user_config.set_tool_path_hide_root)
         self.cbbAiMode.currentIndexChanged.connect(self.__update_ai_controls_state)
@@ -253,6 +252,8 @@ class ProjectSettingsWindow(BaseDialog, Ui_ProjectSettings):
         self.iptSvnUsername.setText(project_conventions.get_svn_username())
         self.iptSvnPassword.setText(project_conventions.get_svn_password())
         self.iptSvnCommitMessage.setText(project_conventions.get_svn_commit_message())
+        self.lblVcsStatus.setText("未测试连接")
+        self.lblVcsStatus.setStyleSheet("")
         self.__update_vcs_controls_state()
 
     # 只显示当前版本控制类型对应的字段
@@ -306,12 +307,33 @@ class ProjectSettingsWindow(BaseDialog, Ui_ProjectSettings):
     def _on_vcs_test_clicked(self):
         self.__apply_vcs_to_conventions()
         if not project_conventions.save_conventions(dict(self.__conventions)):
+            self.lblVcsStatus.setText("设置保存失败，无法测试连接")
+            self.lblVcsStatus.setStyleSheet("color: #c62828;")
             Logger().error("版本控制设置保存失败，无法测试连接")
             return
         mode_label = self.cbbVcsMode.currentText()
-        if vcs_utils.is_available():
+        self.lblVcsStatus.setText(f"正在测试连接：{mode_label}...")
+        self.lblVcsStatus.setStyleSheet("color: #666;")
+        self.btnVcsTest.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+        try:
+            available = vcs_utils.is_available()
+        except Exception as exc:
+            available = False
+            Logger().error(f"版本控制连接测试异常：{exc}")
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.btnVcsTest.setEnabled(True)
+        if available:
+            self.lblVcsStatus.setText(f"连接正常：{mode_label}")
+            self.lblVcsStatus.setStyleSheet("color: #2e7d32;")
             Logger().info(f"版本控制连接正常：{mode_label}")
         else:
+            self.lblVcsStatus.setText(
+                f"连接失败：{mode_label}，请检查上面的设置（日志里有具体原因）"
+            )
+            self.lblVcsStatus.setStyleSheet("color: #c62828;")
             Logger().error(f"版本控制连接失败：{mode_label}，请检查上面的设置（上面日志里有具体原因）")
 
     def _save_loudness_settings(self, *_args):

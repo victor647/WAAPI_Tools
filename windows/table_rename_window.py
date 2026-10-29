@@ -8,7 +8,8 @@ from libraries.table_view.table_severity_delegate import SeverityTableDelegate
 from libraries.multi_thread import batch_processor
 from libraries.utils.wwise import waapi_utils
 from libraries.wwise_object import WwiseObjectType
-from libraries.utils import io_utils, user_config
+from libraries.utils import io_utils
+from data import user_config
 from libraries.utils.qt_utils import resize_table_and_window
 
 

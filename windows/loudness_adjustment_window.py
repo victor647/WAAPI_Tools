@@ -14,12 +14,12 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
-import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_number_item import NumberTableItem
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from libraries.utils import audio_utils, io_utils, path_utils, theme_utils, user_config
+from libraries.utils import audio_utils, io_utils, path_utils, theme_utils
+from data import user_config
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, mixing_utils, project_utils

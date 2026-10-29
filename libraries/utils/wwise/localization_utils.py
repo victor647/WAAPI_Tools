@@ -1,7 +1,6 @@
 import os
 
-from data import project_conventions
-from libraries.utils import user_config
+from data import project_conventions, user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, event_utils, project_utils, waapi_utils
 from libraries.wwise_object import WwiseObject, WwiseObjectType
@@ -556,3 +555,34 @@ def fill_silence(sound: WwiseObject):
     if not language or get_wave_path_for_language(sound, language):
         return False
     return audio_source_utils.add_silence(sound, user_config.get_tool_silence_duration(), language)
+
+
+# 为所有未导入语言创建正弦波占位源
+def import_sine_for_all_languages(sound: WwiseObject):
+    if sound.type != WwiseObjectType.Sound:
+        return False
+    frequency = user_config.get_tool_sine_frequency()
+    added = False
+    for language in get_all_language_names():
+        if not get_wave_path_for_language(sound, language):
+            added |= audio_source_utils.add_sine(
+                sound, user_config.get_tool_silence_duration(), language, frequency
+            )
+    return added
+
+
+# 用正弦波填补空缺：语言范围跟随高级筛选的语言选项
+def fill_sine(sound: WwiseObject):
+    if sound.type != WwiseObjectType.Sound:
+        return False
+    if user_config.get_advanced_filter_settings().get("language_filter") != "active":
+        return import_sine_for_all_languages(sound)
+    language = get_current_language()
+    if not language or get_wave_path_for_language(sound, language):
+        return False
+    return audio_source_utils.add_sine(
+        sound,
+        user_config.get_tool_silence_duration(),
+        language,
+        user_config.get_tool_sine_frequency(),
+    )

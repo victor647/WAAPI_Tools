@@ -3,12 +3,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from libraries.utils.wwise import wem_utils
+
 
 @dataclass
 class DuplicateMediaFile:
     packed_path: str
     soundbank_names: list[str] = field(default_factory=list)
     size_bytes: int | None = None
+    duration_seconds: float | None = None
+    codec: str = ""
+    sample_rate: int | None = None
 
     @property
     def wem_id(self) -> str:
@@ -95,6 +100,17 @@ def count_soundbanks(xml_path: str | Path) -> int:
             if next_char in (b" ", b"\t", b">", b"/", b"\r", b"\n"):
                 count += 1
     return count
+
+
+# 只读 XML 根节点的 Platform，用于自动匹配 SoundBanksInfo.xml 与当前平台
+def read_soundbanks_info_platform(xml_path: str | Path) -> str:
+    try:
+        for _event, element in ET.iterparse(str(xml_path), events=("start",)):
+            if _local_name(element.tag) == "SoundBanksInfo":
+                return element.get("Platform") or element.get("BasePlatform") or ""
+            return ""
+    except (ET.ParseError, OSError):
+        return ""
 
 
 def _resolve_soundbanks_root(xml_dir: Path, root_text: str) -> Path:
@@ -197,12 +213,20 @@ def find_duplicate_media(
     return result
 
 
-# 只对重复组里的 wem 做 stat，用于统计重复总量和额外包体体积
-def fill_duplicate_sizes(result: SoundBankInfoResult, xml_path: str | Path) -> None:
+# 只读取重复组里的 wem 头和大小，用于统计重复总量、时长和额外包体体积
+def fill_duplicate_sizes(
+    result: SoundBankInfoResult,
+    xml_path: str | Path,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> None:
     xml_dir = Path(xml_path).parent
     roots = [Path(result.soundbanks_root)] if result.soundbanks_root else []
     roots.append(xml_dir)
-    size_cache: dict[str, int | None] = {}
+    info_cache: dict[str, wem_utils.WemInfo] = {}
+    total = sum(len(group.files) for group in result.duplicate_groups)
+    processed = 0
+    if progress_callback is not None:
+        progress_callback(0, total)
     total_size = 0
     extra_size = 0
     missing_count = 0
@@ -210,14 +234,22 @@ def fill_duplicate_sizes(result: SoundBankInfoResult, xml_path: str | Path) -> N
         group_sizes = []
         for file_info in group.files:
             cache_key = _path_key(file_info.packed_path)
-            if cache_key not in size_cache:
-                size_cache[cache_key] = _read_file_size(file_info.packed_path, roots)
-            size = size_cache[cache_key]
-            file_info.size_bytes = size
-            if size is None:
+            if cache_key not in info_cache:
+                info_cache[cache_key] = wem_utils.read_wem_info(
+                    _resolve_wem_path(file_info.packed_path, roots)
+                )
+            info = info_cache[cache_key]
+            file_info.size_bytes = info.size_bytes
+            file_info.duration_seconds = info.duration_seconds
+            file_info.codec = info.codec
+            file_info.sample_rate = info.sample_rate
+            processed += 1
+            if progress_callback is not None:
+                progress_callback(processed, total)
+            if info.size_bytes is None:
                 missing_count += 1
             else:
-                group_sizes.append(size)
+                group_sizes.append(info.size_bytes)
         if group_sizes:
             group_total = sum(group_sizes)
             total_size += group_total
@@ -227,11 +259,194 @@ def fill_duplicate_sizes(result: SoundBankInfoResult, xml_path: str | Path) -> N
     result.missing_duplicate_size_count = missing_count
 
 
-def _read_file_size(packed_path: str, roots: list[Path]) -> int | None:
+def _resolve_wem_path(packed_path: str, roots: list[Path]) -> Path:
     relative_path = Path(packed_path)
     for root in roots:
+        candidate = root / relative_path
+        if candidate.is_file():
+            return candidate
+    return roots[0] / relative_path if roots else relative_path
+
+
+@dataclass
+class SoundBankInfoMediaEntry:
+    original_path: str
+    wem_id: str
+    packed_path: str
+    cache_path: str
+    language: str
+    streaming: bool
+    location: str
+
+
+# SoundBanksInfo.xml 不记录 wem 字节大小，只记录打包路径/CachePath。
+# 这里建立“原始音频路径 -> 打包 wem”索引，按需 stat 实际文件，供本地未生成 Bank 时补大小。
+class SoundBankInfoSizeIndex:
+
+    def __init__(self, xml_path: str | Path, project_root: str | Path = "", platform: str = ""):
+        self.xml_path = Path(xml_path)
+        self.xml_dir = self.xml_path.parent
+        self.project_root = Path(project_root) if project_root else None
+        self.platform = platform
+        self.platform_name = ""
+        self.xml_project_root: Path | None = None
+        self.soundbanks_root = self.xml_dir
+        self.source_files_root: Path | None = None
+        self.entries_by_original: dict[str, list[SoundBankInfoMediaEntry]] = {}
+        self.entry_count = 0
+        self._size_cache: dict[str, int | None] = {}
+        self._parse()
+
+    def _parse(self):
+        project_root_text = ""
+        source_files_root_text = ""
+        soundbanks_root_text = ""
+        media_depth = 0
+        seen_entries: set[tuple] = set()
         try:
-            return (root / relative_path).stat().st_size
-        except OSError:
-            continue
-    return None
+            context = ET.iterparse(str(self.xml_path), events=("start", "end"))
+            for event, element in context:
+                local_name = _local_name(element.tag)
+                if event == "start":
+                    if local_name == "SoundBanksInfo":
+                        self.platform_name = (
+                            element.get("Platform") or element.get("BasePlatform") or ""
+                        )
+                    elif local_name == "Media":
+                        media_depth += 1
+                    continue
+
+                if local_name == "Media":
+                    media_depth = max(0, media_depth - 1)
+                    element.clear()
+                elif local_name == "ProjectRoot":
+                    project_root_text = (element.text or "").strip()
+                elif local_name == "SourceFilesRoot":
+                    source_files_root_text = (element.text or "").strip()
+                elif local_name == "SoundBanksRoot":
+                    soundbanks_root_text = (element.text or "").strip()
+                elif local_name == "File" and media_depth > 0:
+                    original_path = _child_text(element, "ShortName")
+                    packed_path = _child_text(element, "Path")
+                    cache_path = _child_text(element, "CachePath")
+                    if original_path and (packed_path or cache_path):
+                        wem_id = element.get("Id") or ""
+                        language = element.get("Language") or ""
+                        location = element.get("Location") or ""
+                        streaming = (
+                            (element.get("Streaming") or "").casefold() == "true"
+                            or location.casefold() == "streaming"
+                        )
+                        key = _path_key(original_path)
+                        entry_key = (key, wem_id, packed_path, cache_path, streaming)
+                        if entry_key not in seen_entries:
+                            seen_entries.add(entry_key)
+                            self.entries_by_original.setdefault(key, []).append(
+                                SoundBankInfoMediaEntry(
+                                    original_path=original_path,
+                                    wem_id=wem_id,
+                                    packed_path=packed_path,
+                                    cache_path=cache_path,
+                                    language=language,
+                                    streaming=streaming,
+                                    location=location,
+                                )
+                            )
+                            self.entry_count += 1
+                    element.clear()
+                elif local_name == "SoundBank":
+                    element.clear()
+                if local_name == "SoundBanks":
+                    break
+        except ET.ParseError as exc:
+            raise ValueError(f"SoundBanksInfo.xml 解析失败：{exc}") from exc
+
+        if soundbanks_root_text:
+            self.soundbanks_root = _resolve_soundbanks_root(self.xml_dir, soundbanks_root_text)
+        if project_root_text:
+            self.xml_project_root = _resolve_soundbanks_root(self.xml_dir, project_root_text)
+        if source_files_root_text:
+            self.source_files_root = _resolve_soundbanks_root(
+                self.xml_dir, source_files_root_text
+            )
+
+    def lookup(self, original_paths: list[str], language: str = "") -> list[tuple[int, bool, str]]:
+        keys: list[str] = []
+        for original_path in original_paths:
+            if not original_path:
+                continue
+            key = _path_key(original_path)
+            keys.append(key)
+            keys.append(key.lstrip("/"))
+            # wav 绝对路径里通常包含 Originals\SFX，补一个相对路径候选
+            for marker in ("/originals/sfx/", "/originals/", "originals/sfx/", "originals/"):
+                marker_index = key.find(marker)
+                if marker_index >= 0:
+                    keys.append(key[marker_index + len(marker):])
+
+        found: list[tuple[int, bool, str]] = []
+        seen: set[str] = set()
+        for key in dict.fromkeys(keys):
+            for entry in self.entries_by_original.get(key, []):
+                if language and entry.language and entry.language.casefold() not in (
+                    "sfx", language.casefold()
+                ):
+                    continue
+                resolved_path = self._resolve_entry_path(entry)
+                if resolved_path is None:
+                    continue
+                resolved_key = str(resolved_path).casefold()
+                if resolved_key in seen:
+                    continue
+                seen.add(resolved_key)
+                size = self._size(resolved_path)
+                if size is not None:
+                    found.append((size, entry.streaming, str(resolved_path)))
+        return found
+
+    def _resolve_entry_path(self, entry: SoundBankInfoMediaEntry) -> Path | None:
+        for candidate in self._candidate_paths(entry.packed_path, cache=False):
+            if candidate.is_file():
+                return candidate
+        for candidate in self._candidate_paths(entry.cache_path, cache=True):
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _candidate_paths(self, value: str, cache: bool) -> list[Path]:
+        if not value:
+            return []
+        path = Path(value)
+        if path.is_absolute():
+            return [path]
+
+        candidates: list[Path] = []
+        # 打包工程的 Android/iOS 额外音频常在 Package\ExtraSounds\<platform> 下
+        if self.platform and self.xml_dir.name.casefold() == "sounds":
+            candidates.append(self.xml_dir.parent / "ExtraSounds" / self.platform / path)
+        candidates.extend([self.xml_dir / path, self.soundbanks_root / path])
+        if self.platform:
+            if self.project_root is not None:
+                candidates.append(
+                    self.project_root / "GeneratedSoundBanks" / self.platform / path
+                )
+            candidates.append(self.xml_dir.parent / "ExtraSounds" / self.platform / path)
+        if cache:
+            if self.source_files_root is not None:
+                candidates.append(self.source_files_root / path)
+            if self.project_root is not None and self.platform:
+                candidates.append(
+                    self.project_root / ".cache" / self.platform / path
+                )
+        if self.xml_project_root is not None:
+            candidates.append(self.xml_project_root / path)
+        return list(dict.fromkeys(candidates))
+
+    def _size(self, path: Path) -> int | None:
+        key = str(path).casefold()
+        if key not in self._size_cache:
+            try:
+                self._size_cache[key] = path.stat().st_size
+            except OSError:
+                self._size_cache[key] = None
+        return self._size_cache[key]

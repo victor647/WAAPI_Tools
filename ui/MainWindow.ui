@@ -783,18 +783,18 @@ Boss        包含 Boss
     <addaction name="mnuRenderEffect"/>
     <addaction name="mnuBypassEffect"/>
    </widget>
-   <widget class="QMenu" name="mnuLocalization">
-    <property name="title">
-     <string>本地化</string>
-    </property>
-    <addaction name="actLocalizeLanguages"/>
-    <addaction name="actFillSilence"/>
-    <addaction name="separator"/>
-    <addaction name="actConvertToVoice"/>
-    <addaction name="actConvertToSound"/>
-    <addaction name="separator"/>
-    <addaction name="actMultiLanguageCompare"/>
-   </widget>
+    <widget class="QMenu" name="mnuLocalization">
+     <property name="title">
+      <string>本地化</string>
+     </property>
+     <addaction name="actLocalizeLanguages"/>
+     <addaction name="actFillMissingResources"/>
+     <addaction name="separator"/>
+     <addaction name="actConvertToVoice"/>
+     <addaction name="actConvertToSound"/>
+     <addaction name="separator"/>
+     <addaction name="actMultiLanguageCompare"/>
+    </widget>
    <addaction name="mnuFile"/>
    <addaction name="mnuEdit"/>
    <addaction name="mnuCommon"/>
@@ -1269,9 +1269,9 @@ Boss        包含 Boss
     <string>静音填补其他语言</string>
    </property>
   </action>
-  <action name="actFillSilence">
+  <action name="actFillMissingResources">
    <property name="text">
-    <string>用静音填补空缺</string>
+    <string>填补缺失资源</string>
    </property>
   </action>
   <action name="actRenameToShort">

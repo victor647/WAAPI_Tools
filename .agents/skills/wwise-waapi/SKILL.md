@@ -10,7 +10,7 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 - `libraries/tool_registry.py`：中立工具注册表（`name / description / parameters / handler / mutating`），
   不依赖 Qt 与 fastmcp；`libraries/wwise_tool_catalog.py` 是原 MCP 薄封装迁入的实现。
   两者合计约 113 个后台工具，AI 助手与 MCP **同源同名**。
-- 工具带 `group`：`core` 常驻；SoundBank / 本地化 / RTPC 效果 / 源文件 / 自动转码 / 高级脚本
+- 工具带 `group`：`core` 常驻；SoundBank / 本地化 / RTPC 效果 / 源文件 / WWU 读取 / 自动转码 / 高级脚本
   默认收起，AI 用 `load_tools` 按需加载（MCP 仍一次暴露全部）。
 - `waapi_mcp/registry_mcp_tools.py`：把注册表工具批量注册为 MCP tool（`WaapiMCP.exe`）；
   `run_wwise_script` 受 `ai.enable_script_tool` 控制，默认不注册。
@@ -19,6 +19,8 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 - 业务代码优先 `from libraries.utils.wwise import waapi_utils`（传 `WwiseObject` / `WwiseObjectType`）；
   只有 MCP 薄封装或底层改动才直接用 `WAAPIClient`（`libraries/waapi_client.py`，dict 层）。
 - `WAAPIClient` 内部用锁串行化 `call`（界面/批处理/AI 共用一条 websocket），不要依赖并发调用。
+- 工具可声明 `needs_waapi=False`（如 `read_work_unit`、`get_guidelines`、`get_tool_*`、分组工具）；
+  MCP 侧对这类工具不会先连接 Wwise。
 
 ## 工具发现（MCP / 外部 Agent 必读）
 
@@ -57,6 +59,7 @@ description: Use for WAAPI_Tools tasks that automate Wwise — in the software's
 | 多步链式统计 | `aggregate_tool_chain(steps, group_by, min_count)` | 例：统计含 >1 个 MusicTrack 的 MusicSegment |
 | 任意 WAQL 查询（覆盖不了的场景） | `waql_query(waql, return_fields?, limit?)` | 支持 where/select/orderby/take、列表函数、返回表达式 |
 | 音频源与体积 | `get_audio_sources` / `calculate_audio_source_size` | 源文件路径、磁盘占用 |
+| 离线读取 WWU / 工程文件 | `read_work_unit(path, platform?, include_sources?, limit?)` | 不需要 Wwise/WAAPI；解析 `.wwu` 或工程根目录，返回对象数、音频源媒体 ID、有效 Conversion/循环/Render、编辑参数 |
 | 自动转码（长短音效分开转码） | `auto_compression_plan`（只读出方案）→ `auto_compression_apply`（改工程，需 `confirmed=true`） | 在 `auto_compression` 分组，AI 侧先 `load_tools("auto_compression")`；按 AudioFileSource 时长分档并改 OverrideConversion + Conversion |
 | 改名 / 备注 / 启用 / 颜色 | `rename_object` / `set_object_notes` / `set_object_inclusion` / `set_object_color` | |
 | 结构操作 | `create_parent` / `convert_to_type` / `split_underscore_to_folder` / `create_play_event` | |

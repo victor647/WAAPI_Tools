@@ -15,16 +15,16 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDialog,
-    QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QPushButton, QSizePolicy, QTableView, QVBoxLayout,
-    QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
+    QDialog, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QPushButton, QSizePolicy, QTableView,
+    QVBoxLayout, QWidget)
 
 class Ui_MediaDuplicate(object):
     def setupUi(self, MediaDuplicate):
         if not MediaDuplicate.objectName():
             MediaDuplicate.setObjectName(u"MediaDuplicate")
-        MediaDuplicate.resize(853, 480)
+        MediaDuplicate.resize(1120, 480)
         MediaDuplicate.setMinimumSize(QSize(640, 360))
         self.mainLayout = QVBoxLayout(MediaDuplicate)
         self.mainLayout.setObjectName(u"mainLayout")
@@ -41,6 +41,11 @@ class Ui_MediaDuplicate(object):
 
         self.fileRow.addWidget(self.iptSoundBanksInfoPath)
 
+        self.lblPlatform = QLabel(MediaDuplicate)
+        self.lblPlatform.setObjectName(u"lblPlatform")
+
+        self.fileRow.addWidget(self.lblPlatform)
+
         self.btnChooseFile = QPushButton(MediaDuplicate)
         self.btnChooseFile.setObjectName(u"btnChooseFile")
 
@@ -50,6 +55,12 @@ class Ui_MediaDuplicate(object):
         self.btnReparse.setObjectName(u"btnReparse")
 
         self.fileRow.addWidget(self.btnReparse)
+
+        self.btnAutoFix = QPushButton(MediaDuplicate)
+        self.btnAutoFix.setObjectName(u"btnAutoFix")
+        self.btnAutoFix.setEnabled(False)
+
+        self.fileRow.addWidget(self.btnAutoFix)
 
 
         self.mainLayout.addLayout(self.fileRow)
@@ -72,21 +83,15 @@ class Ui_MediaDuplicate(object):
 
         self.filterRow.addWidget(self.cbbCauseFilter)
 
+        self.cbxSingleCauseOnly = QCheckBox(MediaDuplicate)
+        self.cbxSingleCauseOnly.setObjectName(u"cbxSingleCauseOnly")
+
+        self.filterRow.addWidget(self.cbxSingleCauseOnly)
+
         self.lblFilterResult = QLabel(MediaDuplicate)
         self.lblFilterResult.setObjectName(u"lblFilterResult")
 
         self.filterRow.addWidget(self.lblFilterResult)
-
-        self.lblPlatform = QLabel(MediaDuplicate)
-        self.lblPlatform.setObjectName(u"lblPlatform")
-
-        self.filterRow.addWidget(self.lblPlatform)
-
-        self.btnExportCsv = QPushButton(MediaDuplicate)
-        self.btnExportCsv.setObjectName(u"btnExportCsv")
-        self.btnExportCsv.setEnabled(False)
-
-        self.filterRow.addWidget(self.btnExportCsv)
 
         self.btnExportJson = QPushButton(MediaDuplicate)
         self.btnExportJson.setObjectName(u"btnExportJson")
@@ -126,24 +131,28 @@ class Ui_MediaDuplicate(object):
         MediaDuplicate.setWindowTitle(QCoreApplication.translate("MediaDuplicate", u"\u5a92\u4f53\u67e5\u91cd", None))
         self.lblSoundBanksInfo.setText(QCoreApplication.translate("MediaDuplicate", u"SoundBanksInfo.xml", None))
         self.iptSoundBanksInfoPath.setPlaceholderText(QCoreApplication.translate("MediaDuplicate", u"\u542f\u52a8\u65f6\u9009\u62e9 SoundBanksInfo.xml", None))
+        self.lblPlatform.setText(QCoreApplication.translate("MediaDuplicate", u"\u5e73\u53f0\uff1a-", None))
         self.btnChooseFile.setText(QCoreApplication.translate("MediaDuplicate", u"\u9009\u62e9\u6587\u4ef6\u2026", None))
 #if QT_CONFIG(tooltip)
         self.btnReparse.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u91cd\u65b0\u89e3\u6790\u5f53\u524d SoundBanksInfo.xml\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.btnReparse.setText(QCoreApplication.translate("MediaDuplicate", u"\u91cd\u65b0\u89e3\u6790", None))
+#if QT_CONFIG(tooltip)
+        self.btnAutoFix.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u81ea\u52a8\u5904\u7406\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u4e2d\u7684\u5faa\u73af\u8bbe\u7f6e\u3001\u6de1\u5165\u6de1\u51fa\u548c\u6548\u679c\u5668\u6e32\u67d3\u95ee\u9898\uff1b\u6240\u6709\u4fee\u6539\u5408\u5e76\u4e3a\u4e00\u4e2a\u64a4\u9500\u7ec4\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.btnAutoFix.setText(QCoreApplication.translate("MediaDuplicate", u"\u81ea\u52a8\u5904\u7406", None))
         self.lblFilter.setText(QCoreApplication.translate("MediaDuplicate", u"\u7b5b\u9009", None))
         self.iptFilter.setPlaceholderText(QCoreApplication.translate("MediaDuplicate", u"\u539f\u59cb\u97f3\u9891\u8def\u5f84\uff1b\u7528 ; \u5206\u9694\u591a\u4e2a\u5173\u952e\u8bcd\uff0c\u524d\u7f00 - \u8868\u793a\u6392\u9664", None))
 #if QT_CONFIG(tooltip)
-        self.cbbCauseFilter.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u53ea\u663e\u793a\u5305\u542b\u6240\u9009\u91cd\u590d\u539f\u56e0\u7684\u9879\u76ee\uff1b\u591a\u539f\u56e0\u9879\u76ee\u547d\u4e2d\u4efb\u610f\u4e00\u4e2a\u5373\u663e\u793a\u3002", None))
+        self.cbbCauseFilter.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u53ea\u663e\u793a\u5305\u542b\u6240\u9009\u91cd\u590d\u539f\u56e0\u7684\u9879\u76ee\uff1b\u591a\u539f\u56e0\u9879\u76ee\u547d\u4e2d\u4efb\u610f\u4e00\u4e2a\u5373\u663e\u793a\uff08\u52fe\u9009\u201c\u4ec5\u663e\u793a\u5355\u4e00\u539f\u56e0\u201d\u540e\u9690\u85cf\uff09\u3002", None))
 #endif // QT_CONFIG(tooltip)
+#if QT_CONFIG(tooltip)
+        self.cbxSingleCauseOnly.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u53ea\u663e\u793a\u4ec5\u547d\u4e2d\u4e00\u4e2a\u91cd\u590d\u539f\u56e0\u7684\u9879\u76ee\uff0c\u9690\u85cf\u591a\u539f\u56e0\u9879\u76ee\u3002", None))
+#endif // QT_CONFIG(tooltip)
+        self.cbxSingleCauseOnly.setText(QCoreApplication.translate("MediaDuplicate", u"\u4ec5\u663e\u793a\u5355\u4e00\u539f\u56e0", None))
         self.lblFilterResult.setText(QCoreApplication.translate("MediaDuplicate", u"\u663e\u793a 0 / 0 \u884c", None))
-        self.lblPlatform.setText(QCoreApplication.translate("MediaDuplicate", u"\u5e73\u53f0\uff1a-", None))
 #if QT_CONFIG(tooltip)
-        self.btnExportCsv.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u5bfc\u51fa\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\uff08\u4fdd\u6301\u5f53\u524d\u6392\u5e8f\uff09\uff0cCSV \u4f7f\u7528 UTF-8 \u7f16\u7801\u3002", None))
-#endif // QT_CONFIG(tooltip)
-        self.btnExportCsv.setText(QCoreApplication.translate("MediaDuplicate", u"\u5bfc\u51fa CSV", None))
-#if QT_CONFIG(tooltip)
-        self.btnExportJson.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u5bfc\u51fa\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\uff08\u4fdd\u6301\u5f53\u524d\u6392\u5e8f\uff09\uff0c\u4fdd\u7559\u6bcf\u4e2a wem \u4e0e SoundBank \u7684\u5bf9\u5e94\u5173\u7cfb\u3002", None))
+        self.btnExportJson.setToolTip(QCoreApplication.translate("MediaDuplicate", u"\u5bfc\u51fa\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\uff08\u4fdd\u6301\u5f53\u524d\u6392\u5e8f\uff09\uff0c\u5305\u542b\u6bcf\u4e2a wem\u3001Event \u4e0e AudioFileSource \u7684\u8be6\u7ec6\u4fe1\u606f\u3002", None))
 #endif // QT_CONFIG(tooltip)
         self.btnExportJson.setText(QCoreApplication.translate("MediaDuplicate", u"\u5bfc\u51fa JSON", None))
         self.lblStatus.setText(QCoreApplication.translate("MediaDuplicate", u"\u8bf7\u9009\u62e9 SoundBanksInfo.xml \u6587\u4ef6\u3002", None))

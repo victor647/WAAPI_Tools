@@ -1,7 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QStyle, QStyledItemDelegate, QTableWidget
 
-from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_item_model import TableStandardModelCell
 
 
@@ -17,11 +16,15 @@ class SeverityTableDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         try:
             table = self.parent()
-            item = table.item(index.row(), index.column()) if isinstance(table, QTableWidget) else None
-            if item is not None and isinstance(item.data(Qt.ItemDataRole.BackgroundRole), CellSeverity):
-                self.__cell.format_from_item(item)
+            if isinstance(table, QTableWidget):
+                item = table.item(index.row(), index.column())
+                severity = (
+                    item.data(Qt.ItemDataRole.BackgroundRole)
+                    if item is not None else None
+                )
             else:
-                self.__cell.setProperty("urgent", "normal")
+                severity = index.data(Qt.ItemDataRole.BackgroundRole)
+            self.__cell.format_from_severity(severity)
             self.initStyleOption(option, index)
             style = QApplication.style()
             style.unpolish(self.__cell)

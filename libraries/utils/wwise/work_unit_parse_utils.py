@@ -38,6 +38,7 @@ class SourceEditSettings:
     trim_end: float = DEFAULT_EDIT_VALUE
     loop_begin: float = DEFAULT_EDIT_VALUE
     loop_end: float = DEFAULT_EDIT_VALUE
+    override_wav_loop: bool = False
     fade_in: float = DEFAULT_FADE_VALUE
     fade_out: float = DEFAULT_FADE_VALUE
 
@@ -48,15 +49,20 @@ class SourceEditSettings:
             and self.trim_end == DEFAULT_EDIT_VALUE
             and self.loop_begin == DEFAULT_EDIT_VALUE
             and self.loop_end == DEFAULT_EDIT_VALUE
+            and not self.override_wav_loop
             and self.fade_in == DEFAULT_FADE_VALUE
             and self.fade_out == DEFAULT_FADE_VALUE
         )
 
     @property
     def trim_signature(self) -> str:
+        return f"trim {self.trim_begin:.3f}~{self.trim_end:.3f}s"
+
+    @property
+    def loop_signature(self) -> str:
         return (
-            f"trim {self.trim_begin:.3f}~{self.trim_end:.3f}s, "
-            f"loop {self.loop_begin:.3f}~{self.loop_end:.3f}s"
+            f"loop {self.loop_begin:.3f}~{self.loop_end:.3f}s, "
+            f"override={self.override_wav_loop}"
         )
 
     @property
@@ -66,7 +72,7 @@ class SourceEditSettings:
     def describe(self) -> str:
         if self.is_default:
             return "默认剪辑"
-        return f"{self.trim_signature}, {self.fade_signature}"
+        return f"{self.trim_signature}, {self.loop_signature}, {self.fade_signature}"
 
 
 @dataclass(frozen=True)
@@ -74,6 +80,10 @@ class AudioSourceRecord:
     owner_id: str
     media_ids_by_platform: dict[str, str]
     edit: SourceEditSettings
+    audio_source_id: str = ""
+    audio_source_name: str = ""
+    audio_file: str = ""
+    hierarchy_root: str = ""
 
 
 def _local_name(tag: str) -> str:
@@ -91,12 +101,17 @@ def _float_property(
         return default
 
 
+def _bool_property(properties: dict[str, str], name: str) -> bool:
+    return (properties.get(name) or "").casefold() == "true"
+
+
 def _read_edit_settings(properties: dict[str, str]) -> SourceEditSettings:
     return SourceEditSettings(
         trim_begin=_float_property(properties, "TrimBegin"),
         trim_end=_float_property(properties, "TrimEnd"),
         loop_begin=_float_property(properties, "LoopBegin"),
         loop_end=_float_property(properties, "LoopEnd"),
+        override_wav_loop=_bool_property(properties, "OverrideWavLoop"),
         fade_in=_float_property(properties, "FadeInDuration", DEFAULT_FADE_VALUE),
         fade_out=_float_property(properties, "FadeOutDuration", DEFAULT_FADE_VALUE),
     )
@@ -158,7 +173,7 @@ class WorkUnitIndex:
     def object_count(self) -> int:
         return len(self.__parent_by_id)
 
-    # 有效 Conversion：优先取最近的 OverrideConversion；没有覆盖时退回最近的 Conversion 引用
+    # 有效 Conversion：优先取最近的 OverrideConversion；没有覆盖时取最上层的非默认 Conversion 引用
     def effective_conversion_pair(self, node_id: str) -> tuple[str, str]:
         if node_id in self.__conversion_cache:
             return self.__conversion_cache[node_id]
@@ -168,7 +183,9 @@ class WorkUnitIndex:
         while current and current not in visited:
             visited.add(current)
             conversion = self.__conversion_by_id.get(current)
-            if conversion and conversion != DEFAULT_CONVERSION_NAME and fallback is None:
+            # 非 Override 的 Conversion 引用可能只是从上层继承下来的缓存值；
+            # 没有任何显式 Override 时，以更上层的实际设置为准。
+            if conversion and conversion != DEFAULT_CONVERSION_NAME:
                 fallback = (conversion, self.__conversion_id_by_id.get(current) or "")
             if self.__override_conversion_by_id.get(current):
                 resolved = (
@@ -250,6 +267,10 @@ class _WorkUnitParser:
             root = ET.parse(str(file_path)).getroot()
         except (ET.ParseError, OSError):
             return
+        hierarchy_root = next(
+            (folder for folder in HIERARCHY_FOLDERS if folder in file_path.parts),
+            "",
+        )
 
         stack: list[str] = []
 
@@ -325,6 +346,9 @@ class _WorkUnitParser:
                 stack.append(node_id)
 
             if local_name == "AudioFileSource" and stack:
+                source_id = element.get("ID") or ""
+                source_name = element.get("Name") or ""
+                audio_file = ""
                 media_ids: dict[str, str] = {}
                 has_audio = False
                 properties: dict[str, str] = {}
@@ -332,6 +356,7 @@ class _WorkUnitParser:
                     child_name = _local_name(child.tag)
                     if child_name == "AudioFile" and (child.text or "").strip():
                         has_audio = True
+                        audio_file = (child.text or "").strip()
                     elif child_name == "MediaIDList":
                         for media_id in child:
                             if _local_name(media_id.tag) != "MediaID":
@@ -352,6 +377,10 @@ class _WorkUnitParser:
                             owner_id=stack[-1],
                             media_ids_by_platform=media_ids,
                             edit=_read_edit_settings(properties),
+                            audio_source_id=source_id,
+                            audio_source_name=source_name,
+                            audio_file=audio_file,
+                            hierarchy_root=hierarchy_root,
                         )
                     )
 
@@ -363,28 +392,18 @@ class _WorkUnitParser:
         walk(root)
 
 
-def build_work_unit_index(
-    project_root: str | Path,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
-) -> WorkUnitIndex:
+# 列出工程根目录下所有层级的 .wwu 文件（新旧版本根名称都覆盖）
+def find_work_unit_files(project_root: str | Path) -> list[Path]:
     root_path = Path(project_root)
     files: list[Path] = []
     for folder_name in HIERARCHY_FOLDERS:
         folder = root_path / folder_name
         if folder.is_dir():
-            files.extend(folder.rglob("*.wwu"))
+            files.extend(sorted(folder.rglob("*.wwu")))
+    return files
 
-    parser = _WorkUnitParser()
-    total = len(files)
-    if progress_callback is not None:
-        progress_callback(0, total)
-    for index, file_path in enumerate(files, start=1):
-        parser.parse_file(file_path)
-        if progress_callback is not None and index % 100 == 0:
-            progress_callback(index, total)
-    if progress_callback is not None:
-        progress_callback(total, total)
 
+def _index_from_parser(parser: "_WorkUnitParser") -> WorkUnitIndex:
     return WorkUnitIndex(
         parent_by_id=parser.parent_by_id,
         name_by_id=parser.name_by_id,
@@ -395,3 +414,40 @@ def build_work_unit_index(
         render_by_id=parser.render_by_id,
         audio_sources=parser.audio_sources,
     )
+
+
+# 解析指定的 .wwu 文件列表（离线分析，不依赖 WAAPI）
+def build_work_unit_index_for_files(
+    files: list,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    file_progress_callback: Optional[Callable[[int, int, str], None]] = None,
+) -> WorkUnitIndex:
+    parser = _WorkUnitParser()
+    total = len(files)
+    if progress_callback is not None:
+        progress_callback(0, total)
+    if file_progress_callback is not None:
+        file_progress_callback(0, total, str(files[0]) if files else "")
+    for index, file_path in enumerate(files, start=1):
+        parser.parse_file(Path(file_path))
+        if progress_callback is not None:
+            progress_callback(index, total)
+        if file_progress_callback is not None:
+            file_progress_callback(index, total, str(file_path))
+    return _index_from_parser(parser)
+
+
+def build_work_unit_index(
+    project_root: str | Path,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    file_progress_callback: Optional[Callable[[int, int, str], None]] = None,
+) -> WorkUnitIndex:
+    return build_work_unit_index_for_files(
+        find_work_unit_files(project_root),
+        progress_callback,
+        file_progress_callback,
+    )
+
+
+def read_work_unit_file(file_path: str | Path) -> WorkUnitIndex:
+    return build_work_unit_index_for_files([file_path])

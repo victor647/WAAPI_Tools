@@ -1,6 +1,6 @@
 from typing import Iterator
 
-from libraries.utils import user_config
+from data import user_config
 from libraries.waapi_client import WAAPIClient
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 
@@ -355,6 +355,27 @@ def add_silence(obj: WwiseObject, length: float, language='SFX') -> bool:
     return WAAPIClient().add_silence(obj.wwise_dict, length, language=language)
 
 
+def add_sine(obj: WwiseObject, length: float, language='SFX', frequency=1000.0) -> bool:
+    return WAAPIClient().add_sine(
+        obj.wwise_dict, length, language=language, frequency=frequency
+    )
+
+
+def add_silence_batch(assignments: list[tuple[WwiseObject, list[str]]], length: float) -> bool:
+    return WAAPIClient().add_silence_batch(
+        [(sound.wwise_dict, languages) for sound, languages in assignments], length
+    )
+
+
+def add_sine_batch(assignments: list[tuple[WwiseObject, list[str]]], length: float,
+                   frequency=1000.0) -> bool:
+    return WAAPIClient().add_sine_batch(
+        [(sound.wwise_dict, languages) for sound, languages in assignments],
+        length,
+        frequency=frequency,
+    )
+
+
 def get_default_audio_source(sound: WwiseObject) -> WwiseObject:
     return _dict_to_wobj(WAAPIClient().get_default_audio_source(sound.wwise_dict))
 
@@ -438,10 +459,21 @@ def switch_project_platform(platform_name: str) -> bool:
 
 
 def select_objects_in_wwise(objects: list) -> bool:
-    return WAAPIClient().select_objects_in_wwise([o.wwise_dict for o in objects])
+    from libraries.utils.wwise import common_utils
+
+    # 先激活 Wwise，确保 UI 命令有前台窗口；窗口状态保持由 common_utils 处理
+    client = WAAPIClient()
+    if not common_utils.activate_wwise_window():
+        # 非 Windows 或窗口枚举失败时退回 Wwise 自带命令
+        client.bring_wwise_to_foreground()
+    return client.select_objects_in_wwise([o.wwise_dict for o in objects])
 
 
 def bring_wwise_to_foreground() -> bool:
+    from libraries.utils.wwise import common_utils
+
+    if common_utils.activate_wwise_window():
+        return True
     return WAAPIClient().bring_wwise_to_foreground()
 
 

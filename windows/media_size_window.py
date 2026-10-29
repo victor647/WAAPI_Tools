@@ -1,11 +1,19 @@
 from windows.base_analysis_dialog import BaseAnalysisDialog
-from PySide6.QtWidgets import QDialog, QWidget
+from pathlib import Path
+
+from PySide6.QtCore import QEvent
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QWidget
 
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_facade import TableFacade
-from libraries.utils import user_config
+from data import user_config
+from libraries.utils.vcs import vcs_utils
 from libraries.utils.log_utils import Logger
-from libraries.utils.wwise import compression_utils, localization_utils, soundbank_utils, waapi_utils
+from libraries.utils.wwise import (
+    compression_utils, localization_utils, project_utils, soundbank_info_utils,
+    soundbank_utils, waapi_utils,
+)
 from libraries.wwise_object import WwiseObject, WwiseObjectType
 from ui.MediaSize_ui import Ui_MediaSize
 
@@ -53,6 +61,12 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
         # 语言筛选（口径同主窗口「高级筛选 → 语言筛选」）：None 表示统计全部语言
         self.__only_language: str = None
         self.__current_platform: str = ''
+        self.__soundbanks_info_path = ''
+        self.__xml_index = None
+        self.__xml_status_message = ''
+        self.__xml_auto_selected = False
+        self.__vcs_updated_xml = ''
+        self.__language_filter_ready = False
         self.__table = TableFacade(
             self.tblMediaSize,
             headers=HEADERS,
@@ -61,13 +75,21 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
         )
         self.setup_triggers()
         self.load_platforms()
-        self.__start_measuring()
+        self.sync_language_filter_buttons()
+        self.load_soundbanks_info_settings()
+        self.lblSoundBanksInfoStatus.setText("请点击「分析」开始统计")
+        self.__language_filter_ready = True
 
     # 绑定信号槽（控件来自 ui/MediaSize.ui）
     def setup_triggers(self):
-        self.btnClose.clicked.connect(self.accept)
+        self.btnAnalyze.clicked.connect(self.__start_measuring)
         self.tblMediaSize.doubleClicked.connect(self.__on_table_double_clicked)
         self.cbbPlatform.currentIndexChanged.connect(self.on_platform_selected)
+        self.btnChooseSoundBanksInfo.clicked.connect(self.choose_soundbanks_info)
+        self.btnClearSoundBanksInfo.clicked.connect(self.clear_soundbanks_info)
+        self.iptSoundBanksInfoPath.editingFinished.connect(self.on_soundbanks_info_edited)
+        self.rbnLangAll.toggled.connect(self.on_language_filter_changed)
+        self.rbnLangActive.toggled.connect(self.on_language_filter_changed)
 
     # 双击某行在 Wwise 中选中对应对象
     def __on_table_double_clicked(self, index):
@@ -96,6 +118,117 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
         self.cbbPlatform.setCurrentIndex(index if index >= 0 else 0)
         self.cbbPlatform.blockSignals(False)
 
+    # SoundBanksInfo.xml 设置：优先用户选择；否则按平台在 GeneratedSoundBanks 下自动查找
+    def load_soundbanks_info_settings(self):
+        settings = user_config.get_window_settings("media_size")
+        saved_path = str(settings.get("soundbanks_info_path", "") or "")
+        if saved_path and Path(saved_path).is_file():
+            self.__soundbanks_info_path = saved_path
+            self.__xml_auto_selected = False
+        else:
+            self.__soundbanks_info_path = self.discover_soundbanks_info()
+            self.__xml_auto_selected = bool(self.__soundbanks_info_path)
+        self.iptSoundBanksInfoPath.setText(self.__soundbanks_info_path)
+        self.update_soundbanks_info_status()
+
+    def save_soundbanks_info_settings(self):
+        settings = dict(user_config.get_window_settings("media_size") or {})
+        settings["soundbanks_info_path"] = self.__soundbanks_info_path
+        user_config.set_window_settings("media_size", settings)
+
+    def discover_soundbanks_info(self) -> str:
+        project_dir = ""
+        try:
+            project_dir = project_utils.get_project_directory() or ""
+        except Exception:
+            Logger().debug("读取 Wwise 工程目录失败，跳过 SoundBanksInfo.xml 自动查找")
+        platform = self.__current_platform
+        candidates: list[Path] = []
+        if project_dir:
+            root = Path(project_dir)
+            if platform:
+                candidates.extend([
+                    root / "GeneratedSoundBanks" / platform / "SoundbanksInfo.xml",
+                    root / "GeneratedSoundBanks" / platform / "SoundBanksInfo.xml",
+                ])
+            candidates.extend([
+                root / "SoundbanksInfo.xml",
+                root / "SoundBanksInfo.xml",
+            ])
+        duplicate_settings = user_config.get_window_settings("media_duplicate")
+        last_xml = str(duplicate_settings.get("last_file", "") or "")
+        if last_xml:
+            last_platform = soundbank_info_utils.read_soundbanks_info_platform(last_xml)
+            if (not platform or not last_platform
+                    or last_platform.casefold() == platform.casefold()):
+                candidates.append(Path(last_xml))
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate)
+        return ""
+
+    def update_soundbanks_info_status(self, text: str = None):
+        if text is not None:
+            self.lblSoundBanksInfoStatus.setText(text)
+        elif not self.__soundbanks_info_path:
+            self.lblSoundBanksInfoStatus.setText("仅使用本地 wem")
+        else:
+            self.lblSoundBanksInfoStatus.setText("等待读取 XML")
+
+    def choose_soundbanks_info(self):
+        if batch_processor.is_busy():
+            Logger().warning(batch_processor.busy_message('选择 SoundBanksInfo.xml'))
+            return
+        start_path = self.__soundbanks_info_path
+        if start_path:
+            start_dir = str(Path(start_path).parent)
+        else:
+            try:
+                start_dir = project_utils.get_project_directory() or ""
+            except Exception:
+                start_dir = ""
+        file_path, _selected_filter = QFileDialog.getOpenFileName(
+            self,
+            "选择 SoundBanksInfo.xml",
+            start_dir,
+            "SoundBanksInfo.xml (SoundbanksInfo.xml SoundBanksInfo.xml);;XML 文件 (*.xml);;所有文件 (*.*)",
+        )
+        if not file_path:
+            return
+        self.__soundbanks_info_path = file_path
+        self.__xml_auto_selected = False
+        self.__vcs_updated_xml = ""
+        self.iptSoundBanksInfoPath.setText(file_path)
+        self.save_soundbanks_info_settings()
+        self.update_soundbanks_info_status()
+        self.mark_analysis_pending("SoundBanksInfo.xml 已更改，请点击「分析」刷新")
+
+    def clear_soundbanks_info(self):
+        if batch_processor.is_busy():
+            Logger().warning(batch_processor.busy_message('清除 SoundBanksInfo.xml'))
+            return
+        self.__soundbanks_info_path = ""
+        self.__xml_auto_selected = False
+        self.__vcs_updated_xml = ""
+        self.iptSoundBanksInfoPath.setText("")
+        self.save_soundbanks_info_settings()
+        self.update_soundbanks_info_status()
+        self.mark_analysis_pending("SoundBanksInfo.xml 已清除，请点击「分析」刷新")
+
+    def on_soundbanks_info_edited(self):
+        if batch_processor.is_busy():
+            Logger().warning(batch_processor.busy_message('修改 SoundBanksInfo.xml'))
+            return
+        file_path = self.iptSoundBanksInfoPath.text().strip()
+        if file_path == self.__soundbanks_info_path:
+            return
+        self.__soundbanks_info_path = file_path
+        self.__xml_auto_selected = False
+        self.__vcs_updated_xml = ""
+        self.save_soundbanks_info_settings()
+        self.update_soundbanks_info_status()
+        self.mark_analysis_pending("SoundBanksInfo.xml 已更改，请点击「分析」刷新")
+
     # 把下拉框选回指定平台（切换失败或正在跑批处理时回退显示）
     def select_platform_in_combo(self, platform_name: str):
         index = self.cbbPlatform.findText(platform_name)
@@ -119,22 +252,81 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
             self.select_platform_in_combo(self.__current_platform)
             return
         self.__current_platform = platform_name
-        Logger().info(f'已切换 Wwise 当前平台为「{platform_name}」，重新统计媒体资源大小')
-        self.__start_measuring()
+        if self.__xml_auto_selected:
+            self.__soundbanks_info_path = self.discover_soundbanks_info()
+            self.iptSoundBanksInfoPath.setText(self.__soundbanks_info_path)
+            self.update_soundbanks_info_status()
+        Logger().info(f'已切换 Wwise 当前平台为「{platform_name}」，请点击分析刷新统计')
+        self.mark_analysis_pending("平台已切换，请点击「分析」刷新")
+
+    # 与高级筛选窗口共用 advanced_filter.language_filter；两个窗口打开时都从同一配置恢复
+    def sync_language_filter_buttons(self, active: bool = None):
+        if active is None:
+            active = user_config.get_advanced_filter_settings().get('language_filter') == 'active'
+        widgets = (self.rbnLangAll, self.rbnLangActive)
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.rbnLangAll.setChecked(not active)
+        self.rbnLangActive.setChecked(active)
+        for widget in widgets:
+            widget.blockSignals(False)
+
+    def on_language_filter_changed(self, checked: bool):
+        if not checked:
+            return
+        if batch_processor.is_busy():
+            Logger().warning(batch_processor.busy_message('切换语言筛选'))
+            self.sync_language_filter_buttons()
+            return
+        value = 'active' if self.rbnLangActive.isChecked() else 'all'
+        user_config.save_advanced_filter_settings({'language_filter': value})
+        self.mark_analysis_pending("语言筛选已更改，请点击「分析」刷新")
+
+    # 高级筛选窗口可能已改过语言设置；激活本窗口时同步一次并刷新统计
+    def changeEvent(self, event):
+        if (event.type() == QEvent.Type.ActivationChange
+                and self.isActiveWindow()
+                and self.__language_filter_ready):
+            self.sync_language_filter_from_config()
+        super().changeEvent(event)
+
+    def sync_language_filter_from_config(self):
+        if batch_processor.is_busy():
+            return
+        active = user_config.get_advanced_filter_settings().get('language_filter') == 'active'
+        if active == self.rbnLangActive.isChecked():
+            return
+        self.sync_language_filter_buttons(active)
+        self.mark_analysis_pending("语言筛选已更改，请点击「分析」刷新")
 
     # 语言筛选口径与主窗口一致：高级筛选选「只显示当前语言」时只统计当前语言的源（SFX 始终保留）
     def resolve_language_filter(self):
         settings = user_config.get_advanced_filter_settings()
-        if settings.get('language_filter') != 'active':
+        active = settings.get('language_filter') == 'active'
+        self.sync_language_filter_buttons(active)
+        if not active:
             self.__only_language = None
-            self.lblLanguageFilter.setText('语言筛选：全部语言')
             return
         active_language = localization_utils.get_current_language()
         self.__only_language = active_language or None
-        self.lblLanguageFilter.setText(f'语言筛选：仅当前语言（{active_language}）')
+
+    # 参数变更后只提示，由用户点击「分析」手动刷新
+    def mark_analysis_pending(self, message: str):
+        self.lblSoundBanksInfoStatus.setText(message)
+        self.btnAnalyze.setEnabled(True)
 
     # 为每个对象创建一行并异步统计
     def __start_measuring(self):
+        if batch_processor.is_busy():
+            message = batch_processor.busy_message('统计媒体资源大小')
+            Logger().warning(message)
+            self.lblSoundBanksInfoStatus.setText(message)
+            return
+        self.__soundbanks_info_path = self.iptSoundBanksInfoPath.text().strip()
+        self.__xml_index = None
+        self.__xml_status_message = ""
+        if self.__soundbanks_info_path:
+            self.update_soundbanks_info_status("正在读取 XML...")
         # 每次统计都取主窗口勾选对象，未勾选行的子树不参与
         checked_objects, self.__row_checked_by_path = self.analysis_scope()
         self.__objects = compression_utils.scan_roots(checked_objects)
@@ -144,8 +336,12 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
         self.__source_properties_by_id = None
         self.__table.clear()
         if not self.__objects:
-            Logger().warning('主窗口没有勾选可用于「媒体资源大小统计」的对象')
+            self.update_soundbanks_info_status()
+            message = '主窗口没有勾选可用于「媒体资源大小统计」的对象'
+            Logger().warning(message)
+            self.lblSoundBanksInfoStatus.setText(message)
             return
+        self.update_xml_from_vcs()
         self.resolve_language_filter()
         self.__stats = [soundbank_utils.MediaSizeNodeStatistics() for _ in self.__objects]
         for obj in self.__objects:
@@ -161,15 +357,82 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
                 seen_ids.add(node.id)
                 self.__nodes.append(node)
                 self.__node_root.append(root_index)
-        batch_processor.create_async(
+        if not self.__nodes:
+            self.update_soundbanks_info_status()
+            self.lblSoundBanksInfoStatus.setText('没有可统计的节点')
+            return
+        self.btnAnalyze.setEnabled(False)
+        started = batch_processor.create_async(
             self.__nodes,
             lambda index, obj: self.__measure_node(index, obj),
             '统计媒体资源大小',
             'name',
             on_finished=self.__on_measuring_finished,
+            on_interrupted=self.__on_measuring_interrupted,
         )
+        if not started:
+            self.btnAnalyze.setEnabled(True)
+            self.lblSoundBanksInfoStatus.setText(
+                batch_processor.busy_message('统计媒体资源大小')
+            )
+
+    # 分析前从版本控制更新 SoundBanksInfo.xml；同一路径本次会话只尝试一次
+    def update_xml_from_vcs(self):
+        path = self.__soundbanks_info_path
+        if not path or path == self.__vcs_updated_xml or not Path(path).is_file():
+            return
+        if not vcs_utils.is_available():
+            Logger().info("版本控制不可用，跳过 SoundBanksInfo.xml 更新")
+            return
+        self.__vcs_updated_xml = path
+        self.update_soundbanks_info_status("正在从版本控制更新 XML...")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+        try:
+            updated, message = vcs_utils.update_path(path)
+        except Exception as exc:
+            updated, message = False, str(exc)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if updated:
+            Logger().info(f"SoundBanksInfo.xml 版本控制更新完成：{path}")
+        else:
+            Logger().warning(
+                f"SoundBanksInfo.xml 版本控制更新失败：{path} ({message or '未知原因'})"
+            )
+        self.update_soundbanks_info_status()
 
     def __prefetch_source_properties(self) -> dict:
+        self.__xml_index = None
+        self.__xml_status_message = ""
+        if self.__soundbanks_info_path:
+            project_dir = ""
+            try:
+                project_dir = project_utils.get_project_directory() or ""
+            except Exception:
+                Logger().debug("读取 Wwise 工程目录失败，SoundBanksInfo.xml 仅按 XML 相对路径解析")
+            try:
+                xml_index = soundbank_info_utils.SoundBankInfoSizeIndex(
+                    self.__soundbanks_info_path,
+                    project_root=project_dir,
+                    platform=self.__current_platform,
+                )
+                if (xml_index.platform_name and self.__current_platform
+                        and xml_index.platform_name.casefold() != self.__current_platform.casefold()):
+                    self.__xml_status_message = (
+                        f"XML 平台为 {xml_index.platform_name}，与当前平台不一致"
+                    )
+                    Logger().warning(self.__xml_status_message)
+                else:
+                    self.__xml_index = xml_index
+                    self.__xml_status_message = (
+                        f"XML 已加载：{xml_index.platform_name or self.__current_platform}"
+                        f"（{xml_index.entry_count} 条媒体）"
+                    )
+            except Exception as exc:
+                self.__xml_status_message = f"XML 加载失败：{exc}"
+                Logger().error(self.__xml_status_message)
+
         sources = [
             node for node in self.__nodes
             if (node.wwise_dict or {}).get('type') == WwiseObjectType.AudioSource.value
@@ -188,7 +451,8 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
         properties_by_id = waapi_utils.get_objects_properties(
             list(property_objects.values()),
             # 语言属性一起取回，语言筛选时不必再逐个查
-            ['originalFilePath', 'originalWavFilePath', 'convertedWemFilePath', 'IsStreamingEnabled',
+            ['originalFilePath', 'originalRelativeFilePath', 'originalWavFilePath',
+             'convertedWemFilePath', 'IsStreamingEnabled',
              'audioSource:language'],
         )
         cached_properties = {}
@@ -209,7 +473,8 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
         if index == 0:
             self.__source_properties_by_id = self.__prefetch_source_properties()
         self.__stats[self.__node_root[index]].accumulate(
-            obj, self.__source_properties_by_id, self.__only_language)
+            obj, self.__source_properties_by_id, self.__only_language,
+            xml_index=self.__xml_index)
         return True
 
     # 主线程写入结果并追加合计行
@@ -294,4 +559,14 @@ class MediaSizeWindow(BaseAnalysisDialog, Ui_MediaSize):
         ]
         self.__table.append_row_values(total_disp, raw_values=total_raw)
         self.__table.on_table_filled()
+        if self.__xml_status_message:
+            self.update_soundbanks_info_status(self.__xml_status_message)
+        else:
+            self.update_soundbanks_info_status()
+        self.btnAnalyze.setEnabled(True)
         Logger().info(f'媒体资源统计完成，共 {len(self.__objects)} 个对象')
+
+    def __on_measuring_interrupted(self):
+        self.btnAnalyze.setEnabled(True)
+        self.lblSoundBanksInfoStatus.setText('统计中断，请点击「分析」重试')
+        Logger().warning('媒体资源大小统计中断')

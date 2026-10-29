@@ -25,8 +25,10 @@ DEFAULT_CONFIG = {
         "path_hide_root": True,
         # RMS 响度分析的分块采样点数（每 buffer 单独求功率后按门限取平均）
         "loudness_buffer_samples": 1024,
-        # 静音填补空缺时新建静音的时长（秒）
+        # 填补缺失资源（静音/正弦波）时新建源的时长（秒）
         "silence_duration": 2.0,
+        # 正弦波填补使用的 Wwise Sine 频率（Hz）
+        "sine_frequency": 1000,
         # 是否记录明细日志（批量逐个对象的处理记录、WAAPI 调用流水）；关闭可减少日志写入开销
         "detail_log": False,
         # 自动转码：长/短音效占优比例，超过它才覆盖上层设置（0.6 即 40:60 分界）
@@ -244,17 +246,17 @@ def get_tool_find_filter_checked_only() -> bool:
 
 
 def get_tool_page_size() -> int:
-    # 分页大小：限制在 50~5000，避免过小拖慢、过大被服务端截断
+    # 分页大小：限制在 10~1000，避免过小拖慢、过大被服务端截断
     try:
         value = int(load_config()["tools"].get("page_size", 500))
     except (TypeError, ValueError):
         value = 500
-    return max(50, min(5000, value))
+    return max(10, min(1000, value))
 
 
 def set_tool_page_size(page_size: int) -> None:
     config = load_config()
-    config.setdefault("tools", {})["page_size"] = max(50, min(5000, int(page_size)))
+    config.setdefault("tools", {})["page_size"] = max(10, min(1000, int(page_size)))
     _write_config(config)
 
 
@@ -347,7 +349,7 @@ def set_tool_loudness_buffer_samples(samples: int) -> None:
     _write_config(config)
 
 
-# 静音填补空缺的新建静音时长（秒）：限制在 0.1~60，避免填成 0 或异常长的静音
+# 填补缺失资源的新建源时长（秒）：限制在 0.1~60，避免填成 0 或异常长的源
 def get_tool_silence_duration() -> float:
     try:
         value = float(load_config()["tools"].get("silence_duration", 2.0))
@@ -359,6 +361,21 @@ def get_tool_silence_duration() -> float:
 def set_tool_silence_duration(duration: float) -> None:
     config = load_config()
     config.setdefault("tools", {})["silence_duration"] = round(max(0.1, min(60.0, float(duration))), 1)
+    _write_config(config)
+
+
+# 正弦波填补使用的 Wwise Sine 频率（Hz）：限制在 20~20000
+def get_tool_sine_frequency() -> int:
+    try:
+        value = int(load_config()["tools"].get("sine_frequency", 1000))
+    except (TypeError, ValueError):
+        value = 1000
+    return max(20, min(20000, value))
+
+
+def set_tool_sine_frequency(frequency: int) -> None:
+    config = load_config()
+    config.setdefault("tools", {})["sine_frequency"] = max(20, min(20000, int(frequency)))
     _write_config(config)
 
 

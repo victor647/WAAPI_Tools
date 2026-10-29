@@ -95,3 +95,14 @@ Override 开关：`OverrideOutput`、`OverrideGameAuxSends`、`OverrideUserAuxSe
 - 2026+ 类型：`ActorMixer` → `PropertyContainer`。
 - 统一走 `libraries/utils/wwise/wwise_compat.py` 的 `containers_root()` / `busses_root()` /
   `is_property_container_type()` / `resolve_wrapper_type()`；不要新增硬编码。
+
+## WWU 离线解析（work_unit_parse_utils）
+
+- `find_work_unit_files(project_root)`：按新旧层级根收集 `.wwu`。
+- `build_work_unit_index(project_root)` / `build_work_unit_index_for_files(files)` /
+  `read_work_unit_file(file_path)` → `WorkUnitIndex`。
+- `WorkUnitIndex`：`object_count`、`audio_sources`（`AudioSourceRecord(owner_id, media_ids_by_platform, edit)`）、
+  `effective_conversion_pair(node_id)`、`effective_looping(node_id)`、`effective_render_signature(node_id)`、
+  `path_of(node_id)`。
+- `media_id_for_platform(media_ids, platform)`：平台优先，其次无平台共享项、唯一项、大小写匹配。
+- 工具 `read_work_unit` 包装以上逻辑；`needs_waapi=False`，MCP 调用时不会先连接 Wwise。

@@ -67,12 +67,12 @@
      </column>
      <column>
       <property name="text">
-       <string>Event 名称</string>
+       <string>Event/SoundBank 名称</string>
       </property>
      </column>
      <column>
       <property name="text">
-       <string>Audio Source 名称</string>
+       <string>Sound 路径</string>
       </property>
      </column>
      <column>
@@ -102,6 +102,11 @@
      </column>
      <column>
       <property name="text">
+       <string>是否循环</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
        <string>Trim Begin</string>
       </property>
      </column>
@@ -118,6 +123,26 @@
      <column>
       <property name="text">
        <string>Fade Out</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Loop Begin</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Loop End</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>覆盖WAV循环</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>渲染效果</string>
       </property>
      </column>
     </widget>

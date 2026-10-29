@@ -457,6 +457,18 @@ class SVNClient(metaclass=Singleton):
         args.append(local)
         return self.run_command(args[0], *args[1:]) is not None
 
+    # 更新指定本地文件/目录；不要求事先 connect 到当前目录所在工作副本
+    def update_path(self, local_path: str) -> tuple[bool, str]:
+        if not local_path:
+            return False, "路径为空"
+        exit_code, out, err = self._run(["update", local_path])
+        if exit_code != 0:
+            message = (err or out).strip()
+            Logger().error(f"SVN 更新失败：{local_path} ({message})")
+            return False, message
+        Logger().info(f"SVN 更新完成：{local_path}")
+        return True, (out or "").strip()
+
     # 将文件加入指定 changelist（SVN 中工作副本文件默认可写，无“迁出”概念）
     def checkout(self, path: SVNPath, change_desc: str = None) -> bool:
         change_id = self.get_change_id_by_desc(change_desc)

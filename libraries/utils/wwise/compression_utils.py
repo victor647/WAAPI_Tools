@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from libraries.utils import user_config
+from data import user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, mixing_utils, waapi_utils, wwise_compat
 from libraries.wwise_object import WwiseObject, WwiseObjectType

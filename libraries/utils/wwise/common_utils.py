@@ -6,6 +6,121 @@ from libraries.wwise_object_properties import BUILTIN_ACCESSORS
 from libraries.utils.log_utils import Logger
 
 
+# 找到 Wwise 主窗口句柄：只匹配可见、有标题且面积正常的 Wwise.exe 顶层窗口，
+# 避免选中 Wwise 的 1x1 辅助窗口（如 GDI+ Window）
+def find_wwise_main_window() -> int:
+    if os.name != 'nt':
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    candidates = []
+    enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [enum_proc, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user32.GetWindowRect.restype = wintypes.BOOL
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    def _exe_name(hwnd) -> str:
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if not pid.value:
+            return ''
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        if not handle:
+            return ''
+        try:
+            size = wintypes.DWORD(1024)
+            path_buf = ctypes.create_unicode_buffer(size.value)
+            if not kernel32.QueryFullProcessImageNameW(handle, 0, path_buf, ctypes.byref(size)):
+                return ''
+            return os.path.basename(path_buf.value).lower()
+        finally:
+            kernel32.CloseHandle(handle)
+
+    def _enum_window(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        title_buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, title_buf, length + 1)
+        if 'wwise' not in title_buf.value.lower():
+            return True
+        if _exe_name(hwnd) != 'wwise.exe':
+            return True
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return True
+        area = max(0, rect.right - rect.left) * max(0, rect.bottom - rect.top)
+        if area < 10000:
+            return True
+        candidates.append((area, hwnd))
+        return True
+
+    user32.EnumWindows(enum_proc(_enum_window), 0)
+    return max(candidates)[1] if candidates else 0
+
+
+# 激活 Wwise 主窗口但不改变最大化/最小化状态：
+# 不调用 ak.wwise.ui.bringToForeground（它会把最大化窗口还原成普通尺寸）
+def activate_wwise_window() -> bool:
+    if os.name != 'nt':
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    hwnd = find_wwise_main_window()
+    if not hwnd:
+        return False
+    user32 = ctypes.windll.user32
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.IsIconic.restype = wintypes.BOOL
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.BringWindowToTop.argtypes = [wintypes.HWND]
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_size_t]
+    user32.keybd_event.restype = None
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE：仅最小化时恢复
+    user32.BringWindowToTop(hwnd)
+    if user32.GetForegroundWindow() != hwnd:
+        user32.SetForegroundWindow(hwnd)
+    if user32.GetForegroundWindow() == hwnd:
+        return True
+    # 后台进程调用 SetForegroundWindow 会被 Windows 前台锁拦截；
+    # 模拟一次 Alt 按键可解除前台锁，不改变窗口最大化/普通状态
+    VK_MENU = 0x12
+    KEYEVENTF_KEYUP = 0x0002
+    user32.keybd_event(VK_MENU, 0, 0, 0)
+    user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+    user32.SetForegroundWindow(hwnd)
+    return user32.GetForegroundWindow() == hwnd
+
+
 # 重命名为包含完整路径的名称
 def rename_to_full_name(obj: WwiseObject) -> bool:
     full_name = get_full_name_with_acronym(obj)

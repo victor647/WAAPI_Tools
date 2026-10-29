@@ -5,8 +5,8 @@ from data import project_conventions
 from libraries.utils.log_utils import Logger
 
 if TYPE_CHECKING:
-    from libraries.utils.p4_utils import P4Client, P4Path
-    from libraries.utils.svn_utils import SVNClient, SVNPath
+    from libraries.utils.vcs.p4_utils import P4Client, P4Path
+    from libraries.utils.vcs.svn_utils import SVNClient, SVNPath
 
 
 # 是否使用 SVN（版本控制类型来自工程规范文件的 VersionControl 节点）
@@ -17,10 +17,10 @@ def is_svn() -> bool:
 def get_vcs_client() -> "P4Client | SVNClient":
     # 根据工程规范里的版本控制类型返回对应的客户端单例
     if is_svn():
-        from libraries.utils.svn_utils import SVNClient
+        from libraries.utils.vcs.svn_utils import SVNClient
 
         return SVNClient()
-    from libraries.utils.p4_utils import P4Client
+    from libraries.utils.vcs.p4_utils import P4Client
 
     return P4Client()
 
@@ -28,10 +28,10 @@ def get_vcs_client() -> "P4Client | SVNClient":
 def get_vcs_path(local_path: str, is_dir: bool = False) -> "P4Path | SVNPath":
     # 根据工程规范里的版本控制类型返回对应的路径对象
     if is_svn():
-        from libraries.utils.svn_utils import SVNPath
+        from libraries.utils.vcs.svn_utils import SVNPath
 
         return SVNPath(local_path=local_path, is_dir=is_dir)
-    from libraries.utils.p4_utils import P4Path
+    from libraries.utils.vcs.p4_utils import P4Path
 
     return P4Path(local_path=local_path, is_dir=is_dir)
 
@@ -48,6 +48,34 @@ def is_available() -> bool:
     if _available is None:
         _available = _probe_available()
     return _available
+
+
+# 更新指定本地路径：SVN 执行 update，P4 执行 sync；返回 (成功, 输出/错误)
+def update_path(local_path: str) -> tuple[bool, str]:
+    if not local_path:
+        return False, "路径为空"
+    try:
+        client = get_vcs_client()
+    except Exception as e:
+        Logger().warning(f"版本控制客户端不可用：{e}")
+        return False, str(e)
+    if is_svn():
+        try:
+            return client.update_path(local_path)
+        except Exception as e:
+            Logger().error(f"SVN 更新失败：{local_path} ({e})")
+            return False, str(e)
+    try:
+        if not client.is_available():
+            return False, "P4 不可用"
+        path = get_vcs_path(local_path)
+        if client.sync(path):
+            Logger().info(f"P4 sync 完成：{local_path}")
+            return True, ""
+        return False, "P4 sync 失败"
+    except Exception as e:
+        Logger().error(f"P4 更新失败：{local_path} ({e})")
+        return False, str(e)
 
 
 # 清空可用性与作者缓存（切换工程或版本控制设置变化后调用）

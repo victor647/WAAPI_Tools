@@ -5,12 +5,12 @@ import os
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QTableWidgetItem, QCheckBox, QGroupBox
 
-from data import project_conventions
+from data import project_conventions, user_config
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_context_menu import install_row_object_context
 from libraries.table_view.table_path_item import create_path_item
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from libraries.utils import audio_utils, user_config
+from libraries.utils import audio_utils
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, audio_source_utils, soundbank_utils, localization_utils, event_utils, \

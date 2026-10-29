@@ -12,6 +12,8 @@ from libraries.utils.wwise import project_utils, waapi_utils
 conventions = {}
 # 当前内存中规范数据实际来自哪个文件；保存时写回同一个文件
 _conventions_path = ""
+# 最近一次实际读取的文件（含只读内置副本），用于避免同一份文件被重复加载
+_loaded_path = ""
 
 # 工程规范文件名：优先新名，其次兼容旧名
 CONVENTIONS_FILE_NAMES = ('project_conventions.json', 'ProjectConventions.json')
@@ -208,18 +210,24 @@ def save_conventions(new_conventions: dict) -> bool:
 
 # 初始化工程规范配置文件
 def init():
-    global conventions, _conventions_path
+    global conventions, _conventions_path, _loaded_path
     # 未连接 Wwise 时取不到工程目录，退回应用目录的规范文件，避免整个应用拿不到规范数据
     json_path = get_conventions_path()
     if not json_path:
         json_path = _initialize_conventions_file()
-    if json_path and os.path.exists(json_path):
-        with open(json_path, "r", encoding='utf-8') as f:
-            conventions = json.load(f)
-        # 记住实际读取的文件（只读的内置副本除外，保存时另行寻找可写位置）
-        _conventions_path = "" if json_path == _bundled_conventions_path() else json_path
-        Logger().debug(f"工程规范已加载：{json_path}（缩写 {len(get_acronym_map())} 条，"
-                       f"颜色 {len(get_color_map())} 条，容器后缀 {len(conventions.get('ContainerSuffix') or {})} 条）")
+    if not json_path or not os.path.exists(json_path):
+        return
+    # 同一份文件已经加载过就不再重复读盘和打日志：启动时先按应用目录加载一次，
+    # 连接 Wwise 后会按工程目录再解析一次，路径没变时第二次应当是无操作
+    if json_path == _loaded_path:
+        return
+    with open(json_path, "r", encoding='utf-8') as f:
+        conventions = json.load(f)
+    # 记住实际读取的文件（只读的内置副本除外，保存时另行寻找可写位置）
+    _conventions_path = "" if json_path == _bundled_conventions_path() else json_path
+    _loaded_path = json_path
+    Logger().debug(f"工程规范已加载：{json_path}（缩写 {len(get_acronym_map())} 条，"
+                   f"颜色 {len(get_color_map())} 条，容器后缀 {len(conventions.get('ContainerSuffix') or {})} 条）")
 
 
 # 规范配置节点：新结构为 <X>Convention 子节点（Enabled + 数据表），兼容旧的顶层平铺字段

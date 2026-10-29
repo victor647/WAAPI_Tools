@@ -63,6 +63,7 @@
 | 按属性筛选（如 Volume ≠ 0） | find_objects_by_property |
 | 计数 / 分组 / 多步统计（含求和、平均） | count_tool_items / group_tool_items / aggregate_tool_chain |
 | 音频源路径 / 音频资源体积 | get_audio_sources / calculate_audio_source_size |
+| 离线读取 WWU / 工程文件（不连 Wwise） | read_work_unit（`.wwu` 文件或工程根目录；在 `work_unit` 分组） |
 | 按音频时长自动分配转码（长短音效分开转码） | auto_compression_plan（出方案，只读）→ 用户确认 → auto_compression_apply（改工程） |
 | 改名 | rename_case / rename_with_acronym / rename_object / remove_name_prefix / remove_name_suffix |
 | 备注 / 启用 / 颜色 | set_notes / set_inclusion / update_notes_and_color |
@@ -81,7 +82,7 @@
 
 ## 工具发现与懒加载
 
-- 常驻的只有 `core` 分组；SoundBank、本地化、RTPC/效果、源文件、自动转码、高级脚本等工具默认不出现。
+- 常驻的只有 `core` 分组；SoundBank、本地化、RTPC/效果、源文件、WWU 读取、自动转码、高级脚本等工具默认不出现。
 - 当前工具里找不到合适的工具时：
   1) `list_tool_groups` 查看分组与工具名；
   2) `load_tools(group=...)` 加载；这些工具从下一轮起可用；
@@ -139,3 +140,6 @@
   结果里用 `types_without_property` 汇报。
 - Wwise 中 Event 通过 EventAction(Action) 引用对象：判断“被 Event 引用”看 Action，而不是 Event 类型。
 - 音频资源大小按子树 AudioFileSource 的源 wav 磁盘大小统计（Event 展开播放目标，同一文件只计一次）。
+- **不打开 Wwise 也能读 `.wwu`**：`read_work_unit` 直接解析 `.wwu` 文件或工程根目录（离线、不调 WAAPI），
+  可查对象数、AudioFileSource 媒体 ID、有效 Conversion / 循环 / Render 效果，以及 Trim/Loop/Fade 编辑；
+  它在 `work_unit` 分组，AI 侧先 `load_tools("work_unit")`。

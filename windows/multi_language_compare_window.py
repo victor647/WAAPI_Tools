@@ -13,7 +13,8 @@ from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_number_item import NumberTableItem
 from libraries.table_view.table_path_item import create_path_item, full_path_from_item
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from libraries.utils import audio_utils, user_config
+from libraries.utils import audio_utils
+from data import user_config
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import audio_source_utils, localization_utils, waapi_utils

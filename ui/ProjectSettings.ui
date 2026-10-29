@@ -418,16 +418,16 @@
             <item>
              <widget class="QSpinBox" name="spbPageSize">
               <property name="toolTip">
-               <string>默认 500，可调范围 50-5000。对象数量很大的工程建议保持 500 左右，避免单次请求超时。</string>
+               <string>默认 500，可调范围 10-1000。调大能减少请求次数，但单次请求更重。</string>
               </property>
               <property name="minimum">
-               <number>50</number>
+               <number>10</number>
               </property>
               <property name="maximum">
-               <number>5000</number>
+               <number>1000</number>
               </property>
               <property name="singleStep">
-               <number>50</number>
+               <number>10</number>
               </property>
               <property name="value">
                <number>500</number>
@@ -835,58 +835,6 @@
             </item>
            </layout>
           </item>
-          <item>
-           <layout class="QHBoxLayout" name="silenceDurationRow">
-            <item>
-             <widget class="QLabel" name="lblSilenceDuration">
-              <property name="text">
-               <string>静音填补时长</string>
-              </property>
-              <property name="toolTip">
-               <string>「静音填补空缺」为缺失语言新建的静音源长度（秒）。</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QDoubleSpinBox" name="spbSilenceDuration">
-              <property name="toolTip">
-               <string>默认 2 秒，可调范围 0.1-60。只影响新建的静音源，已有样本不受影响。</string>
-              </property>
-              <property name="suffix">
-               <string> 秒</string>
-              </property>
-              <property name="decimals">
-               <number>1</number>
-              </property>
-              <property name="minimum">
-               <double>0.100000000000000</double>
-              </property>
-              <property name="maximum">
-               <double>60.000000000000000</double>
-              </property>
-              <property name="singleStep">
-               <double>0.500000000000000</double>
-              </property>
-              <property name="value">
-               <double>2.000000000000000</double>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <spacer name="silenceDurationSpacer">
-              <property name="orientation">
-               <enum>Qt::Horizontal</enum>
-              </property>
-              <property name="sizeHint" stdset="0">
-               <size>
-                <width>40</width>
-                <height>20</height>
-               </size>
-              </property>
-             </spacer>
-            </item>
-           </layout>
-          </item>
          </layout>
         </widget>
        </item>
@@ -1156,6 +1104,16 @@
            </property>
            <property name="toolTip">
             <string>用当前配置读取一次版本信息，验证服务器、工作副本与账号是否可用。</string>
+           </property>
+          </widget>
+         </item>
+         <item row="9" column="0" colspan="2">
+          <widget class="QLabel" name="lblVcsStatus">
+           <property name="text">
+            <string>未测试连接</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
            </property>
           </widget>
          </item>

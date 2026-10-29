@@ -66,7 +66,7 @@ def auto_adjust_window_width(
 
             if is_path_column(header_text):
                 # 隐藏根目录开启时路径精简，保持 300px 紧凑宽度；未开启隐藏根目录时前缀带有较长根目录，合理展开避免只能看到最左侧
-                from libraries.utils import user_config
+                from data import user_config
                 if user_config.get_tool_path_hide_root():
                     max_col_width = PATH_COLUMN_DEFAULT_WIDTH
                 else:

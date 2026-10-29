@@ -364,10 +364,10 @@ def execute_ui_command(object_ids: list[str], command: str) -> bool:
     return WAAPIClient().execute_ui_command(_objs(object_ids), command)
 
 def select_objects_in_wwise(object_ids: list[str]) -> bool:
-    return WAAPIClient().select_objects_in_wwise(_objs(object_ids))
+    return waapi_utils.select_objects_in_wwise(_objs(object_ids))
 
 def bring_wwise_to_foreground() -> bool:
-    return WAAPIClient().bring_wwise_to_foreground()
+    return waapi_utils.bring_wwise_to_foreground()
 
 def begin_undo_group(action: str) -> bool:
     return WAAPIClient().begin_undo_group(action)

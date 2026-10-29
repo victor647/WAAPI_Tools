@@ -32,17 +32,37 @@
         </size>
        </property>
        <property name="toolTip">
-        <string>切换后同步修改 Wwise 里的当前平台，并按新平台重新统计（wem 大小只统计当前平台）。</string>
+        <string>切换后同步修改 Wwise 里的当前平台；点击「分析」后按新平台统计（wem 大小只统计当前平台）。</string>
        </property>
       </widget>
      </item>
      <item>
       <widget class="QLabel" name="lblLanguageFilter">
        <property name="text">
-        <string>语言筛选：全部语言</string>
+        <string>语言筛选</string>
        </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="rbnLangAll">
        <property name="toolTip">
-        <string>口径与主窗口「高级筛选 → 语言筛选」一致：选择「只显示当前语言」时，这里也只统计当前语言的源（SFX 等非本地化源始终保留）。</string>
+        <string>统计全部语言。与「高级筛选 → 语言筛选」共用同一设置；点击「分析」后生效。</string>
+       </property>
+       <property name="text">
+        <string>全部语言</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="rbnLangActive">
+       <property name="toolTip">
+        <string>只统计当前语言的源（SFX 等非本地化源始终保留）。与「高级筛选 → 语言筛选」共用同一设置；点击「分析」后生效。</string>
+       </property>
+       <property name="text">
+        <string>当前语言</string>
        </property>
       </widget>
      </item>
@@ -58,6 +78,45 @@
         </size>
        </property>
       </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="xmlRow">
+     <item>
+      <widget class="QLabel" name="lblSoundBanksInfo">
+       <property name="text">
+        <string>SoundBanksInfo.xml</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="iptSoundBanksInfoPath">
+       <property name="placeholderText">
+        <string>可选：本地未生成 Bank 时，用 XML 中的打包 wem 路径补全大小</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnChooseSoundBanksInfo">
+       <property name="text">
+        <string>选择...</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnClearSoundBanksInfo">
+       <property name="text">
+        <string>清除</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="lblSoundBanksInfoStatus">
+       <property name="text">
+        <string>仅使用本地 wem</string>
+       </property>
+      </widget>
      </item>
     </layout>
    </item>
@@ -80,9 +139,12 @@
       </spacer>
      </item>
      <item>
-      <widget class="QPushButton" name="btnClose">
+      <widget class="QPushButton" name="btnAnalyze">
+       <property name="toolTip">
+        <string>按当前平台、语言筛选和 SoundBanksInfo.xml 设置统计媒体资源大小。</string>
+       </property>
        <property name="text">
-        <string>关闭</string>
+        <string>分析</string>
        </property>
       </widget>
      </item>

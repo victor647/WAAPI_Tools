@@ -12,7 +12,7 @@ from PySide6.QtGui import QAction, QTextCursor
 from qt_material import build_stylesheet
 
 import globals.global_variables as gv
-from data import project_conventions
+from data import project_conventions, user_config
 from data.action_help import ACTION_HELP
 from globals.version import get_software_version
 from globals.constants import DOCUMENTATION_URL
@@ -30,6 +30,7 @@ from windows.audio_silence_trim_window import AudioSilenceTrimWindow as AudioSil
 from windows.loudness_adjustment_window import LoudnessAdjustmentWindow as LoudnessAdjustmentWindow
 from windows.multi_language_compare_window import MultiLanguageCompareWindow as MultiLanguageCompareWindow
 from windows.optimize_random_count_window import OptimizeRandomCountWindow as OptimizeRandomCountWindow
+from windows.fill_missing_resources_window import FillMissingResourcesWindow as FillMissingResourcesWindow
 from windows.advanced_filter_window import AdvancedFilterWindow as AdvancedFilterWindow
 from windows.advanced_find_window import AdvancedFindWindow as AdvancedFindWindow
 from windows.sync_trim_window import SyncTrimWindow as SyncTrimWindow
@@ -50,7 +51,7 @@ from windows.export_object_list_window import ExportObjectListWindow as ExportOb
 from libraries.utils.wwise import common_utils, audio_source_utils, game_sync_utils, soundbank_utils, \
     localization_utils, project_utils, event_utils, container_utils, migration_utils, waapi_utils, mixing_utils, \
     wwise_compat
-from libraries.utils import ai_utils, io_utils, path_utils, user_config
+from libraries.utils import ai_utils, io_utils, path_utils
 from libraries.utils.wwise import workunit_utils
 
 # 「撤销/重做」菜单项最多显示多少个工具撤销组名
@@ -182,6 +183,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # 工作线程里打的日志先发信号回主线程，再写入日志窗口（Qt 控件只能在 GUI 线程访问）
     log_line_received = Signal(str)
+    # Wwise 关闭工程的回调来自 waapi 的回调线程，必须发信号切回 GUI 线程再更新界面
+    wwise_connection_lost = Signal()
 
     # 兼容子窗口对 main_window.activeObjects 的读写（与 gv.active_objects 同步）
     @property
@@ -215,6 +218,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._full_mode_entry_ids: tuple | None = None
         self._ai_worker = None
         self._ai_model_worker = None
+        self._wwise_close_handler = None
         # 恢复上次保存的高级筛选复选框设置，使视图筛选在启动后立即生效
         advanced_settings = user_config.get_advanced_filter_settings()
         self.cbxCaseSensitive.setChecked(advanced_settings["case_sensitive"])
@@ -440,6 +444,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             "auto_compression": ("自动转码设置", self.open_auto_compression_settings_window),
             "bank_matrix": ("Bank 分配矩阵", self.open_bank_assignment_matrix_window),
             "project_validation": ("工程检查", self.open_project_validation_window),
+            "fill_missing_resources": ("填补缺失资源", self.open_fill_missing_resources_window),
             "unity_asset": ("Unity Asset 管理", self.open_unity_asset_manager_window),
             "settings": ("设置", self.open_project_settings_window),
         }
@@ -619,8 +624,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 打开帮助文档：链接统一维护在 user_config.json 的 Documentation，未配置时回退内置常量
     def open_help_documentation(self):
         url = (
-            user_config.get_documentation_url()
-            or DOCUMENTATION_URL
+                user_config.get_documentation_url()
+                or DOCUMENTATION_URL
         )
         if not url:
             Logger().warning("未配置帮助文档链接，请在 user_config.json 的 Documentation 字段中填写")
@@ -704,6 +709,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._setup_turbo_mode_checkbox()
         # 日志绑定
         self.log_line_received.connect(self._append_log_line)
+        self.wwise_connection_lost.connect(self._on_wwise_connection_lost)
         # 日志窗口只保留最近若干行，避免长时间运行后文档无限增长
         self.txeOutputLogs.document().setMaximumBlockCount(self.LOG_WINDOW_MAX_LINES)
         Logger().set_log_window_stream(self.add_log)
@@ -796,10 +802,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setup_batch_processor(self.actTidyOriginalFolders, lambda index, obj: audio_source_utils.tidy_original_folders(obj), WwiseObjectType.Sound)
         self.actDeleteUnusedAKDFiles.triggered.connect(audio_source_utils.delete_unused_akd_files)
         # 本地化菜单
+        self.actFillMissingResources.triggered.connect(self.open_fill_missing_resources_window)
         # 语言范围由 localize_languages 按高级筛选处理，采集目标时忽略语言筛选
         self.setup_batch_processor(self.actLocalizeLanguages, lambda index, obj: localization_utils.localize_languages(obj), WwiseObjectType.Sound, ignore_language_filter=True)
-        # 静音填补的语言范围跟随高级筛选的语言选项，目标对象本身不受该筛选限制
-        self.setup_batch_processor(self.actFillSilence, lambda index, obj: localization_utils.fill_silence(obj), WwiseObjectType.Sound, ignore_language_filter=True)
         # 转为 Voice / Sound：参考语言与 IsVoice 的处理在 localization_utils 内完成
         self.setup_batch_processor(self.actConvertToVoice, lambda index, obj: localization_utils.convert_to_voice(obj), WwiseObjectType.Sound, ignore_language_filter=True)
         self.setup_batch_processor(self.actConvertToSound, lambda index, obj: localization_utils.convert_to_sound(obj), WwiseObjectType.Sound, ignore_language_filter=True)
@@ -965,7 +970,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             Logger().debug("正在尝试连接Wwise...")
             client = WAAPIClient()
             if client.is_connected():
-                client.client.subscribe('ak.wwise.core.project.postClosed', lambda: self.on_wwise_connection_changed(False))
+                self._subscribe_wwise_close(client)
+                self.on_wwise_connection_changed(True)
                 project_path = project_utils.get_project_path()
                 if project_path:
                     version = project_utils.get_project_version()
@@ -982,12 +988,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             Logger().warning("无法连接到Wwise，请确认Wwise工程已打开！")
             self.on_wwise_connection_changed(False)
 
+    # 订阅 Wwise 工程关闭事件：同一连接只订阅一次，回调线程里只发信号，不碰界面
+    def _subscribe_wwise_close(self, client) -> None:
+        if self._wwise_close_handler is not None:
+            return
+        try:
+            self._wwise_close_handler = client.client.subscribe(
+                'ak.wwise.core.project.postClosed', lambda: self.wwise_connection_lost.emit())
+        except Exception as e:
+            Logger().warning(f"订阅 Wwise 工程关闭事件失败：{e}")
+
+    # GUI 线程里处理 Wwise 关闭事件：只更新连接状态，工具本身继续运行
+    def _on_wwise_connection_lost(self):
+        Logger().warning("Wwise 工程已关闭，工具将保持运行；重新打开工程后可点击「重连Wwise」")
+        # 工程已关闭、连接已失效：不做优雅断开，避免等待 WAMP GOODBYE 阻塞界面
+        self.on_wwise_connection_changed(False, graceful=False)
+
     # 当Wwise连接状态改变时更新
-    def on_wwise_connection_changed(self, connected: bool):
+    def on_wwise_connection_changed(self, connected: bool, graceful: bool = True):
         self.lblWwiseConnection.setText("Wwise工程已连接" if connected else "Wwise工程未连接")
         self.set_widget_style(self.lblWwiseConnection, "success" if connected else "warning")
         if not connected:
-            waapi_utils.close_client()
+            # 连接已失效，旧订阅随连接一起销毁，下次连接需要重新订阅
+            self._wwise_close_handler = None
+            waapi_utils.close_client(graceful=graceful)
 
     # 获取Wwise中选中的对象
     def get_selected_objects(self):
@@ -1368,8 +1392,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             expand = user_config.get_tool_auto_fetch_children()
         # 高级筛选中开启「当前语言」时，只收集当前语言的音频源
         language_filter_active = (
-            not ignore_language_filter
-            and user_config.get_advanced_filter_settings().get("language_filter") == "active"
+                not ignore_language_filter
+                and user_config.get_advanced_filter_settings().get("language_filter") == "active"
         )
         active_language = (
             localization_utils.get_current_language() if language_filter_active else None
@@ -1888,6 +1912,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     # 打开多语言对比窗口：按每个 Sound 的直系 AudioSource 分语言对比响度与时长
     def open_multi_language_compare_window(self):
         self.open_tool_window("多语言对比", MultiLanguageCompareWindow)
+
+    # 打开填补缺失资源窗口：分析并批量补静音/正弦波
+    def open_fill_missing_resources_window(self):
+        self.open_tool_window("填补缺失资源", FillMissingResourcesWindow)
 
     # 打开媒体资源大小统计窗口（按每个对象逐项展示）
     def calculate_media_size(self):

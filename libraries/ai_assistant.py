@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from libraries import tool_registry
-from libraries.utils import ai_utils, path_utils, user_config
+from libraries.utils import ai_utils, path_utils
+from data import user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import common_utils, event_utils, waapi_utils, wwise_compat
 from libraries.wwise_object import WwiseObject, WwiseObjectType

@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>853</width>
+    <width>1120</width>
     <height>480</height>
    </rect>
   </property>
@@ -40,6 +40,13 @@
       </widget>
      </item>
      <item>
+      <widget class="QLabel" name="lblPlatform">
+       <property name="text">
+        <string>平台：-</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btnChooseFile">
        <property name="text">
         <string>选择文件…</string>
@@ -53,6 +60,19 @@
        </property>
        <property name="text">
         <string>重新解析</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnAutoFix">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="toolTip">
+        <string>自动处理当前筛选结果中的循环设置、淡入淡出和效果器渲染问题；所有修改合并为一个撤销组。</string>
+       </property>
+       <property name="text">
+        <string>自动处理</string>
        </property>
       </widget>
      </item>
@@ -83,7 +103,17 @@
         </size>
        </property>
        <property name="toolTip">
-        <string>只显示包含所选重复原因的项目；多原因项目命中任意一个即显示。</string>
+        <string>只显示包含所选重复原因的项目；多原因项目命中任意一个即显示（勾选“仅显示单一原因”后隐藏）。</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="cbxSingleCauseOnly">
+       <property name="toolTip">
+        <string>只显示仅命中一个重复原因的项目，隐藏多原因项目。</string>
+       </property>
+       <property name="text">
+        <string>仅显示单一原因</string>
        </property>
       </widget>
      </item>
@@ -95,32 +125,12 @@
       </widget>
      </item>
      <item>
-      <widget class="QLabel" name="lblPlatform">
-       <property name="text">
-        <string>平台：-</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="btnExportCsv">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
-       <property name="toolTip">
-        <string>导出当前筛选结果（保持当前排序），CSV 使用 UTF-8 编码。</string>
-       </property>
-       <property name="text">
-        <string>导出 CSV</string>
-       </property>
-      </widget>
-     </item>
-     <item>
       <widget class="QPushButton" name="btnExportJson">
        <property name="enabled">
         <bool>false</bool>
        </property>
        <property name="toolTip">
-        <string>导出当前筛选结果（保持当前排序），保留每个 wem 与 SoundBank 的对应关系。</string>
+        <string>导出当前筛选结果（保持当前排序），包含每个 wem、Event 与 AudioFileSource 的详细信息。</string>
        </property>
        <property name="text">
         <string>导出 JSON</string>

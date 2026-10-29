@@ -3,7 +3,8 @@ import os
 import shutil
 import logging
 import xml.etree.ElementTree as ElementTree
-from libraries.utils import io_utils, user_config
+from libraries.utils import io_utils
+from data import user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.wwise import (
     audio_source_utils, game_sync_utils, project_utils, waapi_utils, mixing_utils, wwise_compat,

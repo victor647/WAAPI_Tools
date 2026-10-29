@@ -21,6 +21,9 @@ class ProgressBar(QDialog, Ui_ProgressBar):
         # 更新底部文字显示
         self.lblCurrentWorking.setText(f"{obj_name}({index}/{self.total_count})")
 
+    def set_status(self, text: str):
+        self.lblCurrentWorking.setText(text)
+
     def closeEvent(self, event):
         if self.processor:
             self.processor.stop()

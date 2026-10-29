@@ -215,7 +215,9 @@ class TableStandardModelCell(QWidget):
 
     # 根据重要性设置不同颜色
     def format_from_item(self, item):
-        severity = item.data(Qt.ItemDataRole.BackgroundRole)
+        self.format_from_severity(item.data(Qt.ItemDataRole.BackgroundRole))
+
+    def format_from_severity(self, severity):
         if severity == CellSeverity.Normal or severity == CellSeverity.Ignored:
             self.setProperty("urgent", "normal")
         elif severity == CellSeverity.Warning:
@@ -224,6 +226,8 @@ class TableStandardModelCell(QWidget):
             self.setProperty("urgent", "danger")
         elif severity == CellSeverity.Success:
             self.setProperty("urgent", "success")
+        else:
+            self.setProperty("urgent", "normal")
 
 # 为表格创建Item
 class AudioTableItemDelegate(QStyledItemDelegate):

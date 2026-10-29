@@ -7,7 +7,7 @@ import globals.global_variables as gv
 from libraries.multi_thread import batch_processor
 from libraries.table_view.table_cell_data import CellSeverity
 from libraries.table_view.table_severity_delegate import SeverityTableDelegate
-from libraries.utils import user_config
+from data import user_config
 from libraries.utils.log_utils import Logger
 from libraries.utils.qt_utils import auto_adjust_window_width
 from libraries.utils.wwise import (

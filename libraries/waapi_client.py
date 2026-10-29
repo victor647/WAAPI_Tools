@@ -5,7 +5,7 @@ import time
 from waapi import WaapiClient
 from libraries.singleton import Singleton
 from libraries.utils.log_utils import Logger
-from libraries.utils import user_config
+from data import user_config
 from libraries.utils.wwise import project_utils, wwise_compat
 
 RETURN_FIELDS = {'return': ['id', 'name', 'type', 'path']}
@@ -1202,6 +1202,99 @@ class WAAPIClient(metaclass=Singleton):
             Logger().error(str(e))
             return False
 
+    # 为声音创建 1000 Hz 正弦波源插件（Wwise Sine）
+    def add_sine(self, obj: dict, length: float, language='SFX', frequency=1000.0) -> bool:
+        if not self.client or not obj:
+            return False
+        try:
+            set_args = {
+                'objects': [{
+                    'object': obj["id"],
+                    'children': [
+                        {
+                            'type': 'SourcePlugin',
+                            'name': f'Sine_{language}' if language != 'SFX' else 'Sine',
+                            'classId': 6553602,
+                            '@SineFrequency': frequency,
+                            '@SineDuration': length,
+                        }
+                    ]
+                }]
+            }
+            if language != 'SFX':
+                set_args['objects'][0]['children'][0]['language'] = language
+            result = self.client.call('ak.wwise.core.object.set', set_args, RETURN_FIELDS)
+            return result is not None
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
+    # 批量创建静音 SourcePlugin：assignments 为 [(Sound dict, 缺失语言列表)]
+    def add_silence_batch(self, assignments: list[tuple[dict, list[str]]], length: float) -> bool:
+        if not self.client or not assignments:
+            return False
+        try:
+            objects = []
+            for sound, languages in assignments:
+                children = []
+                for language in dict.fromkeys(languages):
+                    child = {
+                        'type': 'SourcePlugin',
+                        'name': f'Silence_{language}' if language != 'SFX' else 'Silence',
+                        'classId': 6619138,
+                        '@Length': length,
+                    }
+                    if language != 'SFX':
+                        child['language'] = language
+                    children.append(child)
+                if children:
+                    objects.append({'object': sound['id'], 'children': children})
+            if not objects:
+                return False
+            result = self.client.call(
+                'ak.wwise.core.object.set',
+                {'objects': objects, 'onNameConflict': 'rename'},
+                RETURN_FIELDS,
+            )
+            return result is not None
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
+    # 批量创建正弦波 SourcePlugin：assignments 为 [(Sound dict, 缺失语言列表)]
+    def add_sine_batch(self, assignments: list[tuple[dict, list[str]]], length: float,
+                       frequency=1000.0) -> bool:
+        if not self.client or not assignments:
+            return False
+        try:
+            objects = []
+            for sound, languages in assignments:
+                children = []
+                for language in dict.fromkeys(languages):
+                    child = {
+                        'type': 'SourcePlugin',
+                        'name': f'Sine_{language}' if language != 'SFX' else 'Sine',
+                        'classId': 6553602,
+                        '@SineFrequency': frequency,
+                        '@SineDuration': length,
+                    }
+                    if language != 'SFX':
+                        child['language'] = language
+                    children.append(child)
+                if children:
+                    objects.append({'object': sound['id'], 'children': children})
+            if not objects:
+                return False
+            result = self.client.call(
+                'ak.wwise.core.object.set',
+                {'objects': objects, 'onNameConflict': 'rename'},
+                RETURN_FIELDS,
+            )
+            return result is not None
+        except Exception as e:
+            Logger().error(str(e))
+            return False
+
     # 把指定对象转码出 wem（ak.wwise.core.audio.convert，需 Wwise 2024 及以上版本）；
     # 返回 {"errors": [...]}，成功时 errors 为空列表
     def convert_audio_objects(self, objects: list, platforms: list, languages: list) -> dict:
@@ -1481,12 +1574,12 @@ class WAAPIClient(metaclass=Singleton):
                 'objects': id_list
             }
             self.client.call('ak.wwise.ui.commands.execute', select_args)
-            return self.bring_wwise_to_foreground()
+            return True
         except Exception as e:
             Logger().error(str(e))
             return False
 
-    # 将Wwise窗口带到最前方
+    # 将Wwise窗口带到最前方（纯 WAAPI 调用；窗口状态保持由 common_utils 处理）
     def bring_wwise_to_foreground(self) -> bool:
         if not self.client:
             return False

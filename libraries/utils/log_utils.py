@@ -270,7 +270,7 @@ class Logger(object, metaclass=Singleton):
     # 重新读取「记录明细日志」开关（设置窗口改动后由 user_config 调用，避免每次写日志都读配置）
     def refresh_detail_log_setting(self) -> None:
         try:
-            from libraries.utils import user_config
+            from data import user_config
 
             self._detail_enabled = user_config.get_tool_detail_log_enabled()
         except Exception:

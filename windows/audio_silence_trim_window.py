@@ -4,7 +4,8 @@ import time
 import clipboard
 import soundfile
 
-from libraries.utils import audio_utils, user_config
+from libraries.utils import audio_utils
+from data import user_config
 from libraries.utils.qt_utils import resize_table_and_window
 from libraries.utils.wwise import audio_source_utils, waapi_utils
 from libraries.table_view.table_cell_data import CellSeverity

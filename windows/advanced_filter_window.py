@@ -1,7 +1,7 @@
 from libraries.base_dialog import BaseDialog
 from PySide6.QtWidgets import QDialog, QWidget
 
-from libraries.utils import user_config
+from data import user_config
 from ui.AdvancedFilter_ui import Ui_AdvancedFilter
 
 

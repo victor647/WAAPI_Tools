@@ -6,7 +6,7 @@ from typing import Any
 
 from libraries import tool_registry
 from libraries.waapi_client import WAAPIClient
-from libraries.utils import user_config
+from data import user_config
 from waapi_mcp.mcp_instance import mcp
 
 # JSON schema 类型 -> python 注解（FastMCP 依据真实函数签名生成自己的 JSON schema）
@@ -55,10 +55,12 @@ def _build_mcp_function(spec: tool_registry.ToolSpec):
         "_handler": spec.handler,
         "WAAPIClient": WAAPIClient,
     }
+    # 纯文件/注册表类工具不强制连接 Wwise（例如 read_work_unit / get_guidelines）
+    connect_line = "    WAAPIClient().connect()\n" if spec.needs_waapi else ""
     code = (
         f"def _tool({signature}):\n"
         "    _kwargs = {k: v for k, v in locals().items() if v is not None}\n"
-        "    WAAPIClient().connect()\n"
+        f"{connect_line}"
         "    return _handler(_kwargs)\n"
     )
     exec(code, namespace)

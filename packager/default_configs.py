@@ -29,7 +29,7 @@ def write_default_configs(output_dir: Path = DEFAULTS_DIR) -> list:
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     from data import project_conventions
-    from libraries.utils import user_config
+    from data import user_config
 
     output_dir.mkdir(parents=True, exist_ok=True)
     written = []
